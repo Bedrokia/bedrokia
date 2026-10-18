@@ -40,6 +40,18 @@ public sealed class MobTests : IAsyncDisposable
         return await done.Task.WaitAsync(Timeout);
     }
 
+    // Polls on the game thread until the condition holds (CI machines can be slow), then returns the last value.
+    private async Task<T> Eventually<T>(Func<T> read, Func<T, bool> done)
+    {
+        var value = await OnMain(read);
+        for (var waited = 0; !done(value) && waited < 10_000; waited += 100)
+        {
+            await Task.Delay(100);
+            value = await OnMain(read);
+        }
+        return value;
+    }
+
     [Fact]
     public async Task A_mob_falls_onto_the_ground_and_dies_from_damage()
     {
@@ -48,9 +60,8 @@ public sealed class MobTests : IAsyncDisposable
         await _server.World.GetChunkAsync(spawn.X >> 4, spawn.Z >> 4).WaitAsync(Timeout); // mobs only live in loaded chunks
         var mob = await OnMain(() => _server.Mobs.Spawn(MobKind.Cow, spawn.X + 0.5, spawn.Y + 6, spawn.Z + 0.5));
 
-        // Let it fall for two seconds (no player around: it stays loaded because the spawn chunk is).
-        await Task.Delay(2000);
-        var (y, onGround) = await OnMain(() => (mob.Y, mob.OnGround));
+        // Let it fall (no player around: it stays loaded because the spawn chunk is).
+        var (y, onGround) = await Eventually(() => (mob.Y, mob.OnGround), s => s.OnGround);
         Assert.True(onGround, $"cow still falling at y {y}");
         Assert.InRange(y, spawn.Y - 2, spawn.Y + 1);
 
@@ -81,8 +92,7 @@ public sealed class MobTests : IAsyncDisposable
             return _server.World.GetBlock(x, y + 5, z);
         });
         Assert.Same(Blocks.Air, landed); // it is now a falling entity
-        await Task.Delay(2000);
-        Assert.Same(Blocks.Sand, await OnMain(() => _server.World.GetBlock(x, y, z)));
+        Assert.Same(Blocks.Sand, await Eventually(() => _server.World.GetBlock(x, y, z), b => b == Blocks.Sand));
     }
 
     [Fact]
@@ -100,8 +110,7 @@ public sealed class MobTests : IAsyncDisposable
             _server.SetBlockAndUpdate(x, y, z, Fluids.Source("water"));
             return 0;
         });
-        await Task.Delay(1500);
-        var flowing = await OnMain(() => _server.World.GetBlock(x + 1, y, z))!;
+        var flowing = await Eventually(() => _server.World.GetBlock(x + 1, y, z), b => b?.Name == "minecraft:flowing_water");
         Assert.Equal("minecraft:flowing_water", flowing!.Name);
         Assert.Equal(1, Fluids.Depth(flowing));
 
