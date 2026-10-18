@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Only for the IDE (completion, errors): the server compiles src/ by itself.
+    To install: copy plugin.yml, src/ and resources/ into the server's plugins/<name>/ folder.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\Bedrokia.Server\Bedrokia.Server.csproj" Private="false" />
+  </ItemGroup>
+</Project>

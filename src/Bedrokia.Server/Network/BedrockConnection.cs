@@ -1,0 +1,845 @@
+// ┌───────────────────────────────────────────────────────────────────┐
+// │  ____  _____ ____  ____   ___  _  __ ___    _                     │
+// │ | __ )| ____|  _ \|  _ \ / _ \| |/ /|_ _|  / \                    │
+// │ |  _ \|  _| | | | | |_) | | | | ' /  | |  / _ \                   │
+// │ | |_) | |___| |_| |  _ <| |_| | . \  | | / ___ \                  │
+// │ |____/|_____|____/|_| \_\\___/|_|\_\|___/_/   \_\                 │
+// │                                                                   │
+// │  Bedrokia - Minecraft: Bedrock Edition server software            │
+// │  Licensed under the Apache License 2.0 - see LICENSE              │
+// └───────────────────────────────────────────────────────────────────┘
+
+using Bedrokia.Protocol;
+using Bedrokia.Server.Commands;
+using Bedrokia.Protocol.Login;
+using Bedrokia.Server.Core;
+using Bedrokia.Server.Game;
+
+namespace Bedrokia.Server.Network;
+
+/// <summary>
+/// Bedrock login sequence and in-game packet handling for one client.
+/// Game-thread only: every method is called from the tick loop, so no locking is needed here.
+/// </summary>
+public sealed partial class BedrockConnection
+{
+    private enum Stage { NetworkSettings, Login, Handshake, ResourcePacks, ChunkRadius, Spawning, InGame, Closed }
+
+    private const ushort CompressionThreshold = 256;
+    public const float EyeHeight = 1.62f;
+    private const double MaxReach = 12;
+
+    private readonly BedrokiaServer _server;
+    private readonly IGameTransport _transport;
+    private readonly BatchCodec _codec;
+    private readonly HashSet<(int X, int Z)> _sentChunks = [];
+    private readonly HashSet<(int X, int Z)> _requestedChunks = [];
+    private Stage _stage = Stage.NetworkSettings;
+    private int _viewRadius;
+    private (int X, int Z) _centerChunk = (int.MinValue, int.MinValue);
+
+    internal BedrockConnection(BedrokiaServer server, IGameTransport transport, long entityId)
+    {
+        _server = server;
+        _transport = transport;
+        _codec = new BatchCodec(withHeader: false); // NetherNet: no 0xFE header, DTLS encrypts the connection
+        EntityId = entityId;
+        Inventory.Rejected = reason => _server.Logger.Debug($"{Name}: {reason}");
+        Inventory.Accepted = summary => _server.Logger.Debug($"{Name}: {summary}");
+    }
+
+    public PlayerIdentity? Identity { get; private set; }
+    public PlayerInfo? Info { get; private set; }
+    public string Name => Identity?.Name ?? _transport.RemoteEndPoint.ToString();
+    public long EntityId { get; }
+    public bool IsInGame => _stage == Stage.InGame;
+    public System.Net.IPEndPoint RemoteEndPoint => _transport.RemoteEndPoint;
+
+    /// <summary>Eye position as reported by the client.</summary>
+    public (float X, float Y, float Z) Position { get; private set; }
+    public float Pitch { get; private set; }
+    public float Yaw { get; private set; }
+
+    /// <summary>Chunk the player stands in.</summary>
+    public (int X, int Z) ChunkPosition => ((int)Math.Floor(Position.X) >> 4, (int)Math.Floor(Position.Z) >> 4);
+
+    public int ViewRadius => _viewRadius;
+
+    public void SendMessage(string message) => Send(Packets.Text(TextType.Raw, message));
+
+    public bool IsOp => _server.Ops.Contains(Name);
+
+    public CommandSender CommandSender => new(Name, IsOp, SendMessage, this);
+
+    /// <summary>Sends the command list this player may use (call again after op/deop).</summary>
+    public void SendCommands() =>
+        Send(new BedrockWriter().VarUInt32(CommandManager.SetCommandsEnabledId).Bool(true).ToArray(),
+            _server.Commands.AvailableCommandsPacket(IsOp));
+
+    /// <summary>Moves the player (feet position) and loads the chunks around the destination.</summary>
+    public void Teleport(float x, float y, float z)
+    {
+        Position = (x, y + EyeHeight, z);
+        var packet = Packets.MovePlayer(EntityId, x, y + EyeHeight, z, 0, 0, 0, teleport: true, onGround: false);
+        Send(packet);
+        _server.BroadcastExcept(this, packet);
+        UpdateChunks(ChunkPosition.X, ChunkPosition.Z);
+    }
+
+    /// <summary>Shows <paramref name="message"/> on the client's disconnection screen and closes the connection.</summary>
+    public void Disconnect(string message, int reason = DisconnectReason.Kicked)
+    {
+        if (_stage == Stage.Closed)
+            return;
+        if (_codec.CompressionEnabled) // the client cannot read game packets before NetworkSettings
+            Send(Packets.Disconnect(reason, message));
+        _transport.Disconnect(message);
+    }
+
+    internal void HandleBatch(byte[] batch)
+    {
+        if (_stage == Stage.Closed)
+            return;
+        try
+        {
+            foreach (var packet in _codec.Decode(batch))
+            {
+                if (_stage == Stage.Closed)
+                    break;
+                Handle(packet);
+            }
+        }
+        catch (InvalidDataException e)
+        {
+            _server.Logger.Warn($"{Name}: protocol error: {e.Message}");
+            Disconnect("Protocol error.", DisconnectReason.Unknown);
+        }
+        catch (LoginException e)
+        {
+            _server.Logger.Info($"{_transport.RemoteEndPoint}: login refused: {e.Message}");
+            Disconnect(e.Message, DisconnectReason.NotAuthenticated);
+        }
+    }
+
+    internal void OnClosed() => _stage = Stage.Closed;
+
+    private void Handle(byte[] packet)
+    {
+        var reader = new BedrockReader(packet);
+        var id = reader.VarUInt32() & 0x3FF; // low 10 bits; the rest are sub-client ids
+        switch (_stage, id)
+        {
+            case (Stage.NetworkSettings, PacketId.RequestNetworkSettings):
+                OnRequestNetworkSettings(reader.Int32BE());
+                break;
+            case (Stage.Login, PacketId.Login):
+            {
+                reader.Int32BE(); // protocol, already checked
+                OnLogin(reader.ByteArray());
+                break;
+            }
+            case (Stage.Handshake, PacketId.ClientToServerHandshake):
+                CompleteLogin();
+                break;
+            case (Stage.ResourcePacks, PacketId.ResourcePackClientResponse):
+                OnResourcePackResponse(ref reader);
+                break;
+            case (Stage.ResourcePacks, ResourcePacks.ChunkRequestId):
+            {
+                var packId = reader.String();
+                var index = System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(reader.Bytes(4));
+                if (_server.ResourcePacks.ById(packId) is { } pack && ResourcePacks.ChunkPacket(pack, index) is { } chunk)
+                    Send(chunk);
+                break;
+            }
+            case (_, PacketId.RequestChunkRadius) when _stage >= Stage.ChunkRadius:
+                OnRequestChunkRadius(reader.VarInt32());
+                break;
+            case (Stage.Spawning, PacketId.SetLocalPlayerAsInitialised):
+                _stage = Stage.InGame;
+                _server.OnPlayerJoined(this);
+                break;
+            case (Stage.InGame, PacketId.PlayerAuthInput):
+                OnPlayerAuthInput(ref reader);
+                break;
+            case (Stage.InGame, PacketId.InventoryTransaction):
+                OnInventoryTransaction(ref reader);
+                break;
+            case (Stage.InGame, InventoryPackets.ItemStackRequestId):
+                Send([.. Inventory.HandleRequests(ref reader, GameMode, DropFromHand)]);
+                RefreshEnchantOptions();
+                SyncOpenContainer();
+                break;
+            case (Stage.InGame, InventoryPackets.MobEquipmentId):
+            {
+                reader.VarUInt64(); // runtime id
+                SkipItemInstance(ref reader);
+                reader.Byte(); // inventory slot
+                var hotbar = reader.Byte();
+                if (reader.Byte() == InventoryPackets.WindowInventory && hotbar < 9)
+                    Inventory.SelectedSlot = hotbar;
+                break;
+            }
+            case (Stage.InGame, InventoryPackets.InteractId):
+                // The client waits for this ContainerOpen before showing its own inventory (E key).
+                if (reader.Byte() == InventoryPackets.InteractOpenInventory && !_inventoryOpen)
+                {
+                    _inventoryOpen = true;
+                    Send(InventoryPackets.ContainerOpen(0, InventoryPackets.ContainerTypeInventory,
+                        (int)Position.X, (int)Position.Y, (int)Position.Z));
+                }
+                break;
+            case (Stage.InGame, InventoryPackets.ContainerCloseId):
+            {
+                var window = reader.Byte();
+                var type = reader.Byte();
+                _inventoryOpen = false;
+                CloseContainer(notifyClient: false);
+                foreach (var stack in Inventory.ReturnCraftingItems())
+                    _server.DropItem(stack, Position.X, Position.Y - EyeHeight + 0.5f, Position.Z);
+                Send(InventoryPackets.ContainerClose(window, window == InventoryPackets.WindowCraftingTable
+                    ? InventoryPackets.ContainerTypeWorkbench : type));
+                Send([.. Inventory.ContentPackets()]);
+                break;
+            }
+            case (Stage.InGame, 34): // BlockPickRequest (middle click)
+                OnBlockPick(reader.VarInt32(), reader.VarInt32(), reader.VarInt32());
+                break;
+            case (Stage.InGame, Entities.EntityPackets.RespawnId):
+                OnRespawnRequest(ref reader);
+                break;
+            case (Stage.InGame, CommandManager.CommandRequestId):
+                _server.Commands.Dispatch(CommandSender, reader.String());
+                break;
+            case (Stage.InGame, PacketId.Text):
+                OnText(ref reader);
+                break;
+            case (Stage.NetworkSettings or Stage.Login or Stage.Handshake, _):
+                throw new InvalidDataException($"Unexpected packet {id} during login.");
+            default:
+                // ponytail: other in-game packets are ignored until their feature exists; logged once each to spot gaps.
+                if (_ignoredPackets.Add(id))
+                    _server.Logger.Debug($"{Name}: ignored packet id {id}");
+                break;
+        }
+    }
+
+    private void OnRequestNetworkSettings(int protocol)
+    {
+        if (protocol != ProtocolInfo.Version)
+        {
+            _server.Logger.Info($"{_transport.RemoteEndPoint}: refused protocol {protocol} (supported: {ProtocolInfo.Version}).");
+            Send(Packets.PlayStatus(protocol < ProtocolInfo.Version ? PlayStatus.LoginFailedClient : PlayStatus.LoginFailedServer));
+            _transport.Disconnect("incompatible version");
+            return;
+        }
+        Send(Packets.NetworkSettings(CompressionThreshold));
+        _codec.EnableCompression(CompressionThreshold);
+        _stage = Stage.Login;
+    }
+
+    private void OnLogin(ReadOnlySpan<byte> request)
+    {
+        var keys = _server.AuthKeys;
+        if (_server.Config.OnlineMode && keys is null)
+            throw new LoginException("The server cannot reach Xbox Live right now. Try again in a minute.");
+
+        var identity = LoginRequest.Verify(request, keys, DateTimeOffset.UtcNow);
+        // NetherNet has no game-layer encryption: tie the login to the key the WebRTC identity proved,
+        // otherwise a captured Login packet could be replayed.
+        if (_transport.PeerPublicKey is { } peerKey
+            && !peerKey.ExportSubjectPublicKeyInfo().AsSpan().SequenceEqual(identity.ClientKey.ExportSubjectPublicKeyInfo()))
+            throw new LoginException("Login does not match the connection identity.");
+        if (_transport.PeerPublicKey is null && _server.Config.OnlineMode)
+            throw new LoginException("An Xbox Live identity is required to join this server.");
+
+        Identity = identity;
+        byte[] skin;
+        try
+        {
+            skin = PlayerPackets.Skin(identity.ClientData);
+        }
+        catch (InvalidDataException e)
+        {
+            throw new LoginException($"Your skin could not be read ({e.Message}).");
+        }
+        var platform = identity.ClientData.TryGetProperty("DeviceOS", out var os) && os.TryGetInt32(out var value) ? value : 0;
+        Info = new PlayerInfo(identity.Uuid, EntityId, identity.Name, identity.Xuid, platform, skin);
+
+        if (_server.AdmissionRefusal(identity.Name) is { } refusal)
+        {
+            _server.Logger.Info($"{identity.Name} was refused: {refusal}");
+            Disconnect(refusal);
+            return;
+        }
+        if (!_server.TryReserveSlot(this))
+        {
+            Send(Packets.PlayStatus(PlayStatus.LoginFailedServerFull));
+            _transport.Disconnect("server full");
+            return;
+        }
+        _server.Logger.Info($"{Identity.Name} ({(Identity.Authenticated ? "xuid " + Identity.Xuid : "not authenticated")}) is logging in from {_transport.RemoteEndPoint} (NetherNet).");
+
+        CompleteLogin(); // DTLS already encrypts the connection: no game-layer encryption handshake
+    }
+
+    private void CompleteLogin()
+    {
+        _stage = Stage.ResourcePacks;
+        Send(Packets.PlayStatus(PlayStatus.LoginSuccess), _server.ResourcePacks.InfoPacket(_server.Config.ForceResourcePacks));
+    }
+
+    // Response (0 refused, 1 send packs, 2 all downloaded, 3 completed), its name, and for 1 the packs to send.
+    private void OnResourcePackResponse(ref BedrockReader reader)
+    {
+        var response = reader.VarUInt32();
+        if (reader.Remaining > 0)
+            reader.String();
+        var required = _server.Config.ForceResourcePacks;
+        switch (response)
+        {
+            case 0: // refused
+                if (required && _server.ResourcePacks.All.Count > 0)
+                    Disconnect("This server requires its resource packs.");
+                else
+                    Send(_server.ResourcePacks.StackPacket(required));
+                break;
+            case 1: // send packs: one data info each, then the client asks for the chunks
+            {
+                var count = reader.Remaining > 0 ? reader.VarUInt32() : 0;
+                var sent = 0;
+                for (var i = 0; i < count; i++)
+                    if (_server.ResourcePacks.ById(reader.String()) is { } pack)
+                    {
+                        Send(ResourcePacks.DataInfoPacket(pack));
+                        sent++;
+                    }
+                if (sent == 0)
+                    Send(_server.ResourcePacks.StackPacket(required));
+                break;
+            }
+            case 2: // all downloaded (or nothing to download)
+                Send(_server.ResourcePacks.StackPacket(required));
+                break;
+            case 3: // stack finished
+            {
+                _stage = Stage.ChunkRadius;
+                var world = _server.World;
+                var spawn = world.Spawn;
+                Position = (spawn.X + 0.5f, spawn.Y + EyeHeight, spawn.Z + 0.5f);
+                GameMode = _server.Config.GameMode;
+                if (PlayerData.Read(Identity!.Uuid) is { } saved)
+                {
+                    Position = (saved.X, saved.Y + EyeHeight, saved.Z); // saved at the feet, Position is the eyes
+                    if (!_server.Config.ForceGameMode)
+                        GameMode = saved.GameMode;
+                    Inventory.SelectedSlot = Math.Clamp(saved.SelectedSlot, 0, 8);
+                    PlayerData.Load(Inventory.Main, saved.Main);
+                    PlayerData.Load(Inventory.Armour, saved.Armour);
+                    PlayerData.Load(Inventory.Offhand, saved.Offhand);
+                    if (saved.EnderChest is { } ender)
+                        PlayerData.Load(Inventory.EnderChest, ender);
+                    ExperienceLevel = Math.Max(0, saved.Level);
+                    ExperienceProgress = Math.Clamp(saved.Progress, 0, 1);
+                }
+                Send(
+                    Packets.JigsawStructureData(),
+                    Packets.VoxelShapes(),
+                    Packets.StartGame(new Packets.StartGameData(
+                        EntityId, (int)GameMode,
+                        Position.X, Position.Y, Position.Z,
+                        spawn.X, spawn.Y, spawn.Z,
+                        _server.Config.LevelName, world.Time, (int)_server.Config.Difficulty, world.Settings.DaylightCycle)),
+                    Items.RegistryPacket,
+                    Biome.DefinitionListPacket);
+                break;
+            }
+            default:
+                throw new InvalidDataException($"Unknown resource pack response {response}.");
+        }
+    }
+
+    private void OnRequestChunkRadius(int requested)
+    {
+        _viewRadius = Math.Clamp(requested, 2, _server.Config.ViewDistance);
+        Send(Packets.ChunkRadiusUpdated(_viewRadius));
+        _centerChunk = (int.MinValue, int.MinValue);
+        UpdateChunks(ChunkPosition.X, ChunkPosition.Z);
+    }
+
+    // Pitch, yaw, position (eyes), move vector, head yaw, ... (only the start is read).
+    private void OnPlayerAuthInput(ref BedrockReader reader)
+    {
+        var pitch = reader.Float32();
+        var yaw = reader.Float32();
+        var x = reader.Float32();
+        var y = reader.Float32();
+        var z = reader.Float32();
+        if (!float.IsFinite(x) || !float.IsFinite(y) || !float.IsFinite(z) || !float.IsFinite(pitch) || !float.IsFinite(yaw))
+            throw new InvalidDataException("Invalid position.");
+
+        var moved = Math.Abs(x - Position.X) + Math.Abs(y - Position.Y) + Math.Abs(z - Position.Z) > 0.001
+                    || Math.Abs(pitch - Pitch) + Math.Abs(yaw - Yaw) > 0.1;
+        TrackFall(Position.Y, y); // every packet, so that landing is seen even when the player then stands still
+        if (moved)
+        {
+            // ponytail: movement is trusted (no speed or collision checks yet).
+            Position = (x, y, z);
+            Pitch = pitch;
+            Yaw = yaw;
+            UpdateChunks(ChunkPosition.X, ChunkPosition.Z);
+            _server.BroadcastExcept(this, Packets.MovePlayer(EntityId, x, y, z, pitch, yaw, yaw, teleport: false, onGround: true));
+            _server.Events.OnMove(this);
+        }
+        if (reader.Remaining == 0)
+            return; // short form (tests)
+
+        // Rest of PlayerAuthInput (gophertunnel packet/player_auth_input.go, MIT): this is where a modern client
+        // reports block breaking, item use and some inventory requests.
+        reader.Bytes(12); // move vector, head yaw
+        var flags = reader.VarUInt32();
+        var sneaking = false;
+        for (var i = 0; i < flags; i++)
+            sneaking |= reader.VarInt32() == InputFlagSneaking;
+        Sneaking = sneaking;
+        reader.VarUInt32(); // input mode
+        reader.VarUInt32(); // play mode
+        reader.VarInt32(); // interaction model
+        reader.Bytes(8); // interact pitch, yaw
+        reader.VarUInt64(); // tick
+        reader.Bytes(12); // delta
+        if (reader.Bool())
+        {
+            ReadLegacyItemSlots(ref reader);
+            SkipInventoryActions(ref reader);
+            OnUseItem(ref reader);
+        }
+        if (reader.Bool())
+            Send([.. Inventory.HandleRequest(ref reader, GameMode, DropFromHand)]);
+            RefreshEnchantOptions();
+            SyncOpenContainer();
+        if (reader.Bool())
+        {
+            var count = reader.VarUInt32();
+            for (var i = 0; i < count; i++)
+                OnBlockAction(reader.VarInt32(), reader.VarInt32(), reader.VarInt32(), reader.VarInt32(), reader.VarInt32());
+        }
+    }
+
+    // Thrown from the eyes in the look direction, like vanilla (Dragonfly player.Drop).
+    private void DropFromHand(ItemStack stack)
+    {
+        var yaw = Yaw * MathF.PI / 180;
+        var pitch = Pitch * MathF.PI / 180;
+        var velocity = (-MathF.Sin(yaw) * MathF.Cos(pitch) * 0.3f, -MathF.Sin(pitch) * 0.3f + 0.1f, MathF.Cos(yaw) * MathF.Cos(pitch) * 0.3f);
+        _server.DropItem(stack, Position.X, Position.Y - 0.3f, Position.Z, velocity, pickupDelay: 40);
+    }
+
+    // Player action ids (gophertunnel protocol/player.go).
+    private const int InputFlagSneaking = 8; // gophertunnel packet/player_auth_input.go
+
+    /// <summary>Holding sneak: right clicks place against containers and doors instead of using them.</summary>
+    public bool Sneaking { get; private set; }
+
+    private const int StartBreak = 0, AbortBreak = 1, StopBreak = 2, CreativeDestroyBlock = 13, PredictDestroyBlock = 26,
+        ContinueDestroyBlock = 27;
+    private const int LevelEventStartCracking = 3600, LevelEventStopCracking = 3601, LevelEventDestroyParticles = 2001;
+    private (int X, int Y, int Z)? _breaking;
+
+    // Block cracking is driven by the server: tell everyone how long the block takes to break.
+    private void OnBlockAction(int action, int x, int y, int z, int face)
+    {
+        _ = face;
+        switch (action)
+        {
+            case StartBreak or ContinueDestroyBlock:
+            {
+                _breaking = (x, y, z);
+                if (GameMode == GameMode.Creative || _server.World.GetBlock(x, y, z) is not { IsAir: false } block)
+                    return;
+                var ticks = DropRules.BreakTicks(block, Inventory.Held);
+                if (ticks > 0)
+                    _server.Broadcast(Packets.LevelEvent(LevelEventStartCracking, x, y, z, 65535 / ticks));
+                break;
+            }
+            case AbortBreak:
+                _breaking = null;
+                _server.Broadcast(Packets.LevelEvent(LevelEventStopCracking, x, y, z, 0));
+                break;
+            case PredictDestroyBlock or StopBreak or CreativeDestroyBlock:
+            {
+                var target = action == StopBreak && _breaking is { } breaking ? breaking : (x, y, z);
+                _breaking = null;
+                _server.Broadcast(Packets.LevelEvent(LevelEventStopCracking, target.Item1, target.Item2, target.Item3, 0));
+                BreakBlock(target.Item1, target.Item2, target.Item3);
+                break;
+            }
+        }
+    }
+
+    // LegacyRequestId and the optional legacy set-item-slots list.
+    private static void ReadLegacyItemSlots(ref BedrockReader reader)
+    {
+        reader.VarInt32();
+        if (!reader.Bool())
+            return;
+        var count = reader.VarUInt32();
+        for (var i = 0; i < count; i++)
+        {
+            reader.Byte();
+            reader.ByteArray();
+        }
+    }
+
+    // InventoryAction: source type, optional window id, optional source flags, slot, old item, new item.
+    private static void SkipInventoryActions(ref BedrockReader reader)
+    {
+        var count = reader.VarUInt32();
+        for (var i = 0; i < count; i++)
+        {
+            reader.VarUInt32();
+            if (reader.Bool())
+                reader.Byte();
+            if (reader.Bool())
+                reader.VarUInt32();
+            reader.VarUInt32();
+            SkipItemInstance(ref reader);
+            SkipItemInstance(ref reader);
+        }
+    }
+
+    // LegacyRequestId, [legacy slots], type, actions, then the use-item data.
+    private void OnInventoryTransaction(ref BedrockReader reader)
+    {
+        ReadLegacyItemSlots(ref reader);
+        const uint useItem = 2, useItemOnEntity = 3;
+        var type = reader.VarUInt32();
+        if (type == 0) // normal: how the client drops items with the drop key (Q)
+        {
+            OnDropTransaction(ref reader);
+            return;
+        }
+        if (type == 4) // release item: stopped eating (or drawing a bow)
+            _eatingSince = -1;
+        if (type is not (useItem or useItemOnEntity))
+            return; // ponytail: normal, mismatch and release transactions are not used
+        SkipInventoryActions(ref reader);
+        if (type == useItem)
+            OnUseItem(ref reader);
+        else
+            OnUseItemOnEntity(ref reader);
+    }
+
+    // UseItemTransactionData: action, trigger, block position, face, hotbar slot, hand, held item, ...
+    private void OnUseItem(ref BedrockReader reader)
+    {
+        const int clickBlock = 0, clickAir = 1, breakBlock = 2;
+        var action = reader.VarInt32();
+        reader.Byte(); // trigger type
+        var bx = reader.VarInt32();
+        var by = reader.VarInt32();
+        var bz = reader.VarInt32();
+        var face = reader.Byte();
+        reader.VarInt32(); // hotbar slot
+        reader.Byte(); // hand
+        // Held item: id, count, meta, [stack net id], block runtime id, user data.
+        var heldId = BinaryPrimitivesReadInt16(ref reader);
+        reader.Bytes(2);
+        reader.VarUInt32();
+        if (reader.Bool())
+            reader.VarInt32();
+        var heldBlock = Blocks.ByNetworkId(reader.VarUInt32());
+        reader.ByteArray();
+        var clickY = 0f;
+        if (reader.Remaining > 0) // the short form used by tests stops after the held item
+        {
+            clickY = System.Buffers.Binary.BinaryPrimitives.ReadSingleLittleEndian(reader.Bytes(24)[16..]); // player position, clicked position (x, y, z)
+            reader.VarUInt32(); // clicked block runtime id
+            reader.Bytes(2); // client prediction, cooldown state
+        }
+
+        if (action == clickAir)
+        {
+            if (!TryEquipHeld()) // right click with armour in hand: the client already shows it worn
+                StartEating();
+            return;
+        }
+        if (action == breakBlock)
+        {
+            BreakBlock(bx, by, bz);
+            return;
+        }
+        // Using the clicked block (doors, containers, tables...) unless sneaking, then using the held item on it.
+        if (action == clickBlock && _server.World.GetBlock(bx, by, bz) is { } clicked)
+        {
+            if (!Sneaking && UseBlock(clicked, bx, by, bz))
+                return;
+            if (Inventory.Held is { } used && !_server.Events.OnItemUse(new Plugins.ItemUseEvent(this, used, bx, by, bz, clicked, face)))
+            {
+                Send(InventoryPackets.InventorySlot(InventoryPackets.WindowInventory, Inventory.SelectedSlot, used));
+                return;
+            }
+            if (Inventory.Held is { } tool && UseItemOn(tool, clicked, bx, by, bz, face))
+                return;
+        }
+        if (action == clickBlock && Inventory.Held is { } egg && egg.Type.Name.EndsWith("_spawn_egg"))
+        {
+            UseSpawnEgg(egg, bx, by, bz, face);
+            return;
+        }
+        heldBlock ??= PlacedBlock(Inventory.Held); // beds, doors, signs... are items that place a block of their own
+        if (action != clickBlock || heldId == 0 || heldBlock is null || heldBlock.IsAir)
+            return; // not placing a block: interaction only
+        var (px, py, pz) = face switch
+        {
+            0 => (bx, by - 1, bz),
+            1 => (bx, by + 1, bz),
+            2 => (bx, by, bz - 1),
+            3 => (bx, by, bz + 1),
+            4 => (bx - 1, by, bz),
+            5 => (bx + 1, by, bz),
+            _ => throw new InvalidDataException($"Invalid block face {face}."),
+        };
+        PlaceBlock(px, py, pz, heldBlock, face, clickY - MathF.Floor(clickY));
+    }
+
+    private static short BinaryPrimitivesReadInt16(ref BedrockReader reader) =>
+        System.Buffers.Binary.BinaryPrimitives.ReadInt16LittleEndian(reader.Bytes(2));
+
+    // ItemInstance: id, count, meta, [stack network id], block runtime id, length-prefixed user data.
+    private static void SkipItemInstance(ref BedrockReader reader)
+    {
+        reader.Bytes(4); // id, count
+        reader.VarUInt32();
+        if (reader.Bool())
+            reader.VarInt32();
+        reader.VarUInt32();
+        reader.ByteArray();
+    }
+
+    /// <summary>Items, armour and off-hand of this player (server-authoritative).</summary>
+    public PlayerInventory Inventory { get; } = new();
+
+    private bool _inventoryOpen;
+    private readonly HashSet<uint> _ignoredPackets = [];
+
+    /// <summary>What to save for this player.</summary>
+    public PlayerData Snapshot() => new(Position.X, Position.Y - EyeHeight, Position.Z, GameMode, Inventory.SelectedSlot,
+        PlayerData.Save(Inventory.Main), PlayerData.Save(Inventory.Armour), PlayerData.Save(Inventory.Offhand), ExperienceLevel, ExperienceProgress, PlayerData.Save(Inventory.EnderChest));
+
+    private static readonly HashSet<string> Replaceable =
+        ["minecraft:air", "minecraft:water", "minecraft:short_grass", "minecraft:tall_grass", "minecraft:snow_layer", "minecraft:fern"];
+
+    /// <summary>The player's current game mode (changed with the gamemode command).</summary>
+    public GameMode GameMode { get; private set; }
+
+    public void SetGameMode(GameMode mode)
+    {
+        GameMode = mode;
+        Send(Packets.SetPlayerGameType((int)mode));
+    }
+
+    // ponytail: the block state is the one the client sent (no server-side orientation rules yet).
+    private void PlaceBlock(int x, int y, int z, BlockType block, int face = 1, float clickY = 0)
+    {
+        var world = _server.World;
+        var current = world.GetBlock(x, y, z);
+        var dx = x + 0.5 - Position.X;
+        var dy = y + 0.5 - (Position.Y - EyeHeight / 2);
+        var dz = z + 0.5 - Position.Z;
+        var held = Inventory.Held;
+        var survival = GameMode != GameMode.Creative;
+        if (current is null || SpawnProtected(x, z) || !Replaceable.Contains(current.Name) || dx * dx + dy * dy + dz * dz > MaxReach * MaxReach
+            || y is < Chunk.MinY or > Chunk.MaxY
+            || survival && PlacedBlock(held)?.Name != block.Name
+            || !_server.Events.OnPlace(new Plugins.BlockEvent(this, x, y, z, block))) // survival: the block must really be in hand
+        {
+            if (current is not null)
+                Send(Packets.UpdateBlock(x, y, z, current.NetworkId));
+            if (survival)
+                Send(InventoryPackets.InventorySlot(InventoryPackets.WindowInventory, Inventory.SelectedSlot, held));
+            return;
+        }
+        var parts = BlockPlacement.Place(block, x, y, z, face, clickY, Yaw, Pitch,
+            (fx, fy, fz) => world.GetBlock(fx, fy, fz) is { } b && Replaceable.Contains(b.Name) && !SpawnProtected(fx, fz));
+        if (parts.Count == 0)
+        {
+            Send(Packets.UpdateBlock(x, y, z, current.NetworkId)); // no room for the second half (door top, bed head)
+            if (survival)
+                Send(InventoryPackets.InventorySlot(InventoryPackets.WindowInventory, Inventory.SelectedSlot, held));
+            return;
+        }
+        foreach (var (px, py, pz, part) in parts)
+        {
+            world.SetBlock(px, py, pz, part);
+            _server.Broadcast(Packets.UpdateBlock(px, py, pz, part.NetworkId));
+            if (BlockEntity.For(part) is { } entity)
+            {
+                if (entity.Id == "Bed" && held is not null)
+                    entity.Colour = (byte)held.Meta;
+                world.SetBlockEntity(px, py, pz, entity);
+                _server.Broadcast(BlockEntity.DataPacket(px, py, pz, entity));
+            }
+        }
+        _server.ApplyGravity(x, y, z);
+        _server.Fluids.Wake(x, y, z);
+        foreach (var (px, py, pz, _) in parts)
+            _server.UpdateShapes(px, py, pz);
+        if (survival)
+            Send(Inventory.ConsumeHeld());
+    }
+
+    private void BreakBlock(int x, int y, int z)
+    {
+        var world = _server.World;
+        var current = world.GetBlock(x, y, z);
+        var dx = x + 0.5 - Position.X;
+        var dy = y + 0.5 - (Position.Y - EyeHeight / 2);
+        var dz = z + 0.5 - Position.Z;
+        var allowed = current is not null && !current.IsAir && dx * dx + dy * dy + dz * dz <= MaxReach * MaxReach
+                      && (!current.Unbreakable || GameMode == GameMode.Creative) && !SpawnProtected(x, z);
+        allowed = allowed && _server.Events.OnBreak(new Plugins.BlockEvent(this, x, y, z, current!));
+        if (!allowed)
+        {
+            // Undo the client's prediction.
+            if (current is not null)
+                Send(Packets.UpdateBlock(x, y, z, current.NetworkId));
+            return;
+        }
+        // Containers spill their contents (in every game mode, like vanilla) and close for their viewers.
+        if (world.GetBlockEntity(x, y, z)?.Items is { } contents)
+        {
+            _server.CloseContainerFor((x, y, z));
+            for (var slot = 0; slot < contents.Size; slot++)
+                if (contents[slot] is { } stack)
+                {
+                    _server.DropItem(stack, x + 0.5f, y + 0.5f, z + 0.5f);
+                    contents[slot] = null;
+                }
+        }
+        world.SetBlock(x, y, z, Blocks.Air);
+        AddExhaustion(0.005f);
+        _server.Fluids.Wake(x, y, z);
+        _server.Broadcast(Packets.UpdateBlock(x, y, z, Blocks.Air.NetworkId));
+        // Doors, beds and tall plants: the other half goes too (without a second drop).
+        if (BlockPlacement.OtherHalf(current!, x, y, z) is { } other && world.GetBlock(other.X, other.Y, other.Z)?.Name == current!.Name)
+        {
+            world.SetBlock(other.X, other.Y, other.Z, Blocks.Air);
+            _server.Broadcast(Packets.UpdateBlock(other.X, other.Y, other.Z, Blocks.Air.NetworkId));
+        }
+        _server.ApplyGravity(x, y + 1, z);
+        _server.UpdateShapes(x, y, z);
+        // The breaker's client shows its own particles; the others need the event.
+        _server.BroadcastExcept(this, Packets.LevelEvent(LevelEventDestroyParticles, x, y, z, unchecked((int)current!.NetworkId)));
+        if (GameMode == GameMode.Creative) // a creative client shows neither particles nor sound for an instant break
+            Send(Packets.LevelEvent(LevelEventDestroyParticles, x, y, z, unchecked((int)current.NetworkId)),
+                new BedrockWriter().VarUInt32(123).String("break").Vec3(x + 0.5f, y + 0.5f, z + 0.5f).VarInt32(unchecked((int)current.NetworkId))
+                    .String("").Bool(false).Bool(false).Int64(-1).Bool(false).ToArray());
+        if (GameMode != GameMode.Survival)
+            return;
+        var held = Inventory.Held;
+        var drops = DropRules.Drops(current!, held, Random.Shared);
+        if (Enchanting.Level(held, "silk_touch") > 0 && (drops.Count > 0 || current!.Name.Contains("glass") || current!.Name.Contains("ice")) && ItemStack.Of(current!.Name) is { } itself)
+            drops = [itself]; // ponytail: blocks with no item form (crops, beds...) keep their normal drops
+        else
+        {
+            if (drops.Count > 0)
+                AddExperience(BlockExperience(current!.Name));
+            var fortune = Enchanting.Level(held, "fortune");
+            if (fortune > 0 && current!.Name.EndsWith("_ore"))
+            {
+                var bonus = Math.Max(0, Random.Shared.Next(fortune + 2) - 1); // vanilla ore fortune: x(bonus + 1)
+                foreach (var drop in drops)
+                    drop.SetCount(drop.Count * (bonus + 1));
+            }
+        }
+        foreach (var drop in drops)
+            _server.DropItem(drop, x + 0.5f, y + 0.25f, z + 0.5f);
+    }
+
+    internal void UpdateChunks(int centerX, int centerZ)
+    {
+        if (_viewRadius == 0 || _centerChunk == (centerX, centerZ))
+            return;
+        _centerChunk = (centerX, centerZ);
+        var keep = (_viewRadius + 1) * (_viewRadius + 1);
+        _sentChunks.RemoveWhere(c => Distance2(c.X - centerX, c.Z - centerZ) > keep);
+        _requestedChunks.RemoveWhere(c => Distance2(c.X - centerX, c.Z - centerZ) > keep);
+
+        Send(Packets.NetworkChunkPublisherUpdate((int)Position.X, (int)Position.Y, (int)Position.Z, (uint)_viewRadius * 16));
+        // Nearest chunks first so the area around the player appears quickly.
+        var wanted = new List<(int X, int Z)>();
+        for (var dx = -_viewRadius; dx <= _viewRadius; dx++)
+        for (var dz = -_viewRadius; dz <= _viewRadius; dz++)
+            if (Distance2(dx, dz) <= _viewRadius * _viewRadius)
+                wanted.Add((centerX + dx, centerZ + dz));
+        foreach (var chunk in wanted.OrderBy(c => Distance2(c.X - centerX, c.Z - centerZ)))
+        {
+            if (_sentChunks.Contains(chunk) || !_requestedChunks.Add(chunk))
+                continue;
+            var task = _server.World.GetChunkAsync(chunk.X, chunk.Z);
+            task.ContinueWith(t => _server.RunOnMainThread(() => OnChunkReady(t)), TaskScheduler.Default);
+        }
+        TrySpawn();
+    }
+
+    private void OnChunkReady(Task<Chunk> task)
+    {
+        if (_stage == Stage.Closed)
+            return;
+        if (!task.IsCompletedSuccessfully)
+        {
+            _server.Logger.Error($"Chunk generation failed: {task.Exception?.GetBaseException()}");
+            return;
+        }
+        var chunk = task.Result;
+        var key = (chunk.X, chunk.Z);
+        if (!_requestedChunks.Remove(key))
+            return; // moved away meanwhile
+        _sentChunks.Add(key);
+        var (count, payload) = chunk.NetworkPayload();
+        Send(Packets.LevelChunk(chunk.X, chunk.Z, count, payload));
+        TrySpawn();
+    }
+
+    // The client stays on the loading screen until PlayerSpawn; send it once the chunks around it are there.
+    private void TrySpawn()
+    {
+        if (_stage != Stage.ChunkRadius)
+            return;
+        var (cx, cz) = ChunkPosition;
+        for (var dx = -1; dx <= 1; dx++)
+        for (var dz = -1; dz <= 1; dz++)
+            if (!_sentChunks.Contains((cx + dx, cz + dz)))
+                return;
+        _stage = Stage.Spawning;
+        Send(Packets.PlayStatus(PlayStatus.PlayerSpawn), Items.CreativeContentPacket, Recipes.CraftingDataPacket, Recipes.TrimDataPacket, Packets.SetTime((int)_server.World.Time),
+            PlayerPackets.SetPlayerData(EntityId, Name), PlayerPackets.PlayerAttributes(EntityId, Health, Food, Saturation, ExperienceLevel, ExperienceProgress));
+        Send([.. Inventory.ContentPackets()]);
+        SendCommands();
+    }
+
+    private static int Distance2(int dx, int dz) => dx * dx + dz * dz;
+
+    // bool needsTranslation, u8 category, u8 type, [source], message, xuid, platform id, optional filtered.
+    private void OnText(ref BedrockReader reader)
+    {
+        reader.Bool();
+        reader.Byte();
+        if ((TextType)reader.Byte() != TextType.Chat)
+            return;
+        reader.String(); // claimed source name: ignored, the server knows who is talking
+        var message = reader.String().Trim();
+        if (message.Length is 0 or > 512)
+            return;
+        var chat = new Plugins.PlayerChatEvent(this, message);
+        if (_server.Events.OnChat(chat))
+            _server.Broadcast(Packets.Text(TextType.Chat, chat.Message, Name), $"<{Name}> {chat.Message}");
+    }
+
+    internal void Send(params byte[][] packets)
+    {
+        if (_stage != Stage.Closed)
+            _transport.Send(_codec.Encode(packets));
+    }
+}

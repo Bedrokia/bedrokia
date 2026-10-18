@@ -1,0 +1,209 @@
+---
+title: Plugins
+---
+
+# Plugins
+
+Les plugins Bedrokia s'écrivent en **C#** et s'organisent comme les plugins Java (Bukkit / Spigot) ou PocketMine-MP.
+**Pas besoin de compiler** : le serveur compile le code au démarrage (avec Roslyn). Un plugin cassé n'empêche pas le
+serveur de démarrer : la console dit lequel, pourquoi, et où.
+
+## Structure
+
+```
+plugins/
+└── MonPlugin/
+    ├── plugin.yml              description du plugin (obligatoire)
+    ├── src/                    le code C# (tous les .cs, sous-dossiers compris)
+    │   ├── MonPlugin.cs
+    │   └── Commands/...
+    └── resources/
+        └── config.yml          config par défaut, copiée dans plugin_data/MonPlugin/ au 1er lancement
+```
+
+Formats acceptés aussi : un fichier seul `plugins/MonPlugin.cs`, ou une DLL `plugins/MonPlugin.dll`
+(bibliothèque .NET 10 qui référence `Bedrokia.Server`).
+
+## plugin.yml
+
+```yaml
+name: MonPlugin              # obligatoire : lettres, chiffres, _ - .
+version: 1.0.0
+main: MonPlugin.Main         # obligatoire : nom complet de la classe qui hérite de Plugin
+api: 1.0.0
+author: Moi
+description: Ce que fait le plugin.
+website: https://exemple.fr
+depend: [AutrePlugin]        # chargés avant ; s'il manque, ce plugin n'est pas chargé
+softdepend: [Optionnel]      # chargés avant s'ils sont présents
+commands:
+  bonjour:
+    description: Dit bonjour.
+    usage: "[joueur]"
+    permission: everyone     # everyone ou op (par défaut : op)
+    aliases: [salut, hello]
+```
+
+## La classe principale
+
+```csharp
+namespace MonPlugin;
+
+public sealed class Main : Plugin
+{
+    public override void OnEnable()
+    {
+        Log("Démarré !");
+        Events.PlayerJoin += player => player.SendMessage("§aBienvenue " + player.Name);
+    }
+
+    public override void OnDisable()
+    {
+        // sauvegarder ses données ici
+    }
+
+    // Appelé pour les commandes déclarées dans plugin.yml. false = affiche l'usage.
+    public override bool OnCommand(CommandSender sender, string command, string[] args)
+    {
+        if (command == "bonjour")
+        {
+            sender.Reply(Config.GetString("message", "Bonjour !"));
+            return true;
+        }
+        return false;
+    }
+}
+```
+
+Ces `using` sont automatiques : `System`, `System.Collections.Generic`, `System.IO`, `System.Linq`,
+`System.Threading.Tasks`, `Bedrokia.Server`, `Bedrokia.Server.Commands`, `Bedrokia.Server.Game`,
+`Bedrokia.Server.Network`, `Bedrokia.Server.Plugins`.
+
+Tout le code des plugins s'exécute sur le **thread du jeu** (20 ticks par seconde) : pas besoin de verrous, mais il ne
+faut pas bloquer (pas de `Thread.Sleep`, pas de requête réseau synchrone).
+
+## Ce que fournit `Plugin`
+
+| Membre | Rôle |
+|---|---|
+| `Name`, `Version`, `Info` | infos de `plugin.yml` (`Info.Author`, `Info.Commands`...) |
+| `Server` | le serveur : joueurs, monde, commandes |
+| `Events` | les événements (voir plus bas) |
+| `Config` | `config.yml` du dossier de données |
+| `DataFolder` | `plugin_data/<Name>/` pour ses fichiers |
+| `SaveResource(nom, remplacer)` | copie un fichier de `resources/` vers le dossier de données |
+| `ReloadConfig()` | relit `config.yml` |
+| `Log`, `LogWarning`, `LogError` | écrit dans la console, préfixé du nom du plugin |
+| `RegisterCommand(nom, description, usage, opSeulement, action)` | ajoute une commande depuis le code |
+
+## Config
+
+`resources/config.yml` est copié dans `plugin_data/MonPlugin/config.yml` au premier lancement ; ensuite, le
+propriétaire du serveur le modifie librement. Lecture par chemin à points :
+
+```csharp
+var titre = Config.GetString("sidebar.title", "Mon serveur");
+var delai = Config.GetInt("staff.cooldown", 20);
+var actif = Config.GetBool("sidebar.enabled", true);
+var lignes = Config.GetList("sidebar.lines");   // List<string>
+Config.Set("stats.joins", 42);
+Config.Save();
+```
+
+## Événements
+
+S'abonner avec `+=` dans `OnEnable`. Les événements *annulables* ont `Cancelled` : à `true`, le serveur annule
+l'action (le bloc revient, le message n'est pas envoyé...).
+
+| Événement | Argument | Annulable |
+|---|---|---|
+| `PlayerJoin` | le joueur | non |
+| `PlayerQuit` | le joueur | non |
+| `PlayerMove` | le joueur (position ou rotation changée) | non |
+| `PlayerChat` | `PlayerChatEvent` : `Player`, `Message` (modifiable) | oui |
+| `BlockBreak` | `BlockEvent` : `Player`, `X`, `Y`, `Z`, `Block` | oui |
+| `BlockPlace` | `BlockEvent` | oui |
+| `ItemUse` | `ItemUseEvent` : `Player`, `Item`, position et `Block` cliqués, `Face` | oui |
+| `Tick` | numéro du tick (20 par seconde) | non |
+
+```csharp
+Events.BlockBreak += e =>
+{
+    if (e.Block.Name == "minecraft:diamond_ore" && e.Player.GameMode == GameMode.Creative)
+        e.Cancelled = true;
+};
+```
+
+Si un gestionnaire plante, l'erreur complète s'affiche **une fois** avec le nom du plugin et de l'événement ; les
+autres plugins et le serveur continuent.
+
+## Joueurs (`BedrockConnection`)
+
+| Membre | Rôle |
+|---|---|
+| `Name`, `Position` (x, y des yeux, z), `Yaw`, `Pitch`, `GameMode`, `IsOp` | état |
+| `SendMessage(texte)` | message dans le chat (codes couleur `§`) |
+| `SendTitle(titre, sousTitre, fadeIn, stay, fadeOut)` | grand titre à l'écran |
+| `SendActionBar(texte)` | texte au-dessus de la barre d'objets |
+| `SetSidebar(titre, lignes)` / `ClearSidebar()` | scoreboard sur le côté (15 lignes max) |
+| `AddEffect(effet, niveau, secondes, particules)` / `RemoveEffect(effet)` | effets (`BedrockConnection.Effects.Speed`, `JumpBoost`, `NightVision`...) |
+| `SetSpeed(vitesse)` | vitesse de marche (vanilla 0.1) |
+| `SetMotion(vx, vy, vz)` | pousse le joueur |
+| `GiveItem(stack)` | donne un objet (le surplus tombe au sol) |
+| `HeldItem`, `ArmourItem(0..3)` | objet en main, armure portée |
+| `Teleport(x, y, z)`, `Disconnect(raison)` | téléporte, expulse |
+
+## Serveur et monde
+
+| Membre | Rôle |
+|---|---|
+| `Server.Players` | joueurs connectés (filtrer avec `IsInGame`) |
+| `Server.BroadcastMessage(texte)` | message à tous |
+| `Server.World.GetBlock(x, y, z)` | bloc à une position |
+| `Server.SetBlockAndUpdate(x, y, z, bloc)` | pose un bloc et prévient les joueurs |
+| `Server.SpawnParticle(nom, x, y, z)` | particules (`minecraft:heart_particle`, `minecraft:villager_happy`, `minecraft:basic_flame_particle`...) |
+| `Server.StrikeLightning(x, y, z)` | éclair |
+| `Server.Explode(x, y, z, rayon)` | explosion |
+| `Server.DropItem(stack, x, y, z)` | objet au sol |
+| `Server.Schedule(ticks, action)` | lance une action plus tard |
+| `Server.Plugins.Get(nom)` | un autre plugin |
+| `Server.Config` | réglages de `server.properties` |
+
+## Objets personnalisés
+
+Sur une base vanilla, avec nom, description et brillance :
+
+```csharp
+var epee = Enchanting.With(ItemStack.Of("diamond_sword")!, [(9, 5)])     // 9 = tranchant
+    .WithName("§c§lÉpée du dragon", "§7Forgée dans le Nether");
+player.GiveItem(epee);
+
+if (player.HeldItem?.CustomName == "§c§lÉpée du dragon") { /* pouvoir spécial */ }
+```
+
+Les nouveaux blocs et objets avec leur propre texture (comme les add-ons) ne sont pas encore gérés.
+
+## Console au démarrage
+
+```
+[INFO] Loading 3 plugin(s) from plugins/...
+[ERROR] Plugin 'Cassé' could not be loaded: 1 compile error(s):
+    plugins\Cassé\src\Main.cs(12,9): error CS0103: The name 'joueur' does not exist in the current context
+[INFO]   [OK]     MagicItems v1.0.0 by Bedrokia (folder: MagicItems) - Bâton de foudre, bottes de vitesse et tremplins.
+[INFO]   [OK]     Showcase v1.0.0 by Bedrokia (folder: Showcase) - Titre de bienvenue, scoreboard et particules.
+[ERROR]   [FAILED] Cassé (see the error above)
+[WARN] Plugins: 2 loaded, 1 failed (3.4 s).
+```
+
+## Développer avec un IDE
+
+Pour l'autocomplétion, ajouter un `.csproj` à côté de `plugin.yml` qui référence `src/Bedrokia.Server` (voir
+[examples/plugins](https://github.com/Nexiumpvp2/bedrokia/tree/main/examples/plugins)). Le serveur l'ignore : il
+compile `src/` lui-même.
+
+## Exemples
+
+- **MagicItems** : bâton de foudre (clic droit = éclair), bottes de vitesse (Vitesse + Saut), tremplin (bloc qui
+  propulse). Commande `/magie`.
+- **Showcase** : titre de bienvenue, scoreboard en direct (joueurs, heure, position...), spirale de flammes `/fx`,
+  annonces `/annonce`, mots mis en valeur dans le chat. Tout est réglable dans son `config.yml`.

@@ -1,0 +1,22 @@
+# systemd unit for Bedrokia. Install: see README.md, section "Déployer sur un serveur Linux".
+[Unit]
+Description=Bedrokia Minecraft Bedrock server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=bedrokia
+Group=bedrokia
+WorkingDirectory=/opt/bedrokia
+ExecStart=/opt/bedrokia/bedrokia
+# systemctl stop sends SIGTERM: Bedrokia disconnects players and exits cleanly.
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/bedrokia
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

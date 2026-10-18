@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+permissions:
+  contents: write # release job: create the GitHub release
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - run: dotnet test Bedrokia.slnx -c Release
+
+  publish:
+    needs: test
+    strategy:
+      matrix:
+        rid: [linux-x64, win-x64]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - run: dotnet publish src/Bedrokia.Cli -c Release -r ${{ matrix.rid }} --self-contained -p:PublishSingleFile=true -o out
+      - name: Name the binary after its platform
+        run: |
+          if [ -f out/bedrokia.exe ]; then mv out/bedrokia.exe out/bedrokia-${{ matrix.rid }}.exe; else mv out/bedrokia out/bedrokia-${{ matrix.rid }}; fi
+          rm -f out/*.pdb
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bedrokia-${{ matrix.rid }}
+          path: out
+
+  release:
+    # Pushing a tag such as v0.3.0 publishes the binaries, the Pterodactyl egg and the example plugins.
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Zip the example plugins
+        run: cd examples && zip -r ../artifacts/example-plugins.zip plugins -x '*.csproj' '*/bin/*' '*/obj/*'
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            artifacts/bedrokia-linux-x64
+            artifacts/bedrokia-win-x64.exe
+            artifacts/example-plugins.zip
+            deploy/pterodactyl/egg-bedrokia.json
