@@ -13,6 +13,7 @@ using Bedrokia.Protocol;
 using Bedrokia.Server.Core;
 using Bedrokia.Server.Entities;
 using Bedrokia.Server.Game;
+using Bedrokia.Server.Game.Custom.Items;
 
 namespace Bedrokia.Server.Network;
 
@@ -64,20 +65,28 @@ public sealed partial class BedrockConnection
     }
 
     // Vanilla defence points of the worn armour (helmet, chestplate, leggings, boots).
-    private int ArmourPoints() => Inventory.Armour.Slots.Sum(piece => piece?.Type.Name["minecraft:".Length..].Split('_') switch
+    private int ArmourPoints() => Inventory.Armour.Slots.Sum(piece =>
     {
-        [var material, var part] => (material, part) switch
+        if (piece is null) return 0;
+        if (CustomItemRegistry.Get(piece.Type.Name)?.GetComponent<ArmorItemComponent>() is { } customArmor)
+            return customArmor.Protection;
+        if (!piece.Type.Name.StartsWith("minecraft:"))
+            return 0;
+        return piece.Type.Name["minecraft:".Length..].Split('_') switch
         {
-            ("leather", "helmet") => 1, ("leather", "chestplate") => 3, ("leather", "leggings") => 2, ("leather", "boots") => 1,
-            ("chainmail", "helmet") => 2, ("chainmail", "chestplate") => 5, ("chainmail", "leggings") => 4, ("chainmail", "boots") => 1,
-            ("iron", "helmet") => 2, ("iron", "chestplate") => 6, ("iron", "leggings") => 5, ("iron", "boots") => 2,
-            ("golden", "helmet") => 2, ("golden", "chestplate") => 5, ("golden", "leggings") => 3, ("golden", "boots") => 1,
-            ("diamond" or "netherite", "helmet") => 3, ("diamond" or "netherite", "chestplate") => 8,
-            ("diamond" or "netherite", "leggings") => 6, ("diamond" or "netherite", "boots") => 3,
-            ("turtle", "helmet") => 2,
+            [var material, var part] => (material, part) switch
+            {
+                ("leather", "helmet") => 1, ("leather", "chestplate") => 3, ("leather", "leggings") => 2, ("leather", "boots") => 1,
+                ("chainmail", "helmet") => 2, ("chainmail", "chestplate") => 5, ("chainmail", "leggings") => 4, ("chainmail", "boots") => 1,
+                ("iron", "helmet") => 2, ("iron", "chestplate") => 6, ("iron", "leggings") => 5, ("iron", "boots") => 2,
+                ("golden", "helmet") => 2, ("golden", "chestplate") => 5, ("golden", "leggings") => 3, ("golden", "boots") => 1,
+                ("diamond" or "netherite", "helmet") => 3, ("diamond" or "netherite", "chestplate") => 8,
+                ("diamond" or "netherite", "leggings") => 6, ("diamond" or "netherite", "boots") => 3,
+                ("turtle", "helmet") => 2,
+                _ => 0,
+            },
             _ => 0,
-        },
-        _ => 0,
+        };
     });
 
     private int ProtectionPoints() => Inventory.Armour.Slots.Sum(piece => Enchanting.Level(piece, "protection"));
@@ -218,13 +227,21 @@ public sealed partial class BedrockConnection
         ["tropical_fish"] = (1, 0.2f), ["pufferfish"] = (1, 0.2f), ["spider_eye"] = (2, 3.2f), ["poisonous_potato"] = (2, 1.2f),
     };
 
-    private static (int Food, float Saturation)? FoodValue(ItemStack? stack) =>
-        stack is not null && Foods.TryGetValue(stack.Type.Name["minecraft:".Length..], out var value) ? value : null;
+    private static (int Food, float Saturation)? FoodValue(ItemStack? stack)
+    {
+        if (stack is null) return null;
+        if (CustomItemRegistry.Get(stack.Type.Name)?.GetComponent<FoodItemComponent>() is { } customFood)
+            return (customFood.Nutrition, customFood.SaturationModifier);
+        if (stack.Type.Name.StartsWith("minecraft:") && Foods.TryGetValue(stack.Type.Name["minecraft:".Length..], out var value))
+            return value;
+        return null;
+    }
 
     /// <summary>Right click in the air: starts eating if the held item is food and the player can eat.</summary>
     private void StartEating()
     {
-        var always = Inventory.Held?.Type.Name is "minecraft:golden_apple" or "minecraft:enchanted_golden_apple";
+        var always = Inventory.Held?.Type.Name is "minecraft:golden_apple" or "minecraft:enchanted_golden_apple"
+            || (Inventory.Held is not null && CustomItemRegistry.Get(Inventory.Held.Type.Name)?.GetComponent<FoodItemComponent>()?.CanAlwaysEat == true);
         if (FoodValue(Inventory.Held) is not null && (Food < MaxFood || always || GameMode == GameMode.Creative) && _eatingSince < 0)
             _eatingSince = _server.CurrentTick;
     }
@@ -279,6 +296,8 @@ public sealed partial class BedrockConnection
     /// <summary>Spawn egg used on a block: the mob appears on the clicked face (egg consumed in survival).</summary>
     private void UseSpawnEgg(ItemStack egg, int x, int y, int z, int face)
     {
+        if (!egg.Type.Name.StartsWith("minecraft:") || !egg.Type.Name.EndsWith("_spawn_egg"))
+            return;
         var mobName = egg.Type.Name["minecraft:".Length..^"_spawn_egg".Length];
         if (!MobKind.ById.TryGetValue(mobName, out var kind))
         {
@@ -332,6 +351,8 @@ public sealed partial class BedrockConnection
     private static float AttackDamage(ItemStack? held)
     {
         var name = held?.Type.Name ?? "";
+        if (CustomItemRegistry.Get(name)?.GetProperty<DamageItemProperty>() is { } customDamage)
+            return customDamage.Damage;
         var tier = name.Split(':')[^1].Split('_')[0] switch
         {
             "wooden" or "golden" => 0,

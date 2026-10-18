@@ -33,25 +33,54 @@ public static class PacketId
     public const uint MovePlayer = 19;
     public const uint UpdateBlock = 21;
     public const uint LevelEvent = 25;
-    public const uint InventoryTransaction = 30;
+    public const uint ActorEvent = 27;
     public const uint UpdateAttributes = 29;
+    public const uint InventoryTransaction = 30;
+    public const uint MobEquipment = 31;
+    public const uint Interact = 33;
+    public const uint BlockPickRequest = 34;
+    public const uint PlayerAction = 36;
     public const uint SetActorData = 39;
+    public const uint Animate = 44;
+    public const uint Respawn = 45;
+    public const uint ContainerClose = 47;
+    public const uint AdventureSettings = 55;
+    public const uint BlockActorData = 56;
+    public const uint LevelChunk = 58;
     public const uint SetPlayerGameType = 62;
     public const uint PlayerList = 63;
-    public const uint LevelChunk = 58;
     public const uint RequestChunkRadius = 69;
     public const uint ChunkRadiusUpdated = 70;
+    public const uint BossEvent = 74;
+    public const uint CommandRequest = 77;
+    public const uint PlayerSkin = 93;
+    public const uint BookEdit = 97;
+    public const uint NPCRequest = 98;
+    public const uint ModalFormResponse = 101;
     public const uint SetLocalPlayerAsInitialised = 113;
     public const uint NetworkChunkPublisherUpdate = 121;
     public const uint BiomeDefinitionList = 122;
+    public const uint LecternUpdate = 125;
     public const uint ClientCacheStatus = 129;
+    public const uint ClientCacheBlobStatus = 135;
+    public const uint Emote = 138;
+    public const uint AnvilDamage = 141;
     public const uint NetworkSettings = 143;
     public const uint PlayerAuthInput = 144;
     public const uint CreativeContent = 145;
+    public const uint ItemStackRequest = 147;
+    public const uint EmoteList = 152;
     public const uint ItemRegistry = 162;
+    public const uint FilterText = 163;
+    public const uint SubChunkRequest = 175;
+    public const uint RequestAbility = 184;
     public const uint RequestNetworkSettings = 193;
+    public const uint SetPlayerInventoryOptions = 307;
+    public const uint ServerBoundLoadingScreen = 312;
     public const uint JigsawStructureData = 313;
+    public const uint ServerBoundDiagnostics = 315;
     public const uint VoxelShapes = 337;
+    public const uint SetPlayerFurnaceOptions = 351;
 }
 
 public static class ProtocolInfo
@@ -237,6 +266,9 @@ public static class Packets
     }
 
     /// <summary>Values that change per player or world; everything else uses fixed defaults.</summary>
+    public sealed record CustomBlockDefinition(string Name, OrderedDictionary<string, object> Nbt);
+
+    /// <summary>Values that change per player or world; everything else uses fixed defaults.</summary>
     public sealed record StartGameData(
         long EntityId,
         int GameMode,
@@ -245,62 +277,76 @@ public static class Packets
         string WorldName,
         long Time,
         int Difficulty = 2,
-        bool DaylightCycle = true);
+        bool DaylightCycle = true,
+        IReadOnlyList<CustomBlockDefinition>? CustomBlocks = null);
 
     /// <summary>Field order from gophertunnel (MIT) packet/start_game.go at protocol 2193.</summary>
-    public static byte[] StartGame(StartGameData d) => Begin(PacketId.StartGame)
-        .VarInt64(d.EntityId) // unique id
-        .VarUInt64((ulong)d.EntityId) // runtime id
-        .VarInt32(d.GameMode)
-        .Vec3(d.X, d.Y, d.Z)
-        .Float32(0).Float32(0) // pitch, yaw
-        .Int64(0) // seed
-        .Int16(0).String("") // spawn biome type, user defined biome
-        .VarInt32(0) // dimension: overworld
-        .VarInt32(1) // generator: infinite
-        .VarInt32(d.GameMode) // world game mode
-        .Bool(false) // hardcore
-        .VarInt32(d.Difficulty) // 0 peaceful .. 3 hard
-        .BlockPos(d.SpawnX, d.SpawnY, d.SpawnZ)
-        .Bool(true) // achievements disabled
-        .VarInt32(0).Bool(false).Bool(false) // editor world type, created in / exported from editor
-        .VarInt32(0) // day cycle lock time
-        .VarUInt32(0).Bool(false).String("") // education offer, features, product id
-        .Float32(0).Float32(0) // rain, lightning
-        .Bool(false) // confirmed platform locked content
-        .Bool(true).Bool(true) // multiplayer, LAN broadcast
-        .VarInt32(0).VarInt32(0) // XBL / platform broadcast mode
-        .Bool(true) // commands enabled
-        .Bool(false) // texture pack required
-        // Game rules (name, editable, type 1 = bool, value). Without recipesunlock=false the client treats every
-        // recipe as locked and refuses to craft.
-        .VarUInt32(4)
-        .String("dodaylightcycle").Bool(false).VarUInt32(1).Bool(d.DaylightCycle)
-        .String("showcoordinates").Bool(false).VarUInt32(1).Bool(true)
-        .String("recipesunlock").Bool(false).VarUInt32(1).Bool(false)
-        .String("dolimitedcrafting").Bool(false).VarUInt32(1).Bool(false)
-        .UInt32(0) // experiments
-        .Bool(false).Bool(false).Bool(false) // experiments toggled, bonus chest, start with map
-        .Byte(1) // player permissions: member
-        .Int32(4) // server chunk tick radius
-        .Bool(false).Bool(false).Bool(false) // locked behaviour pack, locked texture pack, from locked template
-        .Bool(false).Bool(false).Bool(false) // MSA gamertags only, from world template, template settings locked
-        .Bool(false).Bool(false).Bool(false).Bool(false) // only v1 villagers, persona, custom skins disabled, emote chat muted
-        .String("*") // base game version
-        .Int32(0).Int32(0) // limited world width, depth
-        .Bool(false) // new nether
-        .String("").String("") // education shared resource URI
-        .Bool(false) // force experimental gameplay: absent
-        .Byte(0) // chat restriction level
-        .Bool(false) // disable player interactions
-        .VarInt32(0).Bool(false) // editor connection policy, anonymous block drops
-        .String("").String(d.WorldName).String("") // level id, world name, template content identity
-        .Bool(false) // trial
-        .VarInt32(0).Bool(false) // movement: rewind history size, server authoritative block breaking
-        .Int64(d.Time)
-        .VarInt32(0) // enchantment seed
-        .VarUInt32(0) // custom blocks
-        .String(Guid.NewGuid().ToString()) // multiplayer correlation id
+    public static byte[] StartGame(StartGameData d)
+    {
+        var w = Begin(PacketId.StartGame)
+            .VarInt64(d.EntityId) // unique id
+            .VarUInt64((ulong)d.EntityId) // runtime id
+            .VarInt32(d.GameMode)
+            .Vec3(d.X, d.Y, d.Z)
+            .Float32(0).Float32(0) // pitch, yaw
+            .Int64(0) // seed
+            .Int16(0).String("") // spawn biome type, user defined biome
+            .VarInt32(0) // dimension: overworld
+            .VarInt32(1) // generator: infinite
+            .VarInt32(d.GameMode) // world game mode
+            .Bool(false) // hardcore
+            .VarInt32(d.Difficulty) // 0 peaceful .. 3 hard
+            .BlockPos(d.SpawnX, d.SpawnY, d.SpawnZ)
+            .Bool(true) // achievements disabled
+            .VarInt32(0).Bool(false).Bool(false) // editor world type, created in / exported from editor
+            .VarInt32(0) // day cycle lock time
+            .VarUInt32(0).Bool(false).String("") // education offer, features, product id
+            .Float32(0).Float32(0) // rain, lightning
+            .Bool(false) // confirmed platform locked content
+            .Bool(true).Bool(true) // multiplayer, LAN broadcast
+            .VarInt32(0).VarInt32(0) // XBL / platform broadcast mode
+            .Bool(true) // commands enabled
+            .Bool(false) // texture pack required
+            // Game rules (name, editable, type 1 = bool, value). Without recipesunlock=false the client treats every
+            // recipe as locked and refuses to craft.
+            .VarUInt32(4)
+            .String("dodaylightcycle").Bool(false).VarUInt32(1).Bool(d.DaylightCycle)
+            .String("showcoordinates").Bool(false).VarUInt32(1).Bool(true)
+            .String("recipesunlock").Bool(false).VarUInt32(1).Bool(false)
+            .String("dolimitedcrafting").Bool(false).VarUInt32(1).Bool(false)
+            .UInt32(0) // experiments
+            .Bool(false).Bool(false).Bool(false) // experiments toggled, bonus chest, start with map
+            .Byte(1) // player permissions: member
+            .Int32(4) // server chunk tick radius
+            .Bool(false).Bool(false).Bool(false) // locked behaviour pack, locked texture pack, from locked template
+            .Bool(false).Bool(false).Bool(false) // MSA gamertags only, from world template, template settings locked
+            .Bool(false).Bool(false).Bool(false).Bool(false) // only v1 villagers, persona, custom skins disabled, emote chat muted
+            .String("*") // base game version
+            .Int32(0).Int32(0) // limited world width, depth
+            .Bool(false) // new nether
+            .String("").String("") // education shared resource URI
+            .Bool(false) // force experimental gameplay: absent
+            .Byte(0) // chat restriction level
+            .Bool(false) // disable player interactions
+            .VarInt32(0).Bool(false) // editor connection policy, anonymous block drops
+            .String("").String(d.WorldName).String("") // level id, world name, template content identity
+            .Bool(false) // trial
+            .VarInt32(0).Bool(false) // movement: rewind history size, server authoritative block breaking
+            .Int64(d.Time)
+            .VarInt32(0); // enchantment seed
+
+        if (d.CustomBlocks is { Count: > 0 } customBlocks)
+        {
+            w.VarUInt32((uint)customBlocks.Count);
+            foreach (var b in customBlocks)
+                w.String(b.Name).Bytes(Nbt.Write(b.Nbt, network: true));
+        }
+        else
+        {
+            w.VarUInt32(0);
+        }
+
+        return w.String(Guid.NewGuid().ToString()) // multiplayer correlation id
         .Bool(true) // server authoritative inventory (ItemStackRequest)
         .String(ProtocolInfo.GameVersion)
         .Bytes(NbtWriter.EmptyNetworkCompound()) // property data
@@ -311,5 +357,12 @@ public static class Packets
         .Bool(false) // server authoritative sound
         .Bool(false) // server join information: absent
         .String("").String("").String("").String("") // server, scenario, world, owner ids
+        .ToArray();
+    }
+
+    public static byte[] Emote(ulong runtimeId, string emoteId, byte flags) => Begin(PacketId.Emote)
+        .VarUInt64(runtimeId)
+        .String(emoteId)
+        .Byte(flags)
         .ToArray();
 }

@@ -8,6 +8,7 @@
 // │  Bedrokia - Minecraft: Bedrock Edition server software            │
 // │  Licensed under the Apache License 2.0 - see LICENSE              │
 // └───────────────────────────────────────────────────────────────────┘
+using Bedrokia.Server.Game.Custom.Items;
 
 namespace Bedrokia.Server.Game;
 
@@ -46,6 +47,8 @@ public static class Smelting
     /// <summary>What <paramref name="item"/> becomes in this kind of furnace (Furnace, BlastFurnace, Smoker), or null.</summary>
     public static string? Result(string furnace, ItemStack item)
     {
+        if (!item.Type.Name.StartsWith("minecraft:"))
+            return null;
         var name = item.Type.Name["minecraft:".Length..];
         if (name.EndsWith("_log") || name.EndsWith("_wood") || name.EndsWith("_stem") || name.EndsWith("_hyphae"))
             return furnace == "Furnace" ? "charcoal" : null;
@@ -65,6 +68,10 @@ public static class Smelting
     /// <summary>Burn time of a fuel in ticks, 0 if it does not burn.</summary>
     public static int BurnTicks(ItemStack item)
     {
+        if (CustomItemRegistry.Get(item.Type.Name)?.GetComponent<FuelItemComponent>() is { } fuel)
+            return (int)(fuel.DurationSeconds * 20);
+        if (!item.Type.Name.StartsWith("minecraft:"))
+            return 0;
         var name = item.Type.Name["minecraft:".Length..];
         return name switch
         {
