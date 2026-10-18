@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Bedrokia.Cli/Bedrokia.Cli.csproj" />
+    <Project Path="src/Bedrokia.Protocol/Bedrokia.Protocol.csproj" />
+    <Project Path="src/Bedrokia.Server/Bedrokia.Server.csproj" />
+    <Project Path="src/Bedrokia.Transport.NetherNet/Bedrokia.Transport.NetherNet.csproj" />
+  </Folder>
+  <Folder Name="/examples/">
+    <Project Path="examples/plugins/MagicItems/MagicItems.csproj" />
+    <Project Path="examples/plugins/Showcase/Showcase.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Bedrokia.Tests/Bedrokia.Tests.csproj" />
+  </Folder>
+</Solution>

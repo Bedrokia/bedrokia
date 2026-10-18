@@ -1,0 +1,23 @@
+TestResults/
+bin/
+obj/
+out/
+.vs/
+.idea/
+*.user
+
+# Data the server creates when it is started from the repository root
+/config/
+/data/
+/logs/
+/players/
+/plugins/
+/plugin_data/
+/resource_packs/
+/worlds/
+/server.properties
+/server.log
+/ops.txt
+/white-list.txt
+/banned-players.txt
+*.pem

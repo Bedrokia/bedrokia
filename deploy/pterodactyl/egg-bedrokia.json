@@ -1,0 +1,112 @@
+{
+    "_comment": "Pterodactyl egg for Bedrokia - Minecraft: Bedrock Edition server written in C# (https://github.com/Nexiumpvp2/bedrokia)",
+    "meta": {
+        "version": "PTDL_v2",
+        "update_url": null
+    },
+    "exported_at": "2026-10-18T00:00:00+00:00",
+    "name": "Bedrokia",
+    "author": "nexiumpvp2@users.noreply.github.com",
+    "description": "Bedrokia: a Minecraft Bedrock Edition server engine written in C# / .NET 10, mostly by AI. Supports plugins (C# source, no compilation needed), resource packs and imported Bedrock worlds. Players join through NetherNet (WebRTC): the server needs its main port (TCP + UDP) and a range of UDP ports, see the WEBRTC_PORTS variable.",
+    "features": null,
+    "docker_images": {
+        "Debian": "ghcr.io/parkervcp/yolks:debian"
+    },
+    "file_denylist": [],
+    "startup": "./bedrokia",
+    "config": {
+        "files": "{\r\n    \"server.properties\": {\r\n        \"parser\": \"properties\",\r\n        \"find\": {\r\n            \"server-port\": \"{{server.build.default.port}}\",\r\n            \"max-players\": \"{{server.build.env.MAX_PLAYERS}}\",\r\n            \"motd\": \"{{server.build.env.MOTD}}\",\r\n            \"gamemode\": \"{{server.build.env.GAMEMODE}}\",\r\n            \"difficulty\": \"{{server.build.env.DIFFICULTY}}\",\r\n            \"level-name\": \"{{server.build.env.LEVEL_NAME}}\",\r\n            \"xbox-auth\": \"{{server.build.env.XBOX_AUTH}}\",\r\n            \"webrtc-ports\": \"{{server.build.env.WEBRTC_PORTS}}\"\r\n        }\r\n    }\r\n}",
+        "startup": "{\r\n    \"done\": \"Listening on port\"\r\n}",
+        "logs": "{}",
+        "stop": "stop"
+    },
+    "scripts": {
+        "installation": {
+            "script": "#!/bin/bash\r\n# Bedrokia install script: downloads the Linux server from the GitHub releases.\r\napt update\r\napt install -y curl ca-certificates\r\n\r\nmkdir -p /mnt/server\r\ncd /mnt/server\r\n\r\nREPO=\"Nexiumpvp2/bedrokia\"\r\nif [ -z \"${VERSION}\" ] || [ \"${VERSION}\" == \"latest\" ]; then\r\n    URL=\"https://github.com/${REPO}/releases/latest/download/bedrokia-linux-x64\"\r\nelse\r\n    URL=\"https://github.com/${REPO}/releases/download/${VERSION}/bedrokia-linux-x64\"\r\nfi\r\n\r\necho \"Downloading ${URL}\"\r\ncurl -fsSL -o bedrokia \"${URL}\" || { echo \"Download failed\"; exit 1; }\r\nchmod +x bedrokia\r\n\r\n# The panel fills these keys at each start; the server adds the other ones with comments.\r\nif [ ! -f server.properties ]; then\r\n    printf 'server-port=%s\nmax-players=%s\nmotd=%s\nwebrtc-ports=%s\n' \"${SERVER_PORT}\" \"${MAX_PLAYERS}\" \"${MOTD}\" \"${WEBRTC_PORTS}\" > server.properties\r\nfi\r\nmkdir -p plugins plugin_data resource_packs worlds players\r\necho \"Bedrokia installed.\"",
+            "container": "ghcr.io/parkervcp/installers:debian",
+            "entrypoint": "bash"
+        }
+    },
+    "variables": [
+        {
+            "name": "Version",
+            "description": "Release to install: latest, or a tag such as v0.3.0.",
+            "env_variable": "VERSION",
+            "default_value": "latest",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:20",
+            "field_type": "text"
+        },
+        {
+            "name": "Server name (MOTD)",
+            "description": "Name shown in the server list.",
+            "env_variable": "MOTD",
+            "default_value": "Bedrokia Server",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:64",
+            "field_type": "text"
+        },
+        {
+            "name": "Max players",
+            "description": "Maximum number of players. With WEBRTC_PORTS=auto the server also needs this many UDP ports + 5 after the main port.",
+            "env_variable": "MAX_PLAYERS",
+            "default_value": "20",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|integer|between:1,500",
+            "field_type": "text"
+        },
+        {
+            "name": "Game mode",
+            "description": "survival, creative or adventure (for new players).",
+            "env_variable": "GAMEMODE",
+            "default_value": "survival",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|in:survival,creative,adventure",
+            "field_type": "text"
+        },
+        {
+            "name": "Difficulty",
+            "description": "peaceful, easy, normal or hard.",
+            "env_variable": "DIFFICULTY",
+            "default_value": "normal",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|in:peaceful,easy,normal,hard",
+            "field_type": "text"
+        },
+        {
+            "name": "World name",
+            "description": "World folder inside worlds/.",
+            "env_variable": "LEVEL_NAME",
+            "default_value": "world",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:64",
+            "field_type": "text"
+        },
+        {
+            "name": "Xbox Live authentication",
+            "description": "on: players are verified with Xbox Live. off: anyone can join under any name.",
+            "env_variable": "XBOX_AUTH",
+            "default_value": "on",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|in:on,off",
+            "field_type": "text"
+        },
+        {
+            "name": "WebRTC UDP ports",
+            "description": "UDP ports used by players (NetherNet). auto = the main port and the following ones (max players + 5). Or a range like 25600-25630 matching extra allocations of this server.",
+            "env_variable": "WEBRTC_PORTS",
+            "default_value": "auto",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:20",
+            "field_type": "text"
+        }
+    ]
+}

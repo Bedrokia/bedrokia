@@ -1,0 +1,13 @@
+# Bedrokia plugin description (same idea as Bukkit/PocketMine-MP plugin.yml)
+name: MagicItems
+version: 1.0.0
+main: MagicItems.MagicItemsPlugin
+api: 1.0.0
+author: Bedrokia
+description: Bâton de foudre, bottes de vitesse et tremplins.
+commands:
+  magie:
+    description: Donne un objet magique.
+    usage: "<foudre|bottes|tremplin>"
+    permission: op
+    aliases: [magic]

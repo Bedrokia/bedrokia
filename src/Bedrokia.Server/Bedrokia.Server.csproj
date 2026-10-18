@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- Source plugins: Roslyn reads the server assemblies from memory (single-file builds have no files). -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Bedrokia.Protocol\Bedrokia.Protocol.csproj" />
+    <ProjectReference Include="..\Bedrokia.Transport.NetherNet\Bedrokia.Transport.NetherNet.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Bedrokia.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Vanilla data from Dragonfly (MIT), see THIRD-PARTY-NOTICES.md. -->
+    <EmbeddedResource Include="Data\*.nbt;Data\*.tsv;Data\*.json" LogicalName="%(Filename)%(Extension)" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.14.0" />
+    <PackageReference Include="YamlDotNet" Version="16.3.0" />
+  </ItemGroup>
+</Project>
