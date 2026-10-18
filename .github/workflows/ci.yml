@@ -61,3 +61,18 @@ jobs:
             artifacts/bedrokia.exe
             artifacts/example-plugins.zip
             deploy/pterodactyl/egg-bedrokia.json
+      - name: Announce the release on Discord
+        run: node .github/discord/notify.mjs release
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+
+  discord-failure:
+    # A broken main branch or tag shows up in Discord right away.
+    if: failure() && github.event_name == 'push'
+    needs: [test, publish, release]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: node .github/discord/notify.mjs failure
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
