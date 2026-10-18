@@ -1,0 +1,12 @@
+name: Ping
+version: 1.0.0
+main: Ping.PingPlugin
+api: 1.0.0
+author: Bedrokia
+description: Exemple de commande /ping avec gestion des arguments et configuration.
+commands:
+  ping:
+    description: Repond avec pong et affiche des informations de connexion.
+    usage: "[joueur]"
+    permission: everyone
+    aliases: [pong]

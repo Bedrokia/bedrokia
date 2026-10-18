@@ -645,7 +645,7 @@ public sealed partial class BedrokiaServer
                 target.Send([.. packets]);
                 if (remaining > 0)
                     DropItem(template.Split(remaining), target.Position.X, target.Position.Y - 1, target.Position.Z);
-                sender.Reply($"Gave {amount} {template.Type.Name["minecraft:".Length..]} to {target.Name}.");
+                sender.Reply($"Gave {amount} {(template.Type.Name.StartsWith("minecraft:") ? template.Type.Name["minecraft:".Length..] : template.Type.Name)} to {target.Name}.");
             }
         });
         Add("clear", "Empties a player's inventory.", "[player]", true, (sender, args) =>
@@ -823,7 +823,7 @@ public sealed partial class BedrokiaServer
             var level = args.Length == 2 ? Int(args[1], 1, enchant.MaxLevel) : 1;
             
             // Vérifier si l'enchantement peut être appliqué à cet item
-            var itemName = held.Type.Name["minecraft:".Length..];
+            var itemName = held.Type.Name.StartsWith("minecraft:") ? held.Type.Name["minecraft:".Length..] : held.Type.Name;
             if (!enchant.Fits(itemName))
             {
                 sender.Reply($"§c{enchant.Name} cannot be applied to {itemName}.");

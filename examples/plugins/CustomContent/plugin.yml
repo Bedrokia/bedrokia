@@ -1,0 +1,6 @@
+name: CustomContent
+version: 1.0.0
+main: CustomContent.CustomContentPlugin
+api: 1.0.0
+author: Bedrokia
+description: Exemple complet d'enregistrement de blocs et items personnalises.

@@ -1,0 +1,6 @@
+name: Listeners
+version: 1.0.0
+main: Listeners.ListenersPlugin
+api: 1.0.0
+author: Bedrokia
+description: Exemple de gestion des evenements avec des listeners separes.

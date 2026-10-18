@@ -70,8 +70,14 @@ public static class DropRules
     /// <summary>Items dropped when <paramref name="block"/> is broken in survival with <paramref name="tool"/> held.</summary>
     public static List<ItemStack> Drops(BlockType block, ItemStack? tool, Random random)
     {
-        var name = block.Name["minecraft:".Length..];
         var drops = new List<ItemStack>();
+        if (!block.Name.StartsWith("minecraft:"))
+        {
+            if (ItemStack.Of(block.Name, 1) is { } customDrop)
+                drops.Add(customDrop);
+            return drops;
+        }
+        var name = block.Name["minecraft:".Length..];
 
         if (PickaxeTier.TryGetValue(name, out var tier) && PickaxeLevel(tool) < tier)
             return drops; // wrong or no tool: vanilla drops nothing
@@ -126,10 +132,10 @@ public static class DropRules
     /// <remarks>ponytail: no enchantments, effects, underwater or airborne slowdowns.</remarks>
     public static int BreakTicks(BlockType block, ItemStack? tool)
     {
-        var hardness = Hardness.GetValueOrDefault(block.Name, 1f);
+        var hardness = Hardness.GetValueOrDefault(block.Name, 1.5f);
         if (hardness <= 0)
             return 0;
-        var name = block.Name["minecraft:".Length..];
+        var name = block.Name.StartsWith("minecraft:") ? block.Name["minecraft:".Length..] : block.Name;
         var canHarvest = !PickaxeTier.TryGetValue(name, out var tier) || PickaxeLevel(tool) >= tier;
         var speed = ToolKind(tool) == EffectiveTool(name) && ToolKind(tool) != "" && canHarvest ? ToolSpeed(tool) : 1.0;
         if (speed > 1 && Enchanting.Level(tool, "efficiency") is var efficiency and > 0)

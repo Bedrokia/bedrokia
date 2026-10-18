@@ -98,7 +98,7 @@ public sealed partial class BedrokiaServer
     // furnace <-> lit_furnace (same facing), and the same for blast furnaces and smokers.
     private void SetLit(int x, int y, int z, bool lit)
     {
-        if (World.GetBlock(x, y, z) is not { } block)
+        if (World.GetBlock(x, y, z) is not { } block || !block.Name.StartsWith("minecraft:"))
             return;
         var name = block.Name["minecraft:".Length..];
         var target = lit ? (name.StartsWith("lit_") ? null : "lit_" + name) : (name.StartsWith("lit_") ? name[4..] : null);

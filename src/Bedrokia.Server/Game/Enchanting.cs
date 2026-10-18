@@ -10,6 +10,7 @@
 // └───────────────────────────────────────────────────────────────────┘
 
 using Bedrokia.Protocol;
+using Bedrokia.Server.Game.Custom.Items;
 
 namespace Bedrokia.Server.Game;
 
@@ -131,6 +132,10 @@ public static class Enchanting
     /// <summary>Material enchantability (Dragonfly EnchantmentValue); 0 = not enchantable at a table.</summary>
     public static int Enchantability(ItemStack stack)
     {
+        if (CustomItemRegistry.Get(stack.Type.Name)?.GetComponent<EnchantableItemComponent>() is { } customEnch)
+            return customEnch.Value;
+        if (!stack.Type.Name.StartsWith("minecraft:"))
+            return 0;
         var name = stack.Type.Name["minecraft:".Length..];
         if (name == "book")
             return 1;
@@ -153,7 +158,8 @@ public static class Enchanting
         var random = new Random(seed);
         var baseCost = random.Next(8) + 1 + (bookshelves >> 1) + random.Next(bookshelves + 1);
         int[] costs = [Math.Max(baseCost / 3, 1), baseCost * 2 / 3 + 1, Math.Max(baseCost, bookshelves * 2)];
-        var options = costs.Select(c => Pick(random, stack.Type.Name["minecraft:".Length..], value, c)).ToArray();
+        var targetName = stack.Type.Name.StartsWith("minecraft:") ? stack.Type.Name["minecraft:".Length..] : stack.Type.Name;
+        var options = costs.Select(c => Pick(random, targetName, value, c)).ToArray();
         return options.All(o => o.Count == 0) ? null : (costs, options);
     }
 

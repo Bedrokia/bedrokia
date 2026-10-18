@@ -173,6 +173,18 @@ public static class Blocks
         return ByKey(key) ?? throw new KeyNotFoundException($"Unknown block state {key}.");
     }
 
+    public static BlockType RegisterCustom(string name, OrderedDictionary<string, object> states)
+    {
+        var block = new BlockType((ushort)All.Count, name, states);
+        if (ByKeyMap.TryGetValue(block.Key, out var existing))
+            return existing;
+        All.Add(block);
+        ByKeyMap[block.Key] = block;
+        ByNetworkIdMap.TryAdd(block.NetworkId, block);
+        FirstByName.TryAdd(name, block);
+        return block;
+    }
+
     private static void Register(string name, OrderedDictionary<string, object> states)
     {
         var block = new BlockType((ushort)All.Count, name, states);
