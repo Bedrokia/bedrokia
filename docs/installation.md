@@ -10,8 +10,8 @@ Bedrokia est livré en **exécutable unique** : rien à installer (pas de .NET, 
 
 Sur la page des [releases](https://github.com/Nexiumpvp2/bedrokia/releases) :
 
-- `bedrokia-linux-x64` pour Linux (64 bits) ;
-- `bedrokia-win-x64.exe` pour Windows ;
+- `bedrokia` pour Linux (64 bits) ;
+- `bedrokia.exe` pour Windows ;
 - `egg-bedrokia.json` pour Pterodactyl ;
 - `example-plugins.zip`, les plugins d'exemple.
 
@@ -19,7 +19,7 @@ Sur la page des [releases](https://github.com/Nexiumpvp2/bedrokia/releases) :
 
 ```bash
 mkdir bedrokia && cd bedrokia
-curl -L -o bedrokia https://github.com/Nexiumpvp2/bedrokia/releases/latest/download/bedrokia-linux-x64
+curl -L -o bedrokia https://github.com/Nexiumpvp2/bedrokia/releases/latest/download/bedrokia
 chmod +x bedrokia
 ./bedrokia
 ```
@@ -58,7 +58,7 @@ journalctl -u bedrokia -f
 
 ## Windows
 
-Mettre `bedrokia-win-x64.exe` dans un dossier vide et le lancer. Autoriser le pare-feu (TCP et UDP).
+Mettre `bedrokia.exe` dans un dossier vide et le lancer. Autoriser le pare-feu (TCP et UDP).
 
 ## Docker
 
@@ -77,6 +77,14 @@ dotnet test Bedrokia.slnx
 dotnet publish src/Bedrokia.Cli -c Release -r linux-x64 --self-contained -p:PublishSingleFile=true -o out/linux-x64
 ```
 
-## Mettre à jour
+## Mettre à jour (comme PocketMine-MP)
 
-Arrêter le serveur, remplacer l'exécutable, relancer. Les mondes, joueurs et plugins sont gardés.
+Le serveur tient dans **un seul fichier**, comme le `PocketMine-MP.phar` :
+
+1. télécharger `bedrokia` (ou `bedrokia.exe`) depuis la [release voulue](https://github.com/Nexiumpvp2/bedrokia/releases) ;
+2. arrêter le serveur ;
+3. remplacer l'ancien fichier par le nouveau ;
+4. relancer.
+
+Rien d'autre à réinstaller : mondes, joueurs, plugins et réglages sont gardés. Pour revenir en arrière, remettre
+l'ancien fichier.

@@ -46,6 +46,13 @@ Les autres réglages se modifient dans `server.properties` depuis le gestionnair
 Envoyer le dossier du plugin (`plugin.yml`, `src/`, `resources/`) dans `plugins/` avec le gestionnaire de fichiers,
 puis redémarrer. Le panel affiche le bilan de chargement dans la console.
 
-## Mettre à jour
+## Mettre à jour / changer de version
 
-*Settings → Reinstall Server* télécharge la release choisie dans `VERSION`. Les mondes et plugins sont gardés.
+Comme PocketMine-MP, il suffit de **remplacer un fichier** :
+
+1. télécharger `bedrokia` depuis la [release voulue](https://github.com/Nexiumpvp2/bedrokia/releases) ;
+2. dans le panel : *Files* → supprimer l'ancien `bedrokia` → *Upload* le nouveau ;
+3. redémarrer.
+
+Pas besoin de réinstaller : l'egg remet le droit d'exécution au démarrage, et les mondes, joueurs, plugins et
+réglages sont gardés. (*Settings → Reinstall Server* marche aussi : il télécharge la version de `VERSION`.)

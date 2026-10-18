@@ -56,16 +56,19 @@ redstone, grottes et structures. Voir la [feuille de route](https://nexiumpvp2.g
 
 ## 🚀 Démarrage rapide
 
-1. Télécharger `bedrokia-linux-x64` ou `bedrokia-win-x64.exe` depuis les [releases](https://github.com/Nexiumpvp2/bedrokia/releases).
+1. Télécharger `bedrokia` (Linux) ou `bedrokia.exe` (Windows) depuis les [releases](https://github.com/Nexiumpvp2/bedrokia/releases).
    C'est un exécutable unique : **aucun .NET à installer**.
 2. Le lancer dans un dossier vide :
 
 ```bash
-chmod +x bedrokia-linux-x64 && ./bedrokia-linux-x64
+chmod +x bedrokia && ./bedrokia
 ```
 
 3. Ouvrir les ports : **TCP 19132** et **UDP 19132 à 19156** (port du serveur + nombre de joueurs + 5).
 4. Dans Minecraft : *Jouer → Serveurs → Ajouter un serveur*, adresse de la machine, port 19132.
+
+**Mettre à jour = remplacer un seul fichier** (comme le `.phar` de PocketMine-MP) : télécharger le nouveau `bedrokia`,
+remplacer l'ancien, redémarrer. Mondes, joueurs et plugins sont gardés.
 
 Au premier lancement, le serveur crée ses fichiers, comme PocketMine-MP :
 
