@@ -9,53 +9,19 @@
 // │  Licensed under the Apache License 2.0 - see LICENSE              │
 // └───────────────────────────────────────────────────────────────────┘
 
+global using Bedrokia.Server.Events;
 using Bedrokia.Server.Core;
-using Bedrokia.Server.Game;
 using Bedrokia.Server.Network;
 
 namespace Bedrokia.Server.Plugins;
 
-/// <summary>An event a handler can cancel: the server then undoes or skips the action.</summary>
-public abstract class CancellableEvent
-{
-    public bool Cancelled { get; set; }
-}
-
-public sealed class PlayerChatEvent(BedrockConnection player, string message) : CancellableEvent
-{
-    public BedrockConnection Player => player;
-
-    /// <summary>Can be changed by a handler.</summary>
-    public string Message { get; set; } = message;
-}
-
-public sealed class BlockEvent(BedrockConnection player, int x, int y, int z, BlockType block) : CancellableEvent
-{
-    public BedrockConnection Player => player;
-    public int X => x;
-    public int Y => y;
-    public int Z => z;
-
-    /// <summary>The block broken, placed, or clicked.</summary>
-    public BlockType Block => block;
-}
-
-public sealed class ItemUseEvent(BedrockConnection player, ItemStack item, int x, int y, int z, BlockType block, int face) : CancellableEvent
-{
-    public BedrockConnection Player => player;
-    public ItemStack Item => item;
-    public int X => x;
-    public int Y => y;
-    public int Z => z;
-    public BlockType Block => block;
-    public int Face => face;
-}
-
 /// <summary>
-/// Hooks for plugins. A handler that throws is logged and skipped; the other handlers and the server go on.
+/// Central event hub for the server and plugins.
+/// A handler that throws is logged and skipped; remaining handlers and the server proceed.
 /// </summary>
 public sealed class ServerEvents(Logger logger)
 {
+    // --- Player connection & movement ---
     public event Action<BedrockConnection>? PlayerJoin;
     public event Action<BedrockConnection>? PlayerQuit;
 
@@ -63,15 +29,38 @@ public sealed class ServerEvents(Logger logger)
     public event Action<BedrockConnection>? PlayerMove;
 
     public event Action<PlayerChatEvent>? PlayerChat;
+
+    // --- Combat & damage ---
+    public event Action<PlayerDamageEvent>? PlayerDamage;
+    public event Action<PlayerDeathEvent>? PlayerDeath;
+    public event Action<PlayerRespawnEvent>? PlayerRespawn;
+
+    // --- Items & inventory ---
+    public event Action<PlayerDropItemEvent>? PlayerDropItem;
+    public event Action<InventoryTransactionEvent>? InventoryTransaction;
+    public event Action<InventoryTransactionEvent>? InventoryClick
+    {
+        add => InventoryTransaction += value;
+        remove => InventoryTransaction -= value;
+    }
+
+    // --- World & blocks ---
     public event Action<BlockEvent>? BlockBreak;
     public event Action<BlockEvent>? BlockPlace;
 
     /// <summary>Right click on a block with an item in hand, before vanilla uses it.</summary>
     public event Action<ItemUseEvent>? ItemUse;
 
+    // --- Entities & mobs ---
+    public event Action<EntityDamageEvent>? EntityDamage;
+    public event Action<EntitySpawnEvent>? EntitySpawn;
+    public event Action<EntityDespawnEvent>? EntityDespawn;
+
+    // --- Server lifecycle ---
     /// <summary>Every game tick (20 per second), with the tick number.</summary>
     public event Action<long>? Tick;
 
+    // Internal dispatchers
     internal void OnJoin(BedrockConnection player) => Fire(PlayerJoin, player);
     internal void OnQuit(BedrockConnection player) => Fire(PlayerQuit, player);
     internal void OnMove(BedrockConnection player) => Fire(PlayerMove, player);
@@ -81,6 +70,16 @@ public sealed class ServerEvents(Logger logger)
     internal bool OnBreak(BlockEvent e) => Fire(BlockBreak, e);
     internal bool OnPlace(BlockEvent e) => Fire(BlockPlace, e);
     internal bool OnItemUse(ItemUseEvent e) => Fire(ItemUse, e);
+
+    internal bool OnPlayerDamage(PlayerDamageEvent e) => Fire(PlayerDamage, e);
+    internal void OnPlayerDeath(PlayerDeathEvent e) => Fire(PlayerDeath, e);
+    internal void OnPlayerRespawn(PlayerRespawnEvent e) => Fire(PlayerRespawn, e);
+    internal bool OnPlayerDropItem(PlayerDropItemEvent e) => Fire(PlayerDropItem, e);
+    internal bool OnInventoryTransaction(InventoryTransactionEvent e) => Fire(InventoryTransaction, e);
+
+    internal bool OnEntityDamage(EntityDamageEvent e) => Fire(EntityDamage, e);
+    internal bool OnEntitySpawn(EntitySpawnEvent e) => Fire(EntitySpawn, e);
+    internal void OnEntityDespawn(EntityDespawnEvent e) => Fire(EntityDespawn, e);
 
     private readonly HashSet<Delegate> _reported = [];
 

@@ -44,10 +44,13 @@ public sealed partial class BedrockConnection
         _transport = transport;
         _codec = new BatchCodec(withHeader: false); // NetherNet: no 0xFE header, DTLS encrypts the connection
         EntityId = entityId;
+        Inventory.Player = this;
         Inventory.Rejected = reason => _server.Logger.Debug($"{Name}: {reason}");
         Inventory.Accepted = summary => _server.Logger.Debug($"{Name}: {summary}");
         RegisterHandlers();
     }
+
+    public BedrokiaServer Server => _server;
 
     public PlayerIdentity? Identity { get; private set; }
     public PlayerInfo? Info { get; private set; }
@@ -756,7 +759,7 @@ public sealed partial class BedrockConnection
         {
             if (!Sneaking && UseBlock(clicked, bx, by, bz))
                 return;
-            if (Inventory.Held is { } used && !_server.Events.OnItemUse(new Plugins.ItemUseEvent(this, used, bx, by, bz, clicked, face)))
+            if (Inventory.Held is { } used && !_server.Events.OnItemUse(new ItemUseEvent(this, used, bx, by, bz, clicked, face)))
             {
                 Send(InventoryPackets.InventorySlot(InventoryPackets.WindowInventory, Inventory.SelectedSlot, used));
                 return;
@@ -845,7 +848,7 @@ public sealed partial class BedrockConnection
         if (current is null || SpawnProtected(x, z) || !IsReplaceable(current) || dx * dx + dy * dy + dz * dz > MaxReach * MaxReach
             || y is < Chunk.MinY or > Chunk.MaxY
             || survival && PlacedBlock(held)?.Name != block.Name
-            || !_server.Events.OnPlace(new Plugins.BlockEvent(this, x, y, z, block))) // survival: the block must really be in hand
+            || !_server.Events.OnPlace(new BlockEvent(this, x, y, z, block))) // survival: the block must really be in hand
         {
             if (current is not null)
                 Send(Packets.UpdateBlock(x, y, z, current.NetworkId));
@@ -903,7 +906,7 @@ public sealed partial class BedrockConnection
         var dz = z + 0.5 - Position.Z;
         var allowed = current is not null && !current.IsAir && dx * dx + dy * dy + dz * dz <= MaxReach * MaxReach
                       && (!current.Unbreakable || GameMode == GameMode.Creative) && !SpawnProtected(x, z);
-        allowed = allowed && _server.Events.OnBreak(new Plugins.BlockEvent(this, x, y, z, current!));
+        allowed = allowed && _server.Events.OnBreak(new BlockEvent(this, x, y, z, current!));
         if (!allowed)
         {
             // Undo the client's prediction.
@@ -1037,7 +1040,7 @@ public sealed partial class BedrockConnection
         var message = reader.String().Trim();
         if (message.Length is 0 or > 512)
             return;
-        var chat = new Plugins.PlayerChatEvent(this, message);
+        var chat = new PlayerChatEvent(this, message);
         if (_server.Events.OnChat(chat))
         {
             var senderName = Prefix.Length > 0 ? $"{Prefix}{Name}§r" : Name;

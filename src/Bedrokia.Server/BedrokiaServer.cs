@@ -281,6 +281,8 @@ public sealed partial class BedrokiaServer
 
     public void DropItem(ItemStack stack, float x, float y, float z, (float X, float Y, float Z)? velocity = null, int pickupDelay = DroppedItems.PickupDelayTicks)
     {
+        if (_droppedItems is null)
+            return;
         var item = _droppedItems.Spawn(Interlocked.Increment(ref _nextEntityId), stack, x, y, z, CurrentTick);
         if (velocity is { } v)
             (item.Vx, item.Vy, item.Vz) = v;
