@@ -42,10 +42,11 @@ public static class PlayerPackets
     /// Entity metadata of a living player. Without the "breathing" flag and air values the client shows the
     /// oxygen bubbles permanently, as if underwater. Keys, flags and types from gophertunnel (MIT) entity_metadata.go.
     /// </summary>
-    public static BedrockWriter PlayerMetadata(this BedrockWriter w, string name)
+    public static BedrockWriter PlayerMetadata(this BedrockWriter w, string name, bool showName = true)
     {
         const int typeInt16 = 1, typeFloat = 3, typeString = 4, typeInt64 = 7;
-        const long flags = (1L << 14) | (1L << 15) | (1L << 35) | (1L << 48) | (1L << 49); // show name, always show name, breathing, collision, gravity
+        const long nameFlags = (1L << 14) | (1L << 15); // show name, always show name
+        var flags = (showName ? nameFlags : 0) | (1L << 35) | (1L << 48) | (1L << 49); // breathing, collision, gravity
         void Key(uint key, uint type) => w.VarUInt32(key).VarUInt32(type).Byte((byte)type); // type + legacy type byte
 
         w.VarUInt32(7);
@@ -83,9 +84,9 @@ public static class PlayerPackets
     }
 
     /// <summary>SetActorData for an entity's metadata (here: a player, including the receiving client itself).</summary>
-    public static byte[] SetPlayerData(long entityId, string name) => new BedrockWriter().VarUInt32(PacketId.SetActorData)
+    public static byte[] SetPlayerData(long entityId, string name, bool showName = true) => new BedrockWriter().VarUInt32(PacketId.SetActorData)
         .VarUInt64((ulong)entityId)
-        .PlayerMetadata(name)
+        .PlayerMetadata(name, showName)
         .VarUInt32(0).VarUInt32(0) // entity properties
         .VarUInt64(0) // tick
         .ToArray();
@@ -114,7 +115,7 @@ public static class PlayerPackets
         .Uuid(uuid)
         .ToArray();
 
-    public static byte[] AddPlayer(PlayerInfo p, float x, float y, float z, float pitch, float yaw, int gameMode) =>
+    public static byte[] AddPlayer(PlayerInfo p, float x, float y, float z, float pitch, float yaw, int gameMode, bool showName = true) =>
         new BedrockWriter().VarUInt32(PacketId.AddPlayer)
             .Uuid(p.Uuid)
             .String(p.Name)
@@ -125,7 +126,7 @@ public static class PlayerPackets
             .Float32(pitch).Float32(yaw).Float32(yaw)
             .Int16(0).UInt16(0).VarUInt32(0).Bool(false).VarUInt32(0).VarUInt32(0) // held item: air
             .VarInt32(gameMode)
-            .PlayerMetadata(p.Name)
+            .PlayerMetadata(p.Name, showName)
             .VarUInt32(0).VarUInt32(0) // entity properties (int, float)
             .Int64(p.EntityId).Byte(1).Byte(0).VarUInt32(0) // abilities: member, normal commands, no layers
             .VarUInt32(0) // entity links

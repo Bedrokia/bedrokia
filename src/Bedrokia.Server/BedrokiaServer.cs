@@ -582,12 +582,12 @@ public sealed partial class BedrokiaServer
         var gameMode = (int)Config.GameMode;
         connection.Send(PlayerPackets.PlayerListAdd([.. others.Select(p => p.Info!), connection.Info!]));
         foreach (var other in others.Where(o => o.World == connection.World && !o.Vanished))
-            connection.Send(PlayerPackets.AddPlayer(other.Info!, other.Position.X, other.Position.Y, other.Position.Z, other.Pitch, other.Yaw, gameMode));
+            connection.Send(PlayerPackets.AddPlayer(other.Info!, other.Position.X, other.Position.Y, other.Position.Z, other.Pitch, other.Yaw, gameMode, other.NameTagVisible));
 
         var info = connection.Info!;
         BroadcastExcept(connection, PlayerPackets.PlayerListAdd([info]));
         BroadcastInExcept(connection.World, connection, PlayerPackets.AddPlayer(info, connection.Position.X, connection.Position.Y, connection.Position.Z,
-            connection.Pitch, connection.Yaw, gameMode));
+            connection.Pitch, connection.Yaw, gameMode, connection.NameTagVisible));
         foreach (var item in connection.World.DroppedItems.All)
             connection.Send(InventoryPackets.AddItemActor(item.EntityId, item.Stack, item.X, item.Y, item.Z, item.Vx, item.Vy, item.Vz));
         var joinEv = new PlayerJoinEvent(connection, $"§e{connection.Name} joined the game");
