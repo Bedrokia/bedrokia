@@ -55,7 +55,14 @@ public sealed class PermissionManager
         Load();
     }
 
-    /// <summary>Normalizes player and group names to prevent path traversal or invalid characters.</summary>
+    // Players are keyed by their exact name (case-insensitive dictionaries): stripping spaces or accents made
+    // "Jean Pierre" and "JeanPierre" share the same permissions, so anyone could take an admin's rights.
+    private static string PlayerKey(string name) => name.Trim();
+
+    /// <summary>The error met while reading permissions.json, if any (the broken file was kept aside).</summary>
+    public string? LoadError { get; private set; }
+
+    /// <summary>Normalizes group names (lowercase letters, digits, _ . -).</summary>
     public static string Sanitize(string name)
     {
         if (string.IsNullOrWhiteSpace(name))
@@ -83,8 +90,19 @@ public sealed class PermissionManager
                         _storage.Players = new Dictionary<string, PlayerPermissionData>(_storage.Players, StringComparer.OrdinalIgnoreCase);
                     }
                 }
-                catch
+                catch (Exception e) when (e is JsonException or IOException or UnauthorizedAccessException or NotSupportedException)
                 {
+                    // Never lose the owner's groups: the next Save() would overwrite the file with an empty one.
+                    var backup = $"{_path}.broken-{DateTime.Now:yyyyMMdd-HHmmss}";
+                    try
+                    {
+                        File.Copy(_path, backup, overwrite: true);
+                    }
+                    catch (IOException)
+                    {
+                        backup = "(copy failed)";
+                    }
+                    LoadError = $"{Path.GetFileName(_path)} could not be read ({e.Message}). It was copied to {backup}; fix it and restart.";
                     _storage = new PermissionStorage();
                 }
             }
@@ -139,7 +157,7 @@ public sealed class PermissionManager
 
     public List<string> GetEffectivePermissions(string playerName)
     {
-        var cleanName = Sanitize(playerName);
+        var cleanName = PlayerKey(playerName);
         lock (_lock)
         {
             var result = new List<string>();
@@ -174,7 +192,7 @@ public sealed class PermissionManager
 
     public string GetPlayerPrefix(string playerName)
     {
-        var cleanName = Sanitize(playerName);
+        var cleanName = PlayerKey(playerName);
         lock (_lock)
         {
             if (_storage.Players.TryGetValue(cleanName, out var playerData) &&
@@ -269,7 +287,7 @@ public sealed class PermissionManager
 
     public void SetPlayerGroup(string playerName, string groupName)
     {
-        var cleanPlayer = Sanitize(playerName);
+        var cleanPlayer = PlayerKey(playerName);
         if (string.IsNullOrEmpty(cleanPlayer))
             return;
         var cleanGroup = Sanitize(groupName);
@@ -289,7 +307,7 @@ public sealed class PermissionManager
 
     public string GetPlayerGroup(string playerName)
     {
-        var cleanPlayer = Sanitize(playerName);
+        var cleanPlayer = PlayerKey(playerName);
         lock (_lock)
         {
             return _storage.Players.TryGetValue(cleanPlayer, out var data) ? data.Group : DefaultGroupName;
@@ -300,7 +318,7 @@ public sealed class PermissionManager
     {
         if (string.IsNullOrWhiteSpace(permission))
             return;
-        var cleanPlayer = Sanitize(playerName);
+        var cleanPlayer = PlayerKey(playerName);
         if (string.IsNullOrEmpty(cleanPlayer))
             return;
         var perm = permission.Trim();
@@ -324,7 +342,7 @@ public sealed class PermissionManager
     {
         if (string.IsNullOrWhiteSpace(permission))
             return;
-        var cleanPlayer = Sanitize(playerName);
+        var cleanPlayer = PlayerKey(playerName);
         if (string.IsNullOrEmpty(cleanPlayer))
             return;
         var perm = permission.Trim();

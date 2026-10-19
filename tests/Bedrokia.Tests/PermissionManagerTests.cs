@@ -104,12 +104,26 @@ public class PermissionManagerTests : IDisposable
     }
 
     [Fact]
-    public void Sanitizes_player_and_group_names()
+    public void Players_with_similar_names_do_not_share_permissions()
     {
         var manager = new PermissionManager(_filePath);
-        // Player names with path traversal or strange characters are normalized
-        manager.AddPlayerPermission("../bad_user", "test.node");
-        Assert.True(manager.HasPermission("bad_user", "test.node"));
-        Assert.True(manager.HasPermission("BAD_USER", "test.node"));
+        manager.AddPlayerPermission("Jean Pierre", "admin.node");
+        manager.SetPlayerGroup("Élodie", "admin");
+        Assert.True(manager.HasPermission("jean pierre", "admin.node")); // same player, other case
+        Assert.False(manager.HasPermission("JeanPierre", "admin.node"));
+        Assert.False(manager.HasPermission("../Jean Pierre", "admin.node"));
+        Assert.Equal("admin", manager.GetPlayerGroup("élodie"));
+        Assert.Equal(PermissionManager.DefaultGroupName, manager.GetPlayerGroup("lodie"));
+    }
+
+    [Fact]
+    public void A_broken_permissions_file_is_kept_aside_instead_of_being_lost()
+    {
+        File.WriteAllText(_filePath, "{ \"Groups\": { \"admin\": "); // cut in the middle of an edit
+        var manager = new PermissionManager(_filePath);
+        Assert.NotNull(manager.LoadError);
+        var backup = Assert.Single(Directory.GetFiles(_tempDir, "permissions.json.broken-*"));
+        Assert.Equal("{ \"Groups\": { \"admin\": ", File.ReadAllText(backup));
+        Assert.True(manager.HasPermission("Steve", "bedrokia.command.help")); // the defaults still work
     }
 }

@@ -79,6 +79,8 @@ public sealed partial class BedrokiaServer
         Config = config;
         Logger = logger;
         Permissions = permissions ?? new("permissions.json");
+        if (Permissions.LoadError is { } permissionsError)
+            logger.Error(permissionsError);
         Commands = new CommandManager(logger);
         Mobs = new MobManager(this);
         FallingBlocks = new FallingBlocks(this);
