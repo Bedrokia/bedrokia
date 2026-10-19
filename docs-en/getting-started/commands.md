@@ -42,6 +42,8 @@ this list and show up in the game's auto-completion.
 | `xp <amount>[L] [player]` | gives experience (`30L` = 30 levels) |
 | `perm user <player> <info\|setgroup\|add\|remove> [value]` (`permission`) | a player's permissions and group |
 | `perm group <group> <list\|add\|remove\|setprefix\|setparent> [value]` | a group's permissions, parent and chat prefix |
+| `tps` | shows server performance (TPS, tick duration MSPT, memory) |
+| `timings [on\|off\|reset\|report]` | detailed subsystem performance profiler (entities, blocks, world, tasks) |
 
 ## Permissions
 

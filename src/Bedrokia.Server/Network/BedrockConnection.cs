@@ -14,6 +14,7 @@ using Bedrokia.Server.Commands;
 using Bedrokia.Protocol.Login;
 using Bedrokia.Server.Core;
 using Bedrokia.Server.Game;
+using Bedrokia.Server.Game.Ui.Forms;
 
 namespace Bedrokia.Server.Network;
 
@@ -129,7 +130,12 @@ public sealed partial class BedrockConnection
         }
     }
 
-    internal void OnClosed() => _stage = Stage.Closed;
+    internal void OnClosed()
+    {
+        _stage = Stage.Closed;
+        CloseAllForms(FormCancelReason.Disconnected);
+        DduiSession.CloseAll();
+    }
 
     private void Handle(byte[] packet)
     {
@@ -206,6 +212,8 @@ public sealed partial class BedrockConnection
         _handlers[PacketId.LecternUpdate] = OnLecternUpdate;
         _handlers[PacketId.MobEquipment] = OnMobEquipment;
         _handlers[PacketId.ModalFormResponse] = OnModalFormResponse;
+        _handlers[PacketId.ServerSettingsRequest] = OnServerSettingsRequest;
+        _handlers[PacketId.ServerboundDataStore] = OnServerboundDataStore;
         _handlers[PacketId.MovePlayer] = null;
         _handlers[PacketId.NPCRequest] = OnNPCRequest;
         _handlers[PacketId.PlayerAction] = OnPlayerAction;
@@ -333,13 +341,7 @@ public sealed partial class BedrockConnection
             Inventory.SelectedSlot = hotbar;
     }
 
-    private void OnModalFormResponse(ref BedrockReader reader)
-    {
-        if (reader.Remaining == 0)
-            return;
-        reader.VarUInt32();
-        _ = reader.Bytes(reader.Remaining);
-    }
+
 
     private void OnNPCRequest(ref BedrockReader reader)
     {
