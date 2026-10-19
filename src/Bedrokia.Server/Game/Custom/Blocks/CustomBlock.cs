@@ -48,44 +48,31 @@ public sealed class CustomBlock
 
     public OrderedDictionary<string, object> ToNbt(int runtimeId)
     {
+        // Same layout as Dragonfly (MIT) server/internal/blockinternal/builder.go Construct: the client crashed on
+        // the extra keys and empty lists this used to send.
         var compDict = new OrderedDictionary<string, object>();
         foreach (var (_, comp) in Components)
-            compDict[comp.Name] = comp.BuildNbt();
+            if (comp.Name != BlockComponentIds.Breathability) // removed from Bedrock
+                compDict[comp.Name] = comp.BuildNbt();
+        foreach (var tag in Tags)
+            compDict[tag.Contains(':') ? tag : "tag:" + tag] = new OrderedDictionary<string, object>();
 
-        var propList = new List<object>();
-        foreach (var prop in Properties)
-            propList.Add(prop.BuildNbt());
-
-        var permList = new List<object>();
-        foreach (var perm in Permutations)
-            permList.Add(perm.BuildNbt());
-
-        var tagList = Tags.Select(t => (object)t).ToList();
-
-        var menuCategory = new OrderedDictionary<string, object>
+        var nbt = new OrderedDictionary<string, object>
         {
-            ["category"] = Creative.Category.ToString().ToLowerInvariant(),
-            ["group"] = Creative.Group.ToLowerInvariant(),
-            ["is_hidden_in_commands"] = (byte)(Creative.IsHidden ? 1 : 0)
-        };
-
-        var vanillaBlockData = new OrderedDictionary<string, object>
-        {
-            ["block_id"] = runtimeId,
-            ["material"] = Material
-        };
-
-        return new OrderedDictionary<string, object>
-        {
-            ["name"] = Identifier,
             ["components"] = compDict,
-            ["properties"] = new NbtList(Nbt.Compound, propList),
-            ["permutations"] = new NbtList(Nbt.Compound, permList),
-            ["menu_category"] = menuCategory,
-            ["blockTags"] = new NbtList(Nbt.String, tagList),
-            ["vanilla_block_data"] = vanillaBlockData,
-            ["molangVersion"] = 13
+            ["molangVersion"] = 10,
+            ["menu_category"] = new OrderedDictionary<string, object>
+            {
+                ["category"] = Creative.Category.ToString().ToLowerInvariant(),
+                ["group"] = Creative.Group,
+            },
+            ["vanilla_block_data"] = new OrderedDictionary<string, object> { ["block_id"] = runtimeId },
         };
+        if (Properties.Count > 0)
+            nbt["properties"] = new NbtList(Nbt.Compound, [.. Properties.Select(p => (object)p.BuildNbt())]);
+        if (Permutations.Count > 0)
+            nbt["permutations"] = new NbtList(Nbt.Compound, [.. Permutations.Select(p => (object)p.BuildNbt())]);
+        return nbt;
     }
 
     public List<OrderedDictionary<string, object>> GetStateCombinations()

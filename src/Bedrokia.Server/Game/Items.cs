@@ -55,7 +55,7 @@ public static class Items
     /// <summary>Creative inventory entries; creative network id N is index N - 1.</summary>
     internal static List<ItemStack> CreativeTemplates { get; } = [];
 
-    private static readonly List<(ItemStack Stack, int GroupIndex)> CustomCreativeEntries = [];
+    private static readonly List<(ItemStack Stack, int Category)> CustomCreativeEntries = [];
 
     internal static short ShieldRuntimeId { get; }
 
@@ -63,7 +63,8 @@ public static class Items
 
     public static ItemType? ByRuntimeId(short runtimeId) => ByRuntimeIdMap.GetValueOrDefault(runtimeId);
 
-    public static void RegisterCustomItem(ItemType item, bool isCreative = true, int creativeGroupIndex = 0)
+    /// <param name="creativeCategory">Creative tab: 1 construction, 2 nature, 3 equipment, 4 items.</param>
+    public static void RegisterCustomItem(ItemType item, bool isCreative = true, int creativeCategory = 4)
     {
         ByNameMap[item.Name] = item;
         ByRuntimeIdMap[item.RuntimeId] = item;
@@ -71,7 +72,7 @@ public static class Items
         if (isCreative)
         {
             var template = new ItemStack(item, 1, 0, Blocks.ByName(item.Name)?.NetworkId ?? 0);
-            CustomCreativeEntries.Add((template, creativeGroupIndex));
+            CustomCreativeEntries.Add((template, creativeCategory));
             CreativeTemplates.Clear();
             CreativeContentPacket = BuildCreativeContent(out var count);
             CreativeItemCount = count;
@@ -115,13 +116,17 @@ public static class Items
             body.VarUInt32((uint)itemCount).Bytes(stack.ToArray()).VarUInt32((uint)groupIndex);
         }
 
-        foreach (var (stack, groupIndex) in CustomCreativeEntries)
+        foreach (var (stack, category) in CustomCreativeEntries)
         {
             itemCount++;
             CreativeTemplates.Add(stack);
             var stackWriter = new BedrockWriter();
             stackWriter.VarInt32(stack.Type.RuntimeId).UInt16((ushort)stack.Count).VarUInt32((ushort)stack.Meta).VarInt32(unchecked((int)stack.BlockRuntimeId));
             WriteUserData(stackWriter, stack.Nbt, stack.Type.RuntimeId == ShieldRuntimeId);
+            // Like Dragonfly session/player.go creativeContent: a group of the item's own tab (an anonymous one if possible).
+            var groupIndex = groups.FindIndex(g => (int)g["category"] == category && (g.TryGetValue("name", out var n) ? (string)n : "") == "");
+            if (groupIndex < 0)
+                groupIndex = Math.Max(0, groups.FindIndex(g => (int)g["category"] == category));
             body.VarUInt32((uint)itemCount).Bytes(stackWriter.ToArray()).VarUInt32((uint)groupIndex);
         }
 

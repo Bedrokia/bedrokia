@@ -26,14 +26,12 @@ public sealed class CustomBlockBuilder
         _identifier = identifier.Contains(':') ? identifier : "custom:" + identifier;
         var texture = _identifier.Contains(':') ? _identifier[(_identifier.IndexOf(':') + 1)..] : _identifier;
 
-        AddComponent(new BreathabilityBlockComponent(true));
-        AddComponent(new CollisionBoxBlockComponent(true));
-        AddComponent(new SelectionBoxBlockComponent(true));
+        // Defaults as Dragonfly (MIT) server/internal/blockinternal sends them: a full cube needs no collision or
+        // selection box, and breathability no longer exists in Bedrock.
         AddComponent(new GeometryBlockComponent());
         AddComponent(new MaterialInstancesBlockComponent([new BlockMaterial(texture)]));
         AddComponent(new DisplayNameBlockComponent(_identifier));
         AddComponent(new DestructibleByMiningBlockComponent(1.5f));
-        AddComponent(new DestructibleByExplosionBlockComponent(6.0f));
         AddComponent(new FrictionBlockComponent(0.6f));
     }
 

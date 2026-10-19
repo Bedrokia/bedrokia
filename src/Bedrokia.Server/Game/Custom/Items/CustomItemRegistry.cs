@@ -35,7 +35,7 @@ public static class CustomItemRegistry
         Bedrokia.Server.Game.Items.RegisterCustomItem(
             item.ToItemType(),
             isCreative: !item.Creative.IsHidden,
-            creativeGroupIndex: (int)item.Creative.Category);
+            creativeCategory: item.Creative.Category == Custom.CreativeCategory.None ? 4 : (int)item.Creative.Category);
 
         return item;
     }
