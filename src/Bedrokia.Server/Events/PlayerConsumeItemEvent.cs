@@ -21,7 +21,7 @@ namespace Bedrokia.Server.Events;
 public sealed class PlayerConsumeItemEvent : CancellableEvent
 {
     public BedrockConnection Player { get; }
-    public ItemStack Item { get; }
+    public ItemStack Item { get; set; }
 
     public PlayerConsumeItemEvent(BedrockConnection player, ItemStack item)
     {

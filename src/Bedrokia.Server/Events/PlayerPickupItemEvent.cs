@@ -21,11 +21,22 @@ namespace Bedrokia.Server.Events;
 public sealed class PlayerPickupItemEvent : CancellableEvent
 {
     public BedrockConnection Player { get; }
-    public DroppedItem Item { get; }
+    public ulong ItemEntityId { get; }
+    public ItemStack Item { get; set; }
+    public DroppedItem? DroppedItem { get; }
 
     public PlayerPickupItemEvent(BedrockConnection player, DroppedItem item)
     {
         Player = player;
+        DroppedItem = item;
+        ItemEntityId = (ulong)item.EntityId;
+        Item = item.Stack;
+    }
+
+    public PlayerPickupItemEvent(BedrockConnection player, ulong itemEntityId, ItemStack item)
+    {
+        Player = player;
+        ItemEntityId = itemEntityId;
         Item = item;
     }
 }

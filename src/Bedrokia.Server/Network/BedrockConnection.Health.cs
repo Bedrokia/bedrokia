@@ -12,6 +12,7 @@
 using Bedrokia.Protocol;
 using Bedrokia.Server.Core;
 using Bedrokia.Server.Entities;
+using Bedrokia.Server.Events;
 using Bedrokia.Server.Game;
 using Bedrokia.Server.Game.Custom.Items;
 using Bedrokia.Server.Game.Ui.Forms;
@@ -373,6 +374,18 @@ public sealed partial class BedrockConnection
             targetSat = ev.NewSaturation;
         }
 
+        if (_server.Events.HasPlayerFoodChange)
+        {
+            var foodEv = new PlayerFoodChangeEvent(this, Food, targetFood, targetSat);
+            if (!_server.Events.OnPlayerFoodChange(foodEv))
+            {
+                SendVitals();
+                return;
+            }
+            targetFood = foodEv.Food;
+            targetSat = foodEv.Saturation;
+        }
+
         Food = targetFood;
         Saturation = targetSat;
         SendVitals();
@@ -405,6 +418,18 @@ public sealed partial class BedrockConnection
             }
             targetFood = ev.NewFood;
             targetSat = ev.NewSaturation;
+        }
+
+        if (_server.Events.HasPlayerFoodChange)
+        {
+            var foodEv = new PlayerFoodChangeEvent(this, Food, targetFood, targetSat);
+            if (!_server.Events.OnPlayerFoodChange(foodEv))
+            {
+                SendVitals();
+                return;
+            }
+            targetFood = foodEv.Food;
+            targetSat = foodEv.Saturation;
         }
 
         Food = targetFood;

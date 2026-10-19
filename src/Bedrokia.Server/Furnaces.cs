@@ -31,7 +31,7 @@ public sealed partial class BedrokiaServer
         _furnaces.Remove((world, at));
     }
 
-    private void TickFurnaces()
+    internal void TickFurnaces()
     {
         foreach (var key in _furnaces.ToList())
         {
@@ -57,6 +57,13 @@ public sealed partial class BedrokiaServer
                         goto skipBurn;
                     burn = burnEv.BurnDuration;
                 }
+                if (Events.HasFuelBurn)
+                {
+                    var fuelEv = new FuelBurnEvent(new BlockPos(x, y, z), furnace.Id.ToLowerInvariant(), fuel, burn);
+                    if (!Events.OnFuelBurn(fuelEv))
+                        goto skipBurn;
+                    burn = fuelEv.BurnTicks;
+                }
                 furnace.BurnTicks = furnace.BurnDuration = burn;
                 var container = fuel.Type.Name == "minecraft:lava_bucket" ? ItemStack.Of("bucket") : null;
                 fuel.SetCount(fuel.Count - 1);
@@ -77,6 +84,13 @@ public sealed partial class BedrokiaServer
                         if (!Events.OnFurnaceSmelt(smeltEv))
                             goto skipSmelt;
                         result = smeltEv.Result;
+                    }
+                    if (Events.HasItemCook)
+                    {
+                        var cookEv = new ItemCookEvent(new BlockPos(x, y, z), furnace.Id.ToLowerInvariant(), input!, result!);
+                        if (!Events.OnItemCook(cookEv))
+                            goto skipSmelt;
+                        result = cookEv.Output;
                     }
                     input!.SetCount(input.Count - 1);
                     items[0] = input.Count > 0 ? input : null;

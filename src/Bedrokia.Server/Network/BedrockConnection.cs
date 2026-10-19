@@ -620,6 +620,13 @@ public sealed partial class BedrockConnection
                     Send(Packets.MovePlayer(EntityId, from.X, from.Y, from.Z, Pitch, Yaw, Yaw, teleport: true, onGround: true));
                     return;
                 }
+                if (ev.To != to)
+                {
+                    x = ev.To.X;
+                    y = ev.To.Y;
+                    z = ev.To.Z;
+                    Send(Packets.MovePlayer(EntityId, x, y, z, pitch, yaw, yaw, teleport: true, onGround: true));
+                }
             }
 
             Position = (x, y, z);

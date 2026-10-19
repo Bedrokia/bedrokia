@@ -34,11 +34,18 @@ public sealed class ServerEventsTests
 
     private static (BedrokiaServer Server, BedrockConnection Player) CreateTestEnvironment()
     {
+        var (server, conn, _) = CreateTestEnvironmentWithTransport();
+        return (server, conn);
+    }
+
+    private static (BedrokiaServer Server, BedrockConnection Player, FakeTransport Transport) CreateTestEnvironmentWithTransport()
+    {
         var logger = new Logger(LogLevel.Error, null);
         var server = new BedrokiaServer(new ServerConfig { WorldsDirectory = TestWorlds.NewDirectory(), Port = 0, OnlineMode = false }, logger);
         server.InitWorldForTesting();
-        var conn = new BedrockConnection(server, new FakeTransport(), 100);
-        return (server, conn);
+        var transport = new FakeTransport();
+        var conn = new BedrockConnection(server, transport, 100);
+        return (server, conn, transport);
     }
 
     [Fact]
@@ -574,5 +581,245 @@ public sealed class ServerEventsTests
 
         Assert.False(damageFired);
         Assert.Equal(initialMobHealth, targetMob.Health);
+    }
+
+    [Fact]
+    public void TntPrime_FuseTicks_Editable_And_Cancellable()
+    {
+        var (server, _) = CreateTestEnvironment();
+        var tntFired = false;
+        server.Events.TntPrime += e =>
+        {
+            tntFired = true;
+            Assert.Equal(80, e.FuseTicks);
+            e.FuseTicks = 20; // Shorten fuse
+        };
+
+        server.PrimeTnt(10, 64, 10, 80);
+        Assert.True(tntFired);
+
+        // Test cancel
+        var cancelFired = false;
+        void OnPrimeCancel(TntPrimeEvent e)
+        {
+            cancelFired = true;
+            e.Cancel();
+        }
+        server.Events.TntPrime += OnPrimeCancel;
+        server.PrimeTnt(20, 64, 20, 80);
+        Assert.True(cancelFired);
+        server.Events.TntPrime -= OnPrimeCancel;
+    }
+
+    [Fact]
+    public void ItemCook_And_FuelBurn_Editable_And_Cancellable()
+    {
+        var (server, _) = CreateTestEnvironment();
+        var furnaceBlock = Blocks.ByName("furnace")!;
+        server.World.SetBlock(5, 64, 5, furnaceBlock);
+        var entity = BlockEntity.For(furnaceBlock)!;
+        server.World.SetBlockEntity(5, 64, 5, entity);
+
+        // Put beef in input and coal in fuel
+        entity.Items![0] = ItemStack.Of("beef", 1);
+        entity.Items[1] = ItemStack.Of("coal", 1);
+        server.WatchFurnace((5, 64, 5), server.World);
+
+        var fuelBurnFired = false;
+        server.Events.FuelBurn += e =>
+        {
+            fuelBurnFired = true;
+            Assert.Equal("furnace", e.Station);
+            Assert.True(e.BurnTicks > 0);
+            e.BurnTicks = 1600; // Custom burn time
+        };
+
+        var itemCookFired = false;
+        server.Events.ItemCook += e =>
+        {
+            itemCookFired = true;
+            Assert.Equal("furnace", e.Station);
+            Assert.Equal("minecraft:cooked_beef", e.Output.Type.Name);
+            // Change output to diamond
+            e.Output = ItemStack.Of("diamond", 2)!;
+        };
+
+        // Tick furnaces to start burning fuel
+        server.TickFurnaces();
+        Assert.True(fuelBurnFired);
+
+        // Fast forward cook ticks
+        entity.CookTicks = Smelting.FurnaceCookTicks - 1;
+        server.TickFurnaces();
+
+        Assert.True(itemCookFired);
+        Assert.NotNull(entity.Items[2]);
+        Assert.Equal("minecraft:diamond", entity.Items[2]!.Type.Name);
+        Assert.Equal(2, entity.Items[2]!.Count);
+    }
+
+    [Fact]
+    public void BlockLand_RollbackToDroppedItem_OnCancel()
+    {
+        var (server, _) = CreateTestEnvironment();
+        var sand = Blocks.ByName("sand")!;
+        server.World.SetBlock(15, 60, 15, Blocks.Stone); // solid floor
+        server.World.SetBlock(15, 61, 15, Blocks.Air);
+
+        var fallingBlocks = new FallingBlocks(server, server.World);
+        fallingBlocks.Spawn(15, 62, 15, sand);
+
+        var landFired = false;
+        server.Events.BlockLand += e =>
+        {
+            landFired = true;
+            e.Cancel(); // Cancel landing! Must drop as item entity instead of placing block
+        };
+
+        // Tick falling block to reach the floor
+        for (int i = 0; i < 30; i++)
+            fallingBlocks.Tick();
+
+        Assert.True(landFired);
+        // Block was NOT placed
+        Assert.Equal(Blocks.Air, server.World.GetBlock(15, 61, 15));
+        // Item entity WAS spawned
+        Assert.Contains(server.World.DroppedItems.All, item => item.Stack.Type.Name == "minecraft:sand");
+    }
+
+    [Fact]
+    public void EntityKilled_RollbackTo1Hp_OnCancel_And_CustomDrops()
+    {
+        var (server, player) = CreateTestEnvironment();
+        var zombie = server.Mobs.Spawn(MobKind.Zombie, 10, 64, 10);
+        Assert.NotNull(zombie);
+
+        // 1. Cancelled killed event: mob stays alive with 1 HP
+        var killedFired = false;
+        void OnKilledCancel(EntityKilledEvent e)
+        {
+            killedFired = true;
+            e.Cancel();
+        }
+        server.Events.EntityKilled += OnKilledCancel;
+
+        server.Mobs.Damage(zombie, 100, (10, 10), player);
+
+        Assert.True(killedFired);
+        Assert.False(zombie.Dead);
+        Assert.Equal(1f, zombie.Health);
+        server.Events.EntityKilled -= OnKilledCancel;
+
+        // 2. Not cancelled: custom experience and drop items
+        server.Events.EntityKilled += e =>
+        {
+            e.Experience = 99;
+            e.DropItems = false; // suppress drops
+        };
+
+        zombie.HurtTicks = 0; // reset invulnerability ticks before next hit
+        server.Mobs.Damage(zombie, 100, (10, 10), player);
+        Assert.True(zombie.Dead);
+        Assert.True(player.ExperienceLevel > 0 || player.ExperienceProgress > 0);
+    }
+
+    [Fact]
+    public void ContainerOpen_Cancelled_SendsContainerClose()
+    {
+        var (server, player, fakeTransport) = CreateTestEnvironmentWithTransport();
+        fakeTransport.Sent.Clear();
+
+        var chest = Blocks.ByName("chest")!;
+        server.World.SetBlock(10, 64, 10, chest);
+
+        var openFired = false;
+        server.Events.ContainerOpen += e =>
+        {
+            openFired = true;
+            e.Cancel();
+        };
+
+        player.TryOpenContainer(chest, 10, 64, 10);
+
+        Assert.True(openFired);
+        Assert.Null(player.Inventory.OpenContainer);
+        // Verify ContainerClose packet (ID 47) was sent to client
+        Assert.Contains(fakeTransport.Sent, packet =>
+        {
+            var reader = new BedrockReader(packet);
+            var len = reader.VarUInt32();
+            return reader.VarUInt32() == InventoryPackets.ContainerCloseId;
+        });
+    }
+
+    [Fact]
+    public void PlayerFoodChange_EditableAndCancellable()
+    {
+        var (server, player) = CreateTestEnvironment();
+        player.Position = (0f, 64f, 0f);
+        player.IsInGame = true;
+
+        var foodFired = false;
+        server.Events.PlayerFoodChange += e =>
+        {
+            foodFired = true;
+            e.Food = 15;
+            e.Saturation = 4f;
+        };
+
+        // Lower food then add
+        player.SetFood(10, 2);
+        player.AddFood(2, 1);
+
+        Assert.True(foodFired);
+        Assert.Equal(15, player.Food);
+        Assert.Equal(4f, player.Saturation);
+    }
+
+    [Fact]
+    public void PlayerMove_EditableTo_And_RollbackOnCancel()
+    {
+        var (server, player) = CreateTestEnvironment();
+        player.Position = (0f, 64f, 0f);
+        player.IsInGame = true;
+
+        // 1. Rollback on cancel
+        void OnMoveCancel(PlayerMoveEvent e) => e.Cancel();
+        server.Events.PlayerMove += OnMoveCancel;
+
+        var moveWriter = new BedrockWriter();
+        moveWriter.Float32(0); // pitch
+        moveWriter.Float32(0); // yaw
+        moveWriter.Float32(10f); // x
+        moveWriter.Float32(64f); // y
+        moveWriter.Float32(10f); // z
+        var moveReader = new BedrockReader(moveWriter.ToArray());
+
+        player.OnPlayerAuthInput(ref moveReader);
+
+        // Player remained at (0, 64, 0)
+        Assert.Equal(0f, player.Position.X);
+        server.Events.PlayerMove -= OnMoveCancel;
+
+        // 2. Editable To position
+        server.Events.PlayerMove += e =>
+        {
+            e.To = new System.Numerics.Vector3(50f, 70f, 50f);
+        };
+
+        var moveWriter2 = new BedrockWriter();
+        moveWriter2.Float32(0);
+        moveWriter2.Float32(0);
+        moveWriter2.Float32(10f);
+        moveWriter2.Float32(64f);
+        moveWriter2.Float32(10f);
+        var moveReader2 = new BedrockReader(moveWriter2.ToArray());
+
+        player.OnPlayerAuthInput(ref moveReader2);
+
+        // Player moved to modified destination (50, 70, 50)
+        Assert.Equal(50f, player.Position.X);
+        Assert.Equal(70f, player.Position.Y);
+        Assert.Equal(50f, player.Position.Z);
     }
 }
