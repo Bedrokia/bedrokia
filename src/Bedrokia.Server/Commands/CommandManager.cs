@@ -90,6 +90,17 @@ public sealed class CommandManager(Logger logger)
     /// <summary>Parses and runs one input line. Errors are reported to the sender, never thrown.</summary>
     public void Dispatch(CommandSender sender, string line)
     {
+        if (sender.Player is { } player)
+        {
+            if (player.Server.Events.HasListeners(player.Server.Events.PlayerCommand))
+            {
+                var cmdEv = new PlayerCommandEvent(player, line);
+                if (!player.Server.Events.OnPlayerCommand(cmdEv))
+                    return;
+                line = cmdEv.CommandLine;
+            }
+        }
+
         // Piped stdin (hosting panels, PowerShell) may start with a UTF-8 BOM.
         var parts = line.Trim().Trim((char)0xFEFF).TrimStart('/').Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length == 0)

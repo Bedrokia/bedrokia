@@ -29,9 +29,10 @@ public sealed class ShowcasePlugin : Plugin
 
     public override void OnEnable()
     {
-        Events.PlayerJoin += OnJoin;
-        Events.PlayerQuit += player =>
+        Events.PlayerJoin += e => OnJoin(e.Player);
+        Events.PlayerQuit += e =>
         {
+            var player = e.Player;
             _joinedAt.Remove(player);
             _spirals.RemoveAll(s => s.Player == player);
         };

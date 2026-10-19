@@ -63,12 +63,12 @@ public static class PlayerPackets
     /// UpdateAttributes for a player: walk speed, health, hunger and experience. Without it the client has no
     /// movement speed and walks too slowly. Names and defaults from Dragonfly (MIT) session/player.go.
     /// </summary>
-    public static byte[] PlayerAttributes(long entityId, float health, float food, float saturation, int level = 0, float progress = 0)
+    public static byte[] PlayerAttributes(long entityId, float health, float food, float saturation, int level = 0, float progress = 0, float speed = 0.1f, float maxHealth = 20f)
     {
         var attributes = new (string Name, float Max, float Value, float Default)[]
         {
-            ("minecraft:movement", float.MaxValue, 0.1f, 0.1f),
-            ("minecraft:health", 20, health, 20),
+            ("minecraft:movement", float.MaxValue, speed, 0.1f),
+            ("minecraft:health", maxHealth, health, maxHealth),
             ("minecraft:absorption", float.MaxValue, 0, 0),
             ("minecraft:player.hunger", 20, food, 20),
             ("minecraft:player.saturation", 20, saturation, 20),

@@ -53,5 +53,8 @@ public sealed record DamageSource(DamageCause Cause, object? Attacker = null, st
     public static DamageSource Lava() => new(DamageCause.Lava, null, "Tried to swim in lava");
     public static DamageSource Drowning() => new(DamageCause.Drowning, null, "Drowned");
     public static DamageSource Explosion() => new(DamageCause.Explosion, null, "Blown up");
+    public static DamageSource Magic(string description = "Killed by magic") => new(DamageCause.Magic, null, description);
+    public static DamageSource Poison() => new(DamageCause.Magic, null, "Killed by poison");
+    public static DamageSource Wither() => new(DamageCause.Magic, null, "Withered away");
     public static DamageSource Custom(string name = "custom") => new(DamageCause.Custom, null, name);
 }

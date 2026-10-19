@@ -487,6 +487,12 @@ public sealed class PlayerInventory
                         var input = Ui[EnchantInputSlot] ?? throw new InvalidOperationException("nothing to enchant");
                         var (costs, options) = Enchanter.Options(input) ?? throw new InvalidOperationException("item cannot be enchanted");
                         var levels = (int)c.RecipeId + 1;
+                        if (Player is not null && Player.Server.Events.HasListeners(Player.Server.Events.PlayerEnchantItem))
+                        {
+                            var enchantEv = new PlayerEnchantItemEvent(Player, input, costs[c.RecipeId], levels);
+                            if (!Player.Server.Events.OnPlayerEnchantItem(enchantEv))
+                                throw new InvalidOperationException("enchant cancelled");
+                        }
                         if (mode != GameMode.Creative)
                         {
                             if (Ui[EnchantLapisSlot] is not { } lapis || lapis.Type.Name != "minecraft:lapis_lazuli" || lapis.Count < levels)
@@ -511,6 +517,13 @@ public sealed class PlayerInventory
                             var tx = new InventoryTransactionEvent(Player, InventoryTransactionType.Craft, recipe.Outputs.FirstOrDefault(), c.Times, (0, 0));
                             if (!Player.Server.Events.OnInventoryTransaction(tx))
                                 throw new InvalidOperationException("craft cancelled");
+
+                            if (Player.Server.Events.HasListeners(Player.Server.Events.PlayerCraftItem))
+                            {
+                                var craftEv = new PlayerCraftItemEvent(Player, recipe.Outputs.FirstOrDefault(), recipe.Inputs);
+                                if (!Player.Server.Events.OnPlayerCraftItem(craftEv))
+                                    throw new InvalidOperationException("craft cancelled");
+                            }
                         }
                         var (offset, size) = CraftingTableOpen ? (LargeGridOffset, LargeGridSize) : (SmallGridOffset, SmallGridSize);
                         if (c.Auto)

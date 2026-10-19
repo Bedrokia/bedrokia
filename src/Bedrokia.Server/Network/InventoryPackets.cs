@@ -108,4 +108,14 @@ internal static class InventoryPackets
 
     public static byte[] TakeItemActor(long itemEntityId, long takerEntityId) =>
         new BedrockWriter().VarUInt32(TakeItemActorId).VarUInt64((ulong)itemEntityId).VarUInt64((ulong)takerEntityId).ToArray();
+
+    public static byte[] MobEquipment(long entityId, ItemStack? item, int inventorySlot, int hotbarSlot, uint windowId = 0)
+    {
+        var w = new BedrockWriter().VarUInt32(MobEquipmentId).VarUInt64((ulong)entityId);
+        ItemStack.WriteInstance(w, item);
+        return w.Byte((byte)inventorySlot).Byte((byte)hotbarSlot).Byte((byte)windowId).ToArray();
+    }
+
+    public static byte[] PlayerHotbar(int selectedSlot, uint windowId = 0) =>
+        new BedrockWriter().VarUInt32(48).VarUInt32((uint)selectedSlot).Byte((byte)windowId).Bool(true).ToArray();
 }

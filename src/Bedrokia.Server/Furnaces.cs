@@ -49,6 +49,13 @@ public sealed partial class BedrokiaServer
 
             if (furnace.BurnTicks <= 0 && canCook && fuel is not null && Smelting.BurnTicks(fuel) is var burn and > 0)
             {
+                if (Events.HasListeners(Events.FurnaceBurn))
+                {
+                    var burnEv = new FurnaceBurnEvent(new BlockPos(x, y, z), fuel, burn);
+                    if (!Events.OnFurnaceBurn(burnEv))
+                        goto skipBurn;
+                    burn = burnEv.BurnDuration;
+                }
                 furnace.BurnTicks = furnace.BurnDuration = burn;
                 var container = fuel.Type.Name == "minecraft:lava_bucket" ? ItemStack.Of("bucket") : null;
                 fuel.SetCount(fuel.Count - 1);
@@ -56,21 +63,30 @@ public sealed partial class BedrokiaServer
                 SetLit(x, y, z, true);
                 SendFurnaceContents(at, items);
             }
+            skipBurn:
             if (furnace.BurnTicks > 0)
             {
                 furnace.BurnTicks--;
                 if (canCook && ++furnace.CookTicks >= (furnace.Id == "Furnace" ? Smelting.FurnaceCookTicks : Smelting.FastCookTicks))
                 {
                     furnace.CookTicks = 0;
+                    if (Events.HasListeners(Events.FurnaceSmelt))
+                    {
+                        var smeltEv = new FurnaceSmeltEvent(new BlockPos(x, y, z), input!, result!);
+                        if (!Events.OnFurnaceSmelt(smeltEv))
+                            goto skipSmelt;
+                        result = smeltEv.Result;
+                    }
                     input!.SetCount(input.Count - 1);
                     items[0] = input.Count > 0 ? input : null;
                     if (output is null)
                         items[2] = result;
                     else
-                        output.SetCount(output.Count + 1);
+                        output.SetCount(output.Count + (result?.Count ?? 1));
                     SendFurnaceContents(at, items);
                 }
-                else if (!canCook)
+                skipSmelt:
+                if (!canCook)
                     furnace.CookTicks = 0;
             }
             else

@@ -34,6 +34,7 @@ public static class PacketId
     public const uint UpdateBlock = 21;
     public const uint LevelEvent = 25;
     public const uint ActorEvent = 27;
+    public const uint MobEffect = 28;
     public const uint UpdateAttributes = 29;
     public const uint InventoryTransaction = 30;
     public const uint MobEquipment = 31;
@@ -125,10 +126,29 @@ public enum TextType : byte
     System = 6,
 }
 
+public enum MobEffectAction : byte
+{
+    Add = 1,
+    Modify = 2,
+    Remove = 3,
+}
+
 /// <summary>Encoders for the server-to-client packets Bedrokia sends. Each result starts with the packet header.</summary>
 public static class Packets
 {
     private static BedrockWriter Begin(uint id) => new BedrockWriter().VarUInt32(id);
+
+    public static byte[] MobEffect(ulong runtimeEntityId, MobEffectAction action, int effectId, int amplifier, bool showParticles, int durationTicks, bool ambient = false) =>
+        Begin(PacketId.MobEffect)
+            .VarUInt64(runtimeEntityId)
+            .Byte((byte)action)
+            .VarInt32(effectId)
+            .VarInt32(amplifier)
+            .Bool(showParticles)
+            .VarInt32(durationTicks)
+            .VarUInt64(0)
+            .Bool(ambient)
+            .ToArray();
 
     public static byte[] NetworkSettings(ushort compressionThreshold) => Begin(PacketId.NetworkSettings)
         .UInt16(compressionThreshold)

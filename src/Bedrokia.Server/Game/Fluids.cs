@@ -107,14 +107,14 @@ public sealed class Fluids(BedrokiaServer server)
         var level = depth >= 8 ? 0 : depth;
         if (CanFlowInto(x, y - 1, z, kind, 8, out var below))
         {
-            Flow(x, y - 1, z, kind, 8, below);
+            Flow(x, y, z, x, y - 1, z, kind, 8, below);
             return; // falling liquid does not spread sideways
         }
         if (level + step > 7)
             return;
         foreach (var (dx, dz) in Sides)
             if (CanFlowInto(x + dx, y, z + dz, kind, level + step, out var target))
-                Flow(x + dx, y, z + dz, kind, level + step, target);
+                Flow(x, y, z, x + dx, y, z + dz, kind, level + step, target);
     }
 
     // Lowest level a neighbour gives (x, y, z): from above (falling = 8), from the sides (their level + step);
@@ -157,8 +157,16 @@ public sealed class Fluids(BedrokiaServer server)
         return target.IsAir || !Entities.BlockPhysics.IsSolid(target) && !target.Name.EndsWith("_door") && target.Name != "minecraft:ladder";
     }
 
-    private void Flow(int x, int y, int z, string kind, int depth, BlockType? target)
+    private void Flow(int fromX, int fromY, int fromZ, int x, int y, int z, string kind, int depth, BlockType? target)
     {
+        var fluidBlock = Liquid(kind, depth);
+        if (server.Events.HasListeners(server.Events.FluidFlow))
+        {
+            var flowEv = new FluidFlowEvent(new BlockPos(fromX, fromY, fromZ), new BlockPos(x, y, z), fluidBlock);
+            if (!server.Events.OnFluidFlow(flowEv))
+                return;
+            fluidBlock = flowEv.FluidBlock;
+        }
         if (target is not null && IsLiquid(target) && IsWater(target) != (kind == "water"))
         {
             // Water touching lava: a lava source turns to obsidian, flowing lava (or lava onto water) to cobblestone.
@@ -170,7 +178,7 @@ public sealed class Fluids(BedrokiaServer server)
         if (target is not null && !target.IsAir && !IsLiquid(target))
             foreach (var drop in DropRules.Drops(target, null, Random.Shared)) // washed-away plants and torches
                 server.DropItem(drop, x + 0.5f, y + 0.5f, z + 0.5f);
-        Set(x, y, z, Liquid(kind, depth));
+        Set(x, y, z, fluidBlock);
     }
 
     private void Set(int x, int y, int z, BlockType block)

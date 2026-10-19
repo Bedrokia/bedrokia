@@ -226,6 +226,7 @@ public sealed class PluginManager(BedrokiaServer server)
             {
                 server.Logger.Error($"Plugin '{plugin.Name}' crashed while disabling: {e}");
             }
+            server.Scheduler.CancelAll(plugin);
         }
         _loaded.Clear();
     }
