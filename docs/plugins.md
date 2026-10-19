@@ -207,3 +207,7 @@ compile `src/` lui-même.
 - **CustomContent** : enregistrement complet de blocs et d'items personnalisés (épée en rubis, pioche, armure, pomme consommable, minerais et lampes) avec leurs composants Bedrock.
 - **Listeners** : gestion modulaire des événements (connexion d'un joueur, casse de blocs) avec un `Main` et des listeners séparés dans différents fichiers.
 - **Ping** : commande `/ping` (et alias `/pong`) avec gestion des arguments, configuration `config.yml` et action bar.
+- **MagicItems** : bâton de foudre (clic droit = éclair), bottes de vitesse (Vitesse + Saut), tremplin (bloc qui
+  propulse). Commande `/magie`.
+- **Showcase** : titre de bienvenue, scoreboard en direct, spirale de flammes `/fx`, annonces `/annonce`. Tout est
+  réglable dans son `config.yml`.
