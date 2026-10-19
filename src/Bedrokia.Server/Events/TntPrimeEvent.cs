@@ -30,4 +30,14 @@ public sealed class TntPrimeEvent : CancellableEvent
         OwnerEntityId = ownerEntityId;
         FuseTicks = fuseTicks;
     }
+
+    public TntPrimeEvent(long entityId, BlockPos pos, int fuseTicks = 80, string cause = "block")
+        : this(pos, cause, (ulong)entityId, fuseTicks)
+    {
+    }
+
+    public TntPrimeEvent(BlockPos pos, int fuseTicks = 80, string cause = "block")
+        : this(pos, cause, 0UL, fuseTicks)
+    {
+    }
 }
