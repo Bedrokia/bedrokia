@@ -82,11 +82,13 @@ public static class PacketId
     public const uint ServerBoundLoadingScreen = 312;
     public const uint JigsawStructureData = 313;
     public const uint ServerBoundDiagnostics = 315;
-    public const uint ClientboundDataDrivenUIShowScreen = 320;
-    public const uint ClientboundDataDrivenUICloseAllScreens = 321;
-    public const uint ClientboundDataDrivenUIReload = 322;
-    public const uint ClientboundDataStore = 323;
-    public const uint ServerboundDataStore = 324;
+    // After 300 the ids are iota + 101 in gophertunnel id.go (IDCameraInstruction = 300): line number + 97.
+    public const uint ClientboundDataStore = 330;
+    public const uint ServerboundDataStore = 332;
+    public const uint ClientboundDataDrivenUIShowScreen = 333;
+    public const uint ClientboundDataDrivenUICloseScreen = 334;
+    public const uint ClientboundDataDrivenUIReload = 335;
+    public const uint ServerboundDataDrivenScreenClosed = 343;
     public const uint VoxelShapes = 337;
     public const uint SetPlayerFurnaceOptions = 351;
 }

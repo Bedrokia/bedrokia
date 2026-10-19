@@ -335,16 +335,47 @@ public class FormsAndDduiTests
         Assert.Equal("1", responseJson);
         Assert.False(hasCancel);
 
-        // ServerboundDataStore parsing
+        // ServerboundDataStore parsing (gophertunnel protocol/data_store.go DataStoreUpdate): string, double, bool values
         var dsWriter = new BedrockWriter();
-        dsWriter.String("StoreA");
-        dsWriter.String("Prop1");
-        dsWriter.String("Val1");
-
+        dsWriter.String("StoreA").String("Prop1").String("").VarUInt32(2).String("Val1").UInt32(1).UInt32(1);
         var dsReader = new BedrockReader(dsWriter.ToArray());
-        var (storeName, prop, val) = UiPackets.ReadServerboundDataStore(ref dsReader);
-        Assert.Equal("StoreA", storeName);
-        Assert.Equal("Prop1", prop);
-        Assert.Equal("Val1", val);
+        Assert.Equal(("StoreA", "Prop1", "Val1"), UiPackets.ReadServerboundDataStore(ref dsReader));
+        Assert.Equal(0, dsReader.Remaining);
+
+        var doubleWriter = new BedrockWriter().String("S").String("volume").String("").VarUInt32(0)
+            .Int64(BitConverter.DoubleToInt64Bits(0.5)).UInt32(1).UInt32(1);
+        var doubleReader = new BedrockReader(doubleWriter.ToArray());
+        Assert.Equal("0.5", UiPackets.ReadServerboundDataStore(ref doubleReader).Value);
+
+        var boolWriter = new BedrockWriter().String("S").String("on").String("").VarUInt32(1).Bool(true).UInt32(1).UInt32(1);
+        var boolReader = new BedrockReader(boolWriter.ToArray());
+        Assert.Equal("true", UiPackets.ReadServerboundDataStore(ref boolReader).Value);
+    }
+
+    [Fact]
+    public void Data_driven_ui_packets_use_the_real_ids_and_layouts()
+    {
+        // Ids after 300 in gophertunnel id.go: a wrong id makes the client read another packet and crash.
+        var show = new BedrockReader(UiPackets.DataDrivenUIShowScreen("hud", 7));
+        Assert.Equal(333u, show.VarUInt32());
+        Assert.Equal("hud", show.String());
+        Assert.Equal(7u, System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(show.Bytes(4)));
+        Assert.False(show.Bool()); // no data instance id
+        Assert.Equal(0, show.Remaining);
+
+        var close = new BedrockReader(UiPackets.DataDrivenUICloseAllScreens());
+        Assert.Equal(334u, close.VarUInt32());
+        Assert.False(close.Bool()); // no form id: every screen
+        Assert.Equal(335u, new BedrockReader(UiPackets.DataDrivenUIReload()).VarUInt32());
+
+        var store = new BedrockReader(UiPackets.ClientboundDataStore("hud", new Dictionary<string, string> { ["coins"] = "12" }));
+        Assert.Equal(330u, store.VarUInt32());
+        Assert.Equal(1u, store.VarUInt32()); // one change
+        Assert.Equal(0u, store.VarUInt32()); // update
+        Assert.Equal(("hud", "coins", ""), (store.String(), store.String(), store.String()));
+        Assert.Equal(2u, store.VarUInt32()); // string value
+        Assert.Equal("12", store.String());
+        store.Bytes(8); // update counters
+        Assert.Equal(0, store.Remaining);
     }
 }

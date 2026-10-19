@@ -1,3 +1,5 @@
+using System.Buffers.Binary;
+using System.Globalization;
 using System.Text;
 
 namespace Bedrokia.Protocol;
@@ -52,66 +54,63 @@ public static class UiPackets
         return writer.ToArray();
     }
 
-    /// <summary>
-    /// Creates a ClientboundDataDrivenUIShowScreenPacket (320) payload.
-    /// </summary>
-    public static byte[] DataDrivenUIShowScreen(string screenId, uint formId, string? initialDataStoreJson = null)
+    // Data-Driven UI, layouts from gophertunnel (MIT) packet/clientbound_data_driven_ui_*.go and protocol/data_store.go.
+
+    /// <summary>ClientBoundDataDrivenUIShowScreen (333): screen id, form instance id (uint32), optional data instance id.</summary>
+    public static byte[] DataDrivenUIShowScreen(string screenId, uint formId, uint? dataInstanceId = null)
     {
-        var writer = new BedrockWriter();
-        writer.VarUInt32(PacketId.ClientboundDataDrivenUIShowScreen);
-        writer.String(screenId);
-        writer.VarUInt32(formId);
-        writer.Bool(initialDataStoreJson is not null);
-        if (initialDataStoreJson is not null)
-            writer.String(initialDataStoreJson);
+        var writer = new BedrockWriter().VarUInt32(PacketId.ClientboundDataDrivenUIShowScreen).String(screenId).UInt32(formId)
+            .Bool(dataInstanceId is not null);
+        if (dataInstanceId is { } id)
+            writer.UInt32(id);
         return writer.ToArray();
     }
 
-    /// <summary>
-    /// Creates a ClientboundDataDrivenUICloseAllScreensPacket (321) payload.
-    /// </summary>
-    public static byte[] DataDrivenUICloseAllScreens()
-    {
-        var writer = new BedrockWriter();
-        writer.VarUInt32(PacketId.ClientboundDataDrivenUICloseAllScreens);
-        return writer.ToArray();
-    }
+    /// <summary>ClientBoundDataDrivenUICloseScreen (334) without a form id: closes every screen.</summary>
+    public static byte[] DataDrivenUICloseAllScreens() =>
+        new BedrockWriter().VarUInt32(PacketId.ClientboundDataDrivenUICloseScreen).Bool(false).ToArray();
+
+    /// <summary>ClientBoundDataDrivenUIReload (335): no payload.</summary>
+    public static byte[] DataDrivenUIReload() => new BedrockWriter().VarUInt32(PacketId.ClientboundDataDrivenUIReload).ToArray();
+
+    private const uint ChangeTypeUpdate = 0, ControlDouble = 0, ControlBoolean = 1, ControlString = 2;
+    private static uint _updateCount;
 
     /// <summary>
-    /// Creates a ClientboundDataDrivenUIReloadPacket (322) payload.
-    /// </summary>
-    public static byte[] DataDrivenUIReload()
-    {
-        var writer = new BedrockWriter();
-        writer.VarUInt32(PacketId.ClientboundDataDrivenUIReload);
-        return writer.ToArray();
-    }
-
-    /// <summary>
-    /// Creates a ClientboundDataStorePacket (323) payload to synchronize property updates with client data stores.
+    /// ClientBoundDataStore (330): one "update" entry per property, sent as a string value. The update counters only
+    /// grow, so the client never treats a new value as an old one.
     /// </summary>
     public static byte[] ClientboundDataStore(string storeName, IReadOnlyDictionary<string, string> updates)
     {
-        var writer = new BedrockWriter();
-        writer.VarUInt32(PacketId.ClientboundDataStore);
-        writer.String(storeName);
-        writer.VarUInt32((uint)updates.Count);
-        foreach (var (key, value) in updates)
+        var writer = new BedrockWriter().VarUInt32(PacketId.ClientboundDataStore).VarUInt32((uint)updates.Count);
+        foreach (var (property, value) in updates)
         {
-            writer.String(key);
-            writer.String(value);
+            var count = Interlocked.Increment(ref _updateCount);
+            writer.VarUInt32(ChangeTypeUpdate).String(storeName).String(property).String("") // path
+                .VarUInt32(ControlString).String(value).UInt32(count).UInt32(count);
         }
         return writer.ToArray();
     }
 
     /// <summary>
-    /// Decodes a ServerboundDataStorePacket (324) sent by client DDUI interactions.
+    /// Decodes ServerBoundDataStore (332): store, property, path, then a double, a bool or a string (returned as text,
+    /// "true"/"false" or an invariant number), then two update counters.
     /// </summary>
+    /// <exception cref="InvalidDataException">Unknown value type.</exception>
     public static (string StoreName, string Property, string Value) ReadServerboundDataStore(ref BedrockReader reader)
     {
-        string storeName = reader.String();
-        string property = reader.String();
-        string value = reader.String();
+        var storeName = reader.String();
+        var property = reader.String();
+        reader.String(); // path
+        var value = reader.VarUInt32() switch
+        {
+            ControlDouble => BitConverter.Int64BitsToDouble(BinaryPrimitives.ReadInt64LittleEndian(reader.Bytes(8)))
+                .ToString(CultureInfo.InvariantCulture),
+            ControlBoolean => reader.Bool() ? "true" : "false",
+            ControlString => reader.String(),
+            var other => throw new InvalidDataException($"Unknown data store value type {other}."),
+        };
+        reader.Bytes(8); // property and path update counters
         return (storeName, property, value);
     }
 }
