@@ -249,6 +249,7 @@ public sealed class PluginManager(BedrokiaServer server)
         global using Bedrokia.Server.Network;
         global using Bedrokia.Server.Permissions;
         global using Bedrokia.Server.Plugins;
+        global using Bedrokia.Server.Events;
         """;
 
 

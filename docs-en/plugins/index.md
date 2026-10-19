@@ -126,9 +126,18 @@ action (the block comes back, the message is not sent...).
 | `PlayerQuit` | the player | no |
 | `PlayerMove` | the player (position or rotation changed) | no |
 | `PlayerChat` | `PlayerChatEvent`: `Player`, `Message` (editable) | yes |
+| `PlayerDamage` | `PlayerDamageEvent`: `Player`, `Damage` (editable), `Source`, `ApplyKnockback` (editable) | yes |
+| `PlayerDeath` | `PlayerDeathEvent`: `Player`, `Source`, `DeathMessage` (editable), `KeepInventory` (editable), `Drops` (editable) | no |
+| `PlayerRespawn` | `PlayerRespawnEvent`: `Player`, `RespawnPosition` (editable) | no |
+| `PlayerDropItem` | `PlayerDropItemEvent`: `Player`, `Item` | yes |
+| `InventoryTransaction` | `InventoryTransactionEvent`: `Player`, `Type`, `Item`, `Count`, `Slot` | yes |
+| `InventoryClick` | alias for `InventoryTransaction` | yes |
 | `BlockBreak` | `BlockEvent`: `Player`, `X`, `Y`, `Z`, `Block` | yes |
 | `BlockPlace` | `BlockEvent` | yes |
 | `ItemUse` | `ItemUseEvent`: `Player`, `Item`, clicked position and `Block`, `Face` | yes |
+| `EntityDamage` | `EntityDamageEvent`: `Entity`, `Damage` (editable), `Source` | yes |
+| `EntitySpawn` | `EntitySpawnEvent`: `Kind`, `X`, `Y`, `Z` (editable) | yes |
+| `EntityDespawn` | `EntityDespawnEvent`: `Entity`, `Reason` | no |
 | `Tick` | tick number (20 per second) | no |
 
 ```csharp

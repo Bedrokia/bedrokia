@@ -59,6 +59,7 @@ public sealed class MobTests : IAsyncDisposable
         var spawn = _server.World.Spawn;
         await _server.World.GetChunkAsync(spawn.X >> 4, spawn.Z >> 4).WaitAsync(Timeout); // mobs only live in loaded chunks
         var mob = await OnMain(() => _server.Mobs.Spawn(MobKind.Cow, spawn.X + 0.5, spawn.Y + 6, spawn.Z + 0.5));
+        Assert.NotNull(mob);
 
         // Let it fall (no player around: it stays loaded because the spawn chunk is).
         var (y, onGround) = await Eventually(() => (mob.Y, mob.OnGround), s => s.OnGround);

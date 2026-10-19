@@ -9,6 +9,7 @@
 // │  Licensed under the Apache License 2.0 - see LICENSE              │
 // └───────────────────────────────────────────────────────────────────┘
 
+using Bedrokia.Server.Events;
 using Bedrokia.Server.Plugins;
 
 namespace Listeners.Listeners;
