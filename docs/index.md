@@ -20,6 +20,7 @@ Serveur **Minecraft: Bedrock Edition** écrit en C# / .NET 10. Bedrock 26.50 (pr
 | [Commandes](commandes) | Toutes les commandes, joueurs et opérateurs |
 | [Plugins](plugins) | Écrire un plugin : `plugin.yml`, événements, commandes, config, API |
 | [Items personnalisés](custom_items) | Déclarer des objets moddés, composants NBT et textures |
+| [Blocs personnalisés](custom_blocks) | Déclarer des blocs moddés, propriétés, collisions et lumière |
 | [Mondes et packs](mondes) | Mondes plats ou vides, import de mondes Bedrock, packs de ressources |
 | [Architecture](architecture) | Comment le code est organisé |
 | [Feuille de route](roadmap) | Ce qui marche, ce qui manque |
