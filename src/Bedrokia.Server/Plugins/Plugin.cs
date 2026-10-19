@@ -78,9 +78,12 @@ public abstract class Plugin
     /// <summary>A command declared in plugin.yml was run. Return false to show its usage.</summary>
     public virtual bool OnCommand(CommandSender sender, string command, string[] args) => false;
 
-    public void Log(string message) => Server.Logger.Info($"[{Name}] {message}");
-    public void LogWarning(string message) => Server.Logger.Warn($"[{Name}] {message}");
-    public void LogError(string message) => Server.Logger.Error($"[{Name}] {message}");
+    // Minecraft colour codes (§a...) mean nothing in a console or a log file.
+    private static string Plain(string message) => System.Text.RegularExpressions.Regex.Replace(message, "§.", "");
+
+    public void Log(string message) => Server.Logger.Info($"[{Name}] {Plain(message)}");
+    public void LogWarning(string message) => Server.Logger.Warn($"[{Name}] {Plain(message)}");
+    public void LogError(string message) => Server.Logger.Error($"[{Name}] {Plain(message)}");
 
     /// <summary>Copies resources/&lt;name&gt; into the data folder; returns false if it is missing or already there.</summary>
     public bool SaveResource(string name, bool replace = false)
