@@ -10,6 +10,7 @@
 // └───────────────────────────────────────────────────────────────────┘
 
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 
 namespace Bedrokia.Protocol;
@@ -200,6 +201,35 @@ public static class PlayerPackets
         {
             throw new InvalidDataException("Malformed skin data.", e);
         }
+    }
+
+    /// <summary>
+    /// A skin made by the server (an NPC): an RGBA image and, optionally, a custom geometry (a .geo.json file whose
+    /// identifier is <paramref name="geometryName"/>). Same layout as <see cref="Skin(JsonElement)"/>.
+    /// </summary>
+    /// <exception cref="InvalidDataException">The image does not match its size.</exception>
+    public static byte[] CustomSkin(string skinId, int width, int height, byte[] rgba, string geometryName = "geometry.humanoid.custom", string geometryJson = "")
+    {
+        Check((uint)width, (uint)height, rgba);
+        var patch = Encoding.UTF8.GetBytes("{\"geometry\":{\"default\":\"" + geometryName + "\"}}");
+        return new BedrockWriter(rgba.Length + geometryJson.Length + 256)
+            .String(skinId).String("").ByteArray(patch)
+            .UInt32((uint)width).UInt32((uint)height).ByteArray(rgba)
+            .VarUInt32(0) // animations
+            .UInt32(0).UInt32(0).ByteArray([]) // no cape
+            .ByteArray(Encoding.UTF8.GetBytes(geometryJson))
+            .ByteArray([]) // geometry engine version
+            .ByteArray([]) // animation data
+            .String("") // cape id
+            .String(skinId) // full id
+            .Byte(1) // wide arms
+            .Int32BE(0)
+            .VarUInt32(0).VarUInt32(0) // persona pieces, tints
+            .Bool(false).Bool(false).Bool(false).Bool(false) // premium, persona, cape on classic, primary user
+            .Bool(true) // override the client's own geometry
+            .String("true") // trusted: the client renders it without asking
+            .String("")
+            .ToArray();
     }
 
     private static void Check(uint width, uint height, byte[] image)

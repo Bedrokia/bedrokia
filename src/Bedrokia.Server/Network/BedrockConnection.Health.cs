@@ -738,6 +738,12 @@ public sealed partial class BedrockConnection
     {
         var target = (long)reader.VarUInt64();
         var action = reader.VarInt32();
+        if (_server.Npcs.Find(target) is { } npc)
+        {
+            if (action is 0 or 1)
+                _server.Events.OnNpcInteract(new NpcInteractEvent(this, npc, attack: action == 1));
+            return;
+        }
         if (action == 0)
         {
             if (_server.Events.HasPlayerInteractEntity)

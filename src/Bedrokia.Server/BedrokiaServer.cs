@@ -60,6 +60,9 @@ public sealed partial class BedrokiaServer
     /// <summary>Mobs of the overworld (spawning, AI, combat).</summary>
     public MobManager Mobs { get; }
 
+    /// <summary>Non-player characters spawned by plugins.</summary>
+    public NpcManager Npcs { get; }
+
     /// <summary>Packs from resource_packs/, sent to players at login.</summary>
     public ResourcePacks ResourcePacks { get; private set; } = null!;
 
@@ -108,6 +111,7 @@ public sealed partial class BedrokiaServer
             logger.Error(permissionsError);
         Commands = new CommandManager(logger);
         Mobs = new MobManager(this);
+        Npcs = new NpcManager(this);
         Events = new ServerEvents(logger);
         Scheduler = new ServerScheduler(logger);
         Plugins = new PluginManager(this);
@@ -560,7 +564,10 @@ public sealed partial class BedrokiaServer
                         TickDroppedItems(world);
 
                 using (Timings.Track(Timings.Mobs))
+                {
                     Mobs.Tick(CurrentTick);
+                    Npcs.Tick(CurrentTick);
+                }
 
                 using (Timings.Track(Timings.FallingBlocks))
                     foreach (var world in Worlds)
@@ -698,6 +705,7 @@ public sealed partial class BedrokiaServer
         var wasInGame = connection.IsInGame; // read before OnClosed() changes the stage
         connection.OnClosed();
         Mobs.Forget(connection);
+        Npcs.Forget(connection);
         _players.Remove(connection);
         if (wasInGame)
         {
