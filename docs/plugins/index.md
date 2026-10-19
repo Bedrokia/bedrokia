@@ -173,6 +173,7 @@ l'action (le bloc revient, le message n'est pas envoyé...).
 | `BlockBreak` | `BlockEvent` : `Player`, `X`, `Y`, `Z`, `Block`, `Drops` et `Xp` (modifiables) | oui |
 | `BlockPlace` | `BlockEvent` | oui |
 | `ItemUse` | `ItemUseEvent` : `Player`, `Item`, position et `Block` cliqués, `Face` | oui |
+| `PlayerItemUse` | `PlayerItemUseEvent` : `Player`, `Item` (clic droit dans le vide) | oui |
 | `EntityDamage` | `EntityDamageEvent` : `Entity`, `Damage` (modifiable), `Source` | oui |
 | `EntitySpawn` | `EntitySpawnEvent` : `Kind`, `X`, `Y`, `Z` (modifiables) | oui |
 | `EntityDespawn` | `EntityDespawnEvent` : `Entity`, `Reason` | non |
