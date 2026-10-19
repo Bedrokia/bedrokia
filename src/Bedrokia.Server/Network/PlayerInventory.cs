@@ -35,6 +35,8 @@ public sealed class PlayerInventory
     public Inventory Offhand { get; } = new(1);
     public Inventory Ui { get; } = new(54); // 0 cursor, 28-40 crafting grid, 50 created output
 
+    public BedrockConnection? Player { get; set; }
+
     /// <summary>This player's ender chest (the same in every ender chest block).</summary>
     public Inventory EnderChest { get; } = new(27);
 
@@ -376,6 +378,12 @@ public sealed class PlayerInventory
                             throw new InvalidOperationException("bad count");
                         if (dest is not null && (!dest.StacksWith(source) || dest.Count + t.Count > dest.MaxCount))
                             throw new InvalidOperationException("cannot merge stacks");
+                        if (Player is not null)
+                        {
+                            var tx = new InventoryTransactionEvent(Player, InventoryTransactionType.Transfer, source, t.Count, (t.From.Container, t.From.Slot), (t.To.Container, t.To.Slot));
+                            if (!Player.Server.Events.OnInventoryTransaction(tx))
+                                throw new InvalidOperationException("inventory transaction cancelled");
+                        }
                         Remember(from);
                         Remember(to);
                         if (dest is null && t.Count == source.Count)
@@ -401,6 +409,12 @@ public sealed class PlayerInventory
                         var b = Slot(s.B);
                         var stackA = a.Inventory[a.Slot];
                         var stackB = b.Inventory[b.Slot];
+                        if (Player is not null)
+                        {
+                            var tx = new InventoryTransactionEvent(Player, InventoryTransactionType.Swap, stackA ?? stackB, (stackA ?? stackB)?.Count ?? 0, (s.A.Container, s.A.Slot), (s.B.Container, s.B.Slot));
+                            if (!Player.Server.Events.OnInventoryTransaction(tx))
+                                throw new InvalidOperationException("inventory swap cancelled");
+                        }
                         Set(s.A, a, stackB);
                         Set(s.B, b, stackA);
                         break;
@@ -411,8 +425,18 @@ public sealed class PlayerInventory
                         var source = from.Inventory[from.Slot] ?? throw new InvalidOperationException("empty source");
                         if (d.Count <= 0 || d.Count > source.Count)
                             throw new InvalidOperationException("bad count");
+                        var droppedStack = source.Split(d.Count);
+                        if (Player is not null)
+                        {
+                            var dropEvent = new PlayerDropItemEvent(Player, droppedStack);
+                            if (!Player.Server.Events.OnPlayerDropItem(dropEvent))
+                                throw new InvalidOperationException("item drop cancelled");
+                            var tx = new InventoryTransactionEvent(Player, InventoryTransactionType.Drop, droppedStack, d.Count, (d.From.Container, d.From.Slot));
+                            if (!Player.Server.Events.OnInventoryTransaction(tx))
+                                throw new InvalidOperationException("inventory drop cancelled");
+                        }
                         Remember(from);
-                        dropped.Add(source.Split(d.Count));
+                        dropped.Add(droppedStack);
                         source.SetCount(source.Count - d.Count);
                         Set(d.From, from, source.Count > 0 ? source : null);
                         break;
@@ -423,6 +447,12 @@ public sealed class PlayerInventory
                             throw new InvalidOperationException("destroy outside creative");
                         var from = Slot(x.From);
                         var source = from.Inventory[from.Slot] ?? throw new InvalidOperationException("empty source");
+                        if (Player is not null)
+                        {
+                            var tx = new InventoryTransactionEvent(Player, InventoryTransactionType.Destroy, source, x.Count, (x.From.Container, x.From.Slot));
+                            if (!Player.Server.Events.OnInventoryTransaction(tx))
+                                throw new InvalidOperationException("inventory destroy cancelled");
+                        }
                         Remember(from);
                         source.SetCount(source.Count - Math.Min(x.Count, source.Count));
                         Set(x.From, from, source.Count > 0 ? source : null);
@@ -442,6 +472,12 @@ public sealed class PlayerInventory
                         if (c.CreativeId == 0 || c.CreativeId > templates.Count)
                             throw new InvalidOperationException("unknown creative item");
                         var template = templates[(int)c.CreativeId - 1];
+                        if (Player is not null)
+                        {
+                            var tx = new InventoryTransactionEvent(Player, InventoryTransactionType.CreativeCraft, template, template.Count, (0, 0));
+                            if (!Player.Server.Events.OnInventoryTransaction(tx))
+                                throw new InvalidOperationException("creative craft cancelled");
+                        }
                         CreateResult(template.Split(template.MaxCount));
                         break;
                     }
@@ -467,9 +503,15 @@ public sealed class PlayerInventory
                     }
                     case Craft c:
                     {
-                        // Ported from Dragonfly session/handler_crafting.go (handleCraft, handleAutoCraft).
+                        // Crafting table and inventory crafting
                         if (Recipes.ByNetworkId(c.RecipeId) is not { Block: "crafting_table" } recipe || c.Times < 1)
                             throw new InvalidOperationException($"unknown crafting recipe {c.RecipeId}");
+                        if (Player is not null)
+                        {
+                            var tx = new InventoryTransactionEvent(Player, InventoryTransactionType.Craft, recipe.Outputs.FirstOrDefault(), c.Times, (0, 0));
+                            if (!Player.Server.Events.OnInventoryTransaction(tx))
+                                throw new InvalidOperationException("craft cancelled");
+                        }
                         var (offset, size) = CraftingTableOpen ? (LargeGridOffset, LargeGridSize) : (SmallGridOffset, SmallGridSize);
                         if (c.Auto)
                             ConsumeAuto(recipe, c.Times, offset, size);

@@ -38,14 +38,28 @@ public sealed partial class BedrockConnection
     private long _eatingSince = -1;
     private (float X, float Z) _lastWalk = (float.NaN, 0);
 
+    private DamageSource? _lastDamageSource;
+
     /// <summary>
     /// Hurts the player (survival/adventure only) with knockback away from (fromX, fromZ). Attacks are reduced by
     /// armour points (4 % each, up to 80 %) and Protection enchantments (4 % per level, up to 80 %).
     /// </summary>
-    public void Damage(float amount, double fromX, double fromZ, bool armour = true)
+    public void Damage(float amount, double fromX, double fromZ, bool armour = true, DamageSource? source = null)
     {
         if (Dead || GameMode == GameMode.Creative || _hurtTicks > 0 || amount <= 0)
             return;
+
+        source ??= DamageSource.Custom();
+        var ev = new PlayerDamageEvent(this, source, amount, (fromX, fromZ));
+        if (!_server.Events.OnPlayerDamage(ev))
+            return;
+
+        amount = ev.Damage;
+        if (amount <= 0)
+            return;
+
+        _lastDamageSource = source;
+
         if (armour)
         {
             amount *= 1 - Math.Min(ArmourPoints(), 20) / 25f;
@@ -56,10 +70,13 @@ public sealed partial class BedrockConnection
         Health = Math.Max(0, Health - amount);
         SendVitals();
         _server.Broadcast(EntityPackets.Event(EntityId, EntityPackets.EventHurt));
-        var dx = Position.X - fromX;
-        var dz = Position.Z - fromZ;
-        var length = Math.Max(0.01, Math.Sqrt(dx * dx + dz * dz));
-        Send(EntityPackets.Motion(EntityId, dx / length * 0.4, 0.36, dz / length * 0.4));
+        if (ev.ApplyKnockback)
+        {
+            var dx = Position.X - ev.KnockbackOrigin.X;
+            var dz = Position.Z - ev.KnockbackOrigin.Z;
+            var length = Math.Max(0.01, Math.Sqrt(dx * dx + dz * dz));
+            Send(EntityPackets.Motion(EntityId, dx / length * 0.4, 0.36, dz / length * 0.4));
+        }
         if (Health <= 0)
             Die();
     }
@@ -122,42 +139,59 @@ public sealed partial class BedrockConnection
         _fallPeak = float.NaN;
         _eatingSince = -1;
         _server.Broadcast(EntityPackets.Event(EntityId, EntityPackets.EventDeath));
-        _server.BroadcastMessage($"{Name} died");
-        if (_server.Config.KeepInventory)
-            return;
-        // Vanilla (keepInventory off): everything is dropped where the player died.
-        var (x, y, z) = (Position.X, Position.Y - EyeHeight + 0.5f, Position.Z);
+
+        var drops = new List<ItemStack>();
         foreach (var inventory in new[] { Inventory.Main, Inventory.Armour, Inventory.Offhand })
             for (var slot = 0; slot < inventory.Size; slot++)
                 if (inventory[slot] is { } stack)
-                {
-                    _server.DropItem(stack, x, y, z);
-                    inventory[slot] = null;
-                }
+                    drops.Add(stack);
         foreach (var stack in Inventory.ReturnCraftingItems())
-            _server.DropItem(stack, x, y, z);
+            drops.Add(stack);
+
+        var deathEvent = new PlayerDeathEvent(this, _lastDamageSource, $"{Name} died", _server.Config.KeepInventory, drops);
+        _server.Events.OnPlayerDeath(deathEvent);
+
+        if (deathEvent.DeathMessage is { Length: > 0 } msg)
+            _server.BroadcastMessage(msg);
+
+        if (!deathEvent.KeepInventory)
+        {
+            foreach (var inventory in new[] { Inventory.Main, Inventory.Armour, Inventory.Offhand })
+                for (var slot = 0; slot < inventory.Size; slot++)
+                    inventory[slot] = null;
+
+            var (x, y, z) = (Position.X, Position.Y - EyeHeight + 0.5f, Position.Z);
+            foreach (var stack in deathEvent.Drops)
+                _server.DropItem(stack, x, y, z);
+        }
+
         Send([.. Inventory.ContentPackets()]);
     }
 
     /// <summary>Respawn packet (state 2 = client ready): back to the world spawn with full health and food.</summary>
-    private void OnRespawnRequest(ref BedrockReader reader)
+    internal void OnRespawnRequest(ref BedrockReader reader)
     {
         reader.Bytes(12); // position
         var state = reader.Byte();
         if (!Dead || state != 2)
             return;
-        var (sx, sy, sz) = BedSpawn is { } bed && _server.World.GetBlock(bed.X, bed.Y - 1, bed.Z)?.Name == "minecraft:bed" ? bed : _server.World.Spawn;
-        Send(EntityPackets.Respawn(EntityId, sx + 0.5f, sy + EyeHeight, sz + 0.5f));
+        var (sx, sy, sz) = BedSpawn is { } bed && _server.World?.GetBlock(bed.X, bed.Y - 1, bed.Z)?.Name == "minecraft:bed" ? bed : (_server.World?.Spawn ?? (0, 64, 0));
+        var respawnEvent = new PlayerRespawnEvent(this, (sx + 0.5f, sy + EyeHeight, sz + 0.5f));
+        _server.Events.OnPlayerRespawn(respawnEvent);
+
+        var (rx, ry, rz) = respawnEvent.RespawnPosition;
+        Send(EntityPackets.Respawn(EntityId, rx, ry, rz));
         Dead = false;
         Health = MaxHealth;
         Food = MaxFood;
         Saturation = 5;
         _exhaustion = 0;
         SendVitals();
-        Teleport(sx + 0.5f, sy, sz + 0.5f);
+        Teleport(rx, ry - EyeHeight, rz);
         // Others still see the corpse: re-add the player.
         _server.BroadcastExcept(this, Packets.RemoveActor(EntityId));
-        _server.BroadcastExcept(this, PlayerPackets.AddPlayer(Info!, Position.X, Position.Y, Position.Z, Pitch, Yaw, (int)GameMode));
+        if (Info is not null)
+            _server.BroadcastExcept(this, PlayerPackets.AddPlayer(Info, Position.X, Position.Y, Position.Z, Pitch, Yaw, (int)GameMode));
     }
 
     /// <summary>Called every tick by the server.</summary>
@@ -201,14 +235,14 @@ public sealed partial class BedrockConnection
             if (Health > floor) // starvation stops at half health in easy, at half a heart in normal, kills in hard
             {
                 _hurtTicks = 0;
-                Damage(1, Position.X, Position.Z, armour: false);
+                Damage(1, Position.X, Position.Z, armour: false, source: DamageSource.Starvation());
             }
         }
 
         if (_eatingSince >= 0 && _server.CurrentTick - _eatingSince >= 30) // 1.6 s, minus some latency margin
             FinishEating();
         if (Position.Y < Chunk.MinY - 64)
-            Damage(4, Position.X, Position.Z, armour: false);
+            Damage(4, Position.X, Position.Z, armour: false, source: DamageSource.Void());
     }
 
     // --- Eating ---
@@ -289,7 +323,7 @@ public sealed partial class BedrockConnection
         if (fallen > 3.5f && feet != Blocks.Water)
         {
             _hurtTicks = 0;
-            Damage((float)Math.Floor(fallen - 3) * (1 - Math.Min(Enchanting.Level(Inventory.Armour[3], "feather_falling") * 3 + ProtectionPoints(), 20) * 0.04f), Position.X, Position.Z, armour: false);
+            Damage((float)Math.Floor(fallen - 3) * (1 - Math.Min(Enchanting.Level(Inventory.Armour[3], "feather_falling") * 3 + ProtectionPoints(), 20) * 0.04f), Position.X, Position.Z, armour: false, source: DamageSource.Fall(fallen));
         }
     }
 
@@ -334,7 +368,7 @@ public sealed partial class BedrockConnection
                 damage += 2.5f * Enchanting.Level(held, "smite");
             if (mob.Kind == MobKind.Spider)
                 damage += 2.5f * Enchanting.Level(held, "bane_of_arthropods");
-            if (_server.Mobs.Damage(mob, damage, (Position.X, Position.Z), this, Enchanting.Level(held, "knockback"), Enchanting.Level(held, "looting")))
+            if (_server.Mobs.Damage(mob, damage, (Position.X, Position.Z), this, Enchanting.Level(held, "knockback"), Enchanting.Level(held, "looting"), source: DamageSource.PlayerAttack(this)))
                 mob.FireTicks = Math.Max(mob.FireTicks, 80 * Enchanting.Level(held, "fire_aspect"));
             return;
         }
@@ -343,7 +377,7 @@ public sealed partial class BedrockConnection
             var dx = victim.Position.X - Position.X;
             var dz = victim.Position.Z - Position.Z;
             if (dx * dx + dz * dz <= 6 * 6)
-                victim.Damage(damage + 1.25f * Enchanting.Level(Inventory.Held, "sharpness"), Position.X, Position.Z);
+                victim.Damage(damage + 1.25f * Enchanting.Level(Inventory.Held, "sharpness"), Position.X, Position.Z, source: DamageSource.PlayerAttack(this));
         }
     }
 
@@ -418,6 +452,12 @@ public sealed partial class BedrockConnection
             return;
         }
         var dropped = stack.Split(amount);
+        var dropEvent = new PlayerDropItemEvent(this, dropped);
+        if (!_server.Events.OnPlayerDropItem(dropEvent))
+        {
+            Send(InventoryPackets.InventorySlot(InventoryPackets.WindowInventory, s.Slot, Inventory.Main[s.Slot]));
+            return;
+        }
         stack.SetCount(stack.Count - amount);
         if (stack.Count == 0)
             Inventory.Main[s.Slot] = null;
