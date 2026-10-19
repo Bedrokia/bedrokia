@@ -125,3 +125,40 @@ public class SurvivalRulesTests
         Assert.Equal(1, inventory.Ui[28]!.Count);
     }
 }
+
+public class InventoryMenuTests
+{
+    // Take 1 item from the open container's slot 0 to the cursor.
+    private static void TakeFromMenu(Bedrokia.Server.Network.PlayerInventory inventory, ItemStack stack)
+    {
+        var request = new BedrockWriter().VarUInt32(1).VarInt32(-1).VarUInt32(1)
+            .VarUInt32(0).Byte(0).Byte(1).Byte(7).Bool(false).Byte(0).Int32(stack.NetworkId).Byte(59).Bool(false).Byte(0).Int32(0)
+            .VarUInt32(0).Int32(0).ToArray();
+        var reader = new BedrockReader(request);
+        inventory.HandleRequests(ref reader, Bedrokia.Server.Core.GameMode.Survival, _ => { });
+    }
+
+    [Fact]
+    public void A_menu_listener_can_refuse_or_allow_a_click()
+    {
+        var menu = new Bedrokia.Server.Network.InventoryMenu("Shop");
+        var diamond = ItemStack.Of("diamond")!;
+        menu.Inventory[0] = diamond;
+        var inventory = new Bedrokia.Server.Network.PlayerInventory { OpenContainer = (menu.Inventory, "Menu") };
+        (int Slot, ItemStack? Clicked)? seen = null;
+        inventory.MenuListener = (slot, clicked, _) =>
+        {
+            seen = (slot, clicked);
+            return false;
+        };
+        TakeFromMenu(inventory, diamond);
+        Assert.Equal((0, diamond), seen);
+        Assert.Same(diamond, menu.Inventory[0]); // refused: still in the menu
+        Assert.Null(inventory.Ui[0]);
+
+        inventory.MenuListener = (_, _, _) => true;
+        TakeFromMenu(inventory, diamond);
+        Assert.Null(menu.Inventory[0]);
+        Assert.Same(diamond, inventory.Ui[0]); // on the cursor
+    }
+}
