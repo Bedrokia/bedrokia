@@ -28,8 +28,9 @@ public sealed class PluginTests : IDisposable
         var folder = Directory.CreateDirectory(Path.Combine(plugins, "WithLib")).FullName;
         var libs = Directory.CreateDirectory(Path.Combine(folder, "libs")).FullName;
         var library = Microsoft.CodeAnalysis.CSharp.CSharpCompilation.Create("GreetingLib",
-            [Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree.ParseText("namespace GreetingLib; public static class Greeting { public static string Text => \"from lib\"; }")],
-            [Microsoft.CodeAnalysis.MetadataReference.CreateFromFile(typeof(object).Assembly.Location)],
+            [Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree.ParseText("namespace GreetingLib; public static class Greeting { public static string Text => \"from lib\"; } public sealed class Options : System.Data.Common.DbConnectionStringBuilder { }")],
+            [Microsoft.CodeAnalysis.MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
+             Microsoft.CodeAnalysis.MetadataReference.CreateFromFile(typeof(System.Data.Common.DbConnectionStringBuilder).Assembly.Location)],
             new Microsoft.CodeAnalysis.CSharp.CSharpCompilationOptions(Microsoft.CodeAnalysis.OutputKind.DynamicallyLinkedLibrary));
         using (var dll = File.Create(Path.Combine(libs, "GreetingLib.dll")))
             Assert.True(library.Emit(dll).Success);
@@ -40,7 +41,7 @@ public sealed class PluginTests : IDisposable
             public sealed class Main : Plugin
             {
                 public override void OnEnable() =>
-                    RegisterCommand("lib", "Library text.", "", false, (sender, _) => sender.Reply(GreetingLib.Greeting.Text));
+                    RegisterCommand("lib", "Library text.", "", false, (sender, _) => sender.Reply(GreetingLib.Greeting.Text + new GreetingLib.Options { ["a"] = "b" }.ConnectionString));
             }
             """);
 
@@ -55,7 +56,7 @@ public sealed class PluginTests : IDisposable
         Assert.Empty(server.Plugins.Failed);
         var replies = new List<string>();
         server.Commands.Dispatch(new Bedrokia.Server.Commands.CommandSender("Console", true, replies.Add), "lib");
-        Assert.Equal(["from lib"], replies);
+        Assert.Equal(["from liba=b"], replies); // Options needs System.Data.Common, which the plugin compiler adds
     }
 
     [Fact]
