@@ -5,4 +5,5 @@ nav:
   - Démarrer: demarrer
   - Plugins: plugins
   - Projet: projet
-  - "*"
+  - glob: "*"
+    ignore_no_matches: true # no new page yet: fine
