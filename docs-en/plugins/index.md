@@ -162,6 +162,10 @@ server keep running.
 | `SetSidebar(title, lines)` / `ClearSidebar()` | sidebar scoreboard (15 lines max) |
 | `AddEffect(effect, level, seconds, particles)` / `RemoveEffect(effect)` | effects (`BedrockConnection.Effects.Speed`, `JumpBoost`, `NightVision`...) |
 | `SetSpeed(speed)` | walk speed (vanilla 0.1) |
+| `SetHealth(health)` / `SetFood(food, saturation)` | heal, feed (20 = full) |
+| `CanFly`, `God`, `Frozen`, `Vanished` | flying in survival, invincible, unable to move, invisible to the other players |
+| `ClearInventory(armour)` / `SyncInventory()` | empty the inventory; resend the inventory after changing slots |
+| `ChangeDimension(world, x, y, z)` | send to another world (`Server.World`, `Server.Nether`) |
 | `SetMotion(vx, vy, vz)` | pushes the player |
 | `GiveItem(stack)` | gives an item (what does not fit drops on the ground) |
 | `HeldItem`, `ArmourItem(0..3)` | item in hand, worn armour |

@@ -47,7 +47,7 @@ public sealed partial class BedrockConnection
     /// </summary>
     public void Damage(float amount, double fromX, double fromZ, bool armour = true, DamageSource? source = null)
     {
-        if (Dead || GameMode == GameMode.Creative || _hurtTicks > 0 || amount <= 0)
+        if (Dead || GameMode == GameMode.Creative || _god || _hurtTicks > 0 || amount <= 0)
             return;
 
         source ??= DamageSource.Custom();
@@ -121,7 +121,7 @@ public sealed partial class BedrockConnection
     /// <summary>Hunger cost of an action (Bedrock values: sprinting 0.1/m, jumping 0.05, attacking 0.1, mining 0.005).</summary>
     public void AddExhaustion(float amount)
     {
-        if (Dead || GameMode == GameMode.Creative)
+        if (Dead || GameMode == GameMode.Creative || _god)
             return;
         _exhaustion += amount;
         if (_exhaustion < 4)
@@ -195,7 +195,7 @@ public sealed partial class BedrockConnection
         ChangeDimension(_server.World!, rx, ry - EyeHeight, rz, respawn: true); // dying in the Nether brings the player back to the overworld
         // Others still see the corpse: re-add the player.
         _server.BroadcastInExcept(World, this, Packets.RemoveActor(EntityId));
-        if (Info is not null)
+        if (Info is not null && !Vanished)
             _server.BroadcastInExcept(World, this, PlayerPackets.AddPlayer(Info, Position.X, Position.Y, Position.Z, Pitch, Yaw, (int)GameMode));
     }
 
