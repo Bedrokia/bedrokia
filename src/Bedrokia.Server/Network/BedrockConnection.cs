@@ -105,6 +105,7 @@ public sealed partial class BedrockConnection
             return;
         if (_codec.CompressionEnabled) // the client cannot read game packets before NetworkSettings
             Send(Packets.Disconnect(reason, message));
+        FlushOutgoing();
         _transport.Disconnect(message);
     }
 
@@ -119,12 +120,7 @@ public sealed partial class BedrockConnection
         catch (InvalidDataException e)
         {
             _server.Logger.Warn($"{Name}: protocol error: {e.Message}");
-            Disconnect("Protocol error.", DisconnectReason.Unknown);
-        }
-        catch (LoginException e)
-        {
-            _server.Logger.Info($"{_transport.RemoteEndPoint}: login refused: {e.Message}");
-            Disconnect(e.Message, DisconnectReason.NotAuthenticated);
+            _server.RunOnMainThread(() => Disconnect("Protocol error.", DisconnectReason.Unknown));
         }
     }
 
@@ -1195,7 +1191,6 @@ public sealed partial class BedrockConnection
         }
         wanted.Sort((a, b) => a.Dist2.CompareTo(b.Dist2));
 
-        var dispatched = 0;
         foreach (var item in wanted)
         {
             var key = World.ChunkKey(item.X, item.Z);
@@ -1204,8 +1199,6 @@ public sealed partial class BedrockConnection
             var world = World;
             var task = world.GetChunkAsync(item.X, item.Z);
             task.ContinueWith(t => _server.RunOnMainThread(() => OnChunkReady(t, world)), TaskScheduler.Default);
-            if (++dispatched >= 4 && _stage == Stage.InGame)
-                break;
         }
         TrySpawn();
     }
@@ -1271,13 +1264,16 @@ public sealed partial class BedrockConnection
 
     internal void SendRawBatch(byte[] framedBatch, bool preferUnreliable = false)
     {
-        if (_stage != Stage.Closed)
-            _transport.Send(framedBatch, preferUnreliable);
+        if (_stage == Stage.Closed)
+            return;
+        FlushOutgoing();
+        _transport.Send(framedBatch, preferUnreliable);
     }
 
     internal void FlushOutgoing()
     {
-        if (_pendingOutgoing.Count == 0 || _stage == Stage.Closed)
+        // The buffer belongs to the tick thread; outside a tick it is already empty.
+        if (!_server.IsTicking || _pendingOutgoing.Count == 0 || _stage == Stage.Closed)
             return;
 
         try
