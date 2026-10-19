@@ -52,11 +52,11 @@ public sealed class MagicItemsPlugin : Plugin
                 _pads.Add((e.X, e.Y, e.Z));
         };
         Events.BlockBreak += e => _pads.Remove((e.X, e.Y, e.Z));
-        Events.PlayerMove += OnMove;
-        Events.PlayerQuit += player =>
+        Events.PlayerMove += e => OnMove(e.Player);
+        Events.PlayerQuit += e =>
         {
-            _boosted.Remove(player);
-            _cooldown.Remove(player);
+            _boosted.Remove(e.Player);
+            _cooldown.Remove(e.Player);
         };
         Events.Tick += OnTick;
         Log($"{_pads.Count} tremplin(s) chargé(s).");

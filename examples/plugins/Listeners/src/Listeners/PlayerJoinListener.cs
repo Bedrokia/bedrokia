@@ -9,14 +9,16 @@
 // │  Licensed under the Apache License 2.0 - see LICENSE              │
 // └───────────────────────────────────────────────────────────────────┘
 
+using Bedrokia.Server.Events;
 using Bedrokia.Server.Network;
 
 namespace Listeners.Listeners;
 
 public sealed class PlayerJoinListener(ListenersPlugin plugin)
 {
-    public void OnPlayerJoin(BedrockConnection player)
+    public void OnPlayerJoin(PlayerJoinEvent e)
     {
+        var player = e.Player;
         var message = plugin.Config.GetString("join.message", "§aBienvenue sur le serveur, {player} !");
         player.SendMessage(message.Replace("{player}", player.Name));
 

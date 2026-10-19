@@ -53,17 +53,17 @@ public sealed partial class BedrockConnection
 
     public BedrokiaServer Server => _server;
 
-    public PlayerIdentity? Identity { get; private set; }
-    public PlayerInfo? Info { get; private set; }
+    public PlayerIdentity? Identity { get; internal set; }
+    public PlayerInfo? Info { get; internal set; }
     public string Name => Identity?.Name ?? _transport.RemoteEndPoint.ToString();
     public long EntityId { get; }
-    public bool IsInGame => _stage == Stage.InGame;
+    public bool IsInGame { get => _stage == Stage.InGame; internal set => _stage = value ? Stage.InGame : Stage.Closed; }
     public System.Net.IPEndPoint RemoteEndPoint => _transport.RemoteEndPoint;
 
     /// <summary>Eye position as reported by the client.</summary>
-    public (float X, float Y, float Z) Position { get; private set; }
-    public float Pitch { get; private set; }
-    public float Yaw { get; private set; }
+    public (float X, float Y, float Z) Position { get; internal set; }
+    public float Pitch { get; internal set; }
+    public float Yaw { get; internal set; }
 
     /// <summary>Chunk the player stands in.</summary>
     public (int X, int Z) ChunkPosition => ((int)Math.Floor(Position.X) >> 4, (int)Math.Floor(Position.Z) >> 4);
@@ -230,7 +230,7 @@ public sealed partial class BedrockConnection
         _handlers[PacketId.ServerBoundDiagnostics] = OnServerBoundDiagnostics;
     }
 
-    private void HandleInGamePacket(uint id, ref BedrockReader reader)
+    internal void HandleInGamePacket(uint id, ref BedrockReader reader)
     {
         if (_handlers.TryGetValue(id, out var handler))
         {
@@ -338,7 +338,23 @@ public sealed partial class BedrockConnection
         reader.Byte();
         var hotbar = reader.Byte();
         if (reader.Byte() == InventoryPackets.WindowInventory && hotbar < 9)
-            Inventory.SelectedSlot = hotbar;
+        {
+            if (hotbar != Inventory.SelectedSlot)
+            {
+                var oldSlot = Inventory.SelectedSlot;
+                if (_server.Events.HasListeners(_server.Events.PlayerHeldSlotChange))
+                {
+                    var ev = new PlayerHeldSlotChangeEvent(this, oldSlot, hotbar);
+                    if (!_server.Events.OnPlayerHeldSlotChange(ev))
+                    {
+                        Send(InventoryPackets.MobEquipment(EntityId, Inventory.Held, oldSlot, oldSlot, InventoryPackets.WindowInventory));
+                        return;
+                    }
+                    hotbar = (byte)ev.NewSlot;
+                }
+                Inventory.SelectedSlot = hotbar;
+            }
+        }
     }
 
 
@@ -471,6 +487,15 @@ public sealed partial class BedrockConnection
 
     private void CompleteLogin()
     {
+        if (_server.Events.HasListeners(_server.Events.PlayerLogin))
+        {
+            var loginEv = new PlayerLoginEvent(this);
+            if (!_server.Events.OnPlayerLogin(loginEv))
+            {
+                Disconnect(loginEv.KickReason);
+                return;
+            }
+        }
         _stage = Stage.ResourcePacks;
         Send(Packets.PlayStatus(PlayStatus.LoginSuccess), _server.ResourcePacks.InfoPacket(_server.Config.ForceResourcePacks));
     }
@@ -555,7 +580,7 @@ public sealed partial class BedrockConnection
     }
 
     // Pitch, yaw, position (eyes), move vector, head yaw, ... (only the start is read).
-    private void OnPlayerAuthInput(ref BedrockReader reader)
+    internal void OnPlayerAuthInput(ref BedrockReader reader)
     {
         var pitch = reader.Float32();
         var yaw = reader.Float32();
@@ -570,13 +595,27 @@ public sealed partial class BedrockConnection
         TrackFall(Position.Y, y); // every packet, so that landing is seen even when the player then stands still
         if (moved)
         {
-            // ponytail: movement is trusted (no speed or collision checks yet).
+            var from = new System.Numerics.Vector3(Position.X, Position.Y, Position.Z);
+            var to = new System.Numerics.Vector3(x, y, z);
+            var isBlockChange = (int)Math.Floor(from.X) != (int)Math.Floor(to.X)
+                || (int)Math.Floor(from.Y) != (int)Math.Floor(to.Y)
+                || (int)Math.Floor(from.Z) != (int)Math.Floor(to.Z);
+
+            if (_server.Events.HasListeners(_server.Events.PlayerMove))
+            {
+                var ev = new PlayerMoveEvent(this, from, to, yaw, pitch, isBlockChange);
+                if (!_server.Events.OnMove(ev))
+                {
+                    Send(Packets.MovePlayer(EntityId, from.X, from.Y, from.Z, Pitch, Yaw, Yaw, teleport: true, onGround: true));
+                    return;
+                }
+            }
+
             Position = (x, y, z);
             Pitch = pitch;
             Yaw = yaw;
             UpdateChunks(ChunkPosition.X, ChunkPosition.Z);
             _server.BroadcastExcept(this, Packets.MovePlayer(EntityId, x, y, z, pitch, yaw, yaw, teleport: false, onGround: true));
-            _server.Events.OnMove(this);
         }
         if (reader.Remaining == 0)
             return; // short form (tests)
@@ -588,7 +627,16 @@ public sealed partial class BedrockConnection
         var sneaking = false;
         for (var i = 0; i < flags; i++)
             sneaking |= reader.VarInt32() == InputFlagSneaking;
-        Sneaking = sneaking;
+        if (sneaking != Sneaking)
+        {
+            if (_server.Events.HasListeners(_server.Events.PlayerToggleAction))
+            {
+                var toggleEv = new PlayerToggleActionEvent(this, ToggleActionType.Sneak, sneaking);
+                if (!_server.Events.OnPlayerToggleAction(toggleEv))
+                    sneaking = Sneaking;
+            }
+            Sneaking = sneaking;
+        }
         reader.VarUInt32(); // input mode
         reader.VarUInt32(); // play mode
         reader.VarInt32(); // interaction model
@@ -759,7 +807,7 @@ public sealed partial class BedrockConnection
         // Using the clicked block (doors, containers, tables...) unless sneaking, then using the held item on it.
         if (action == clickBlock && _server.World.GetBlock(bx, by, bz) is { } clicked)
         {
-            if (!Sneaking && UseBlock(clicked, bx, by, bz))
+            if (!Sneaking && UseBlock(clicked, bx, by, bz, face))
                 return;
             if (Inventory.Held is { } used && !_server.Events.OnItemUse(new ItemUseEvent(this, used, bx, by, bz, clicked, face)))
             {
