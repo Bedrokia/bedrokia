@@ -823,3 +823,24 @@ public sealed class ServerEventsTests
         Assert.Equal(50f, player.Position.Z);
     }
 }
+
+public class LiquidFlowListenerTests
+{
+    [Fact]
+    public void Water_stays_water_when_a_plugin_listens_to_liquid_flow()
+    {
+        var server = new BedrokiaServer(new ServerConfig { WorldsDirectory = TestWorlds.NewDirectory(), Port = 0, OnlineMode = false },
+            new Logger(LogLevel.Error, null));
+        server.InitWorldForTesting();
+        var seen = 0;
+        server.Events.LiquidFlow += _ => seen++;
+        var world = server.World;
+        const int y = 200; // open air: the water spreads sideways and down
+        world.SetBlock(0, y, 0, Bedrokia.Server.Game.Fluids.Source("water"));
+        world.Fluids.Wake(0, y, 0);
+        for (var i = 0; i < 40; i++)
+            server.Tick();
+        Assert.True(seen > 0);
+        Assert.Equal("minecraft:flowing_water", world.GetBlock(1, y, 0)!.Name); // not a random block
+    }
+}
