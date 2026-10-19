@@ -44,6 +44,12 @@ public sealed partial class BedrockConnection
     /// <summary>Text above the hotbar.</summary>
     public void SendActionBar(string text) => Send(Title(4, text, 0, 40, 10));
 
+    /// <summary>Short text above the hotbar (PocketMine sendTip).</summary>
+    public void SendTip(string text) => Send(Packets.Text(TextType.Tip, text));
+
+    /// <summary>Text above the hotbar, higher than a tip (PocketMine sendPopup).</summary>
+    public void SendPopup(string text) => Send(Packets.Text(TextType.Popup, text));
+
     private static byte[] Title(int action, string text, int fadeIn, int stay, int fadeOut) =>
         new BedrockWriter().VarUInt32(SetTitleId).VarInt32(action).String(text).VarInt32(fadeIn).VarInt32(stay).VarInt32(fadeOut)
             .String("").String("").String("").ToArray();
