@@ -30,6 +30,9 @@ public sealed class World
     public string Folder => _directory;
     private readonly ConcurrentDictionary<(int X, int Z), Lazy<Task<Chunk>>> _chunks = new();
 
+    /// <summary>Number of cached chunks currently loaded in memory.</summary>
+    public int LoadedChunkCount => _chunks.Count;
+
     private World(string directory, long seed, long time)
     {
         _directory = directory;

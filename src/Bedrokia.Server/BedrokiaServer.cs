@@ -10,6 +10,7 @@
 // └───────────────────────────────────────────────────────────────────┘
 
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Net;
 using System.Reflection;
 using System.Security.Cryptography;
@@ -21,6 +22,7 @@ using Bedrokia.Server.Core;
 using Bedrokia.Server.Entities;
 using Bedrokia.Server.Game;
 using Bedrokia.Server.Network;
+using Bedrokia.Server.Performance;
 using Bedrokia.Server.Permissions;
 using Bedrokia.Server.Plugins;
 using Bedrokia.Transport.NetherNet;
@@ -117,6 +119,18 @@ public sealed partial class BedrokiaServer
 
     /// <summary>Players that finished logging in, including those still loading the world.</summary>
     public IReadOnlyList<BedrockConnection> Players => _players;
+
+    /// <summary>Server performance and TPS tracker.</summary>
+    public PerformanceTracker Performance { get; } = new();
+
+    /// <summary>Subsystem profiling and timings manager (PocketMine-MP / Paper style).</summary>
+    public TimingsManager Timings { get; } = new();
+
+    /// <summary>Total number of entities active in the world (mobs, items, falling blocks, players).</summary>
+    public int TotalEntitiesCount =>
+        Mobs.All.Count + (_droppedItems?.All.Count ?? 0) + FallingBlocks.Count + _players.Count;
+
+    private long _lastTickTimestamp;
 
     /// <summary>Completes once the network port is bound (faults if binding fails).</summary>
     public Task Started => _started.Task;
@@ -294,6 +308,8 @@ public sealed partial class BedrokiaServer
 
     private void TickDroppedItems()
     {
+        if (_droppedItems is null)
+            return;
         _droppedItems.Tick();
         // Only what changed, with the item's network offset (Dragonfly Movement.Send / ViewEntityMovement).
         foreach (var item in _droppedItems.All)
@@ -336,42 +352,78 @@ public sealed partial class BedrokiaServer
         }
     }
 
-    private void Tick()
+    internal void Tick()
     {
-        CurrentTick++;
-        if (World.Settings.DaylightCycle)
-            World.Time++;
-        TickDroppedItems();
-        Mobs.Tick(CurrentTick);
-        FallingBlocks.Tick();
-        TickFurnaces();
-        TickBlocks();
-        Events.OnTick(CurrentTick);
-        foreach (var player in _players.Where(p => p.IsInGame))
-            player.TickHealth();
-        if (CurrentTick % (TicksPerSecond * 30) == 0)
-            Broadcast(Packets.SetTime((int)(World.Time % int.MaxValue)));
-        if (CurrentTick % (TicksPerSecond * Config.AutosaveInterval) == 0)
+        var tickStart = Stopwatch.GetTimestamp();
+        double intervalMs = _lastTickTimestamp > 0 ? Stopwatch.GetElapsedTime(_lastTickTimestamp, tickStart).TotalMilliseconds : 50.0;
+        _lastTickTimestamp = tickStart;
+
+        using (Timings.Track(Timings.FullTick))
         {
-            SaveWorld();
-            World.Unload((x, z) => _players.Any(p =>
+            CurrentTick++;
+            if (World is not null && World.Settings.DaylightCycle)
+                World.Time++;
+
+            using (Timings.Track(Timings.DroppedItems))
+                TickDroppedItems();
+
+            using (Timings.Track(Timings.Mobs))
+                Mobs.Tick(CurrentTick);
+
+            using (Timings.Track(Timings.FallingBlocks))
+                FallingBlocks.Tick();
+
+            using (Timings.Track(Timings.Furnaces))
+                TickFurnaces();
+
+            using (Timings.Track(Timings.Blocks))
+                TickBlocks();
+
+            using (Timings.Track(Timings.Events))
+                Events.OnTick(CurrentTick);
+
+            using (Timings.Track(Timings.Players))
             {
-                var (px, pz) = p.ChunkPosition;
-                var r = p.ViewRadius + 2;
-                return Math.Abs(px - x) <= r && Math.Abs(pz - z) <= r;
-            }));
-        }
-        while (_mainThread.TryDequeue(out var action))
-        {
-            try
-            {
-                action();
+                foreach (var player in _players.Where(p => p.IsInGame))
+                    player.TickHealth();
             }
-            catch (Exception e)
+
+            if (World is not null && CurrentTick % (TicksPerSecond * 30) == 0)
+                Broadcast(Packets.SetTime((int)(World.Time % int.MaxValue)));
+
+            if (World is not null && CurrentTick % (TicksPerSecond * Config.AutosaveInterval) == 0)
             {
-                Logger.Error($"Unhandled error in tick {CurrentTick}: {e}");
+                using (Timings.Track(Timings.World))
+                {
+                    SaveWorld();
+                    World.Unload((x, z) => _players.Any(p =>
+                    {
+                        var (px, pz) = p.ChunkPosition;
+                        var r = p.ViewRadius + 2;
+                        return Math.Abs(px - x) <= r && Math.Abs(pz - z) <= r;
+                    }));
+                }
+            }
+
+            using (Timings.Track(Timings.MainThread))
+            {
+                while (_mainThread.TryDequeue(out var action))
+                {
+                    try
+                    {
+                        action();
+                    }
+                    catch (Exception e)
+                    {
+                        Logger.Error($"Unhandled error in tick {CurrentTick}: {e}");
+                    }
+                }
             }
         }
+
+        Timings.OnTickEnd();
+        var elapsedMs = Stopwatch.GetElapsedTime(tickStart).TotalMilliseconds;
+        Performance.OnTick(elapsedMs, intervalMs);
     }
 
     // Network thread: subscribe right away (no packet may be missed), then hand everything to the game thread.
@@ -613,6 +665,68 @@ public sealed partial class BedrokiaServer
         {
             var (x, y, z) = World.Spawn;
             Self(sender).Teleport(x + 0.5f, y, z + 0.5f);
+        });
+
+        Add("tps", "Shows the server's current performance (TPS, tick duration, memory).", "", "bedrokia.command.tps", (sender, _) =>
+        {
+            var snap = Performance.GetSnapshot();
+            sender.Reply("§6--- Server Performance ---");
+            sender.Reply($"§7TPS: {PerformanceTracker.FormatTps(snap.CurrentTps)} §7({snap.TickUsage:F1}%) [1m: {PerformanceTracker.FormatTps(snap.AverageTps1Min)}§7, 5m: {PerformanceTracker.FormatTps(snap.AverageTps5Min)}§7]");
+            sender.Reply($"§7Tick Time: {PerformanceTracker.FormatMspt(snap.AverageTickMs)} §7(current: {PerformanceTracker.FormatMspt(snap.CurrentTickMs)}§7, target: 50.0ms)");
+            sender.Reply($"§7Memory: §a{PerformanceTracker.FormatBytes(snap.GcTotalMemory)} §7/ §e{PerformanceTracker.FormatBytes(snap.ProcessWorkingSet)} §7(GC / Process)");
+            var worldName = Config.LevelName;
+            var chunkCount = World?.LoadedChunkCount ?? 0;
+            sender.Reply($"§7World '{worldName}': §f{chunkCount} §7chunks, §f{TotalEntitiesCount} §7entities, §f{_players.Count}/{Config.MaxPlayers} §7players");
+        });
+
+        Add("timings", "Profiles server performance and subsystem timings.", "[on|off|reset|report]", "bedrokia.command.timings", (sender, args) =>
+        {
+            if (args.Length == 0)
+            {
+                if (Timings.IsEnabled || Timings.SampledTicks > 0)
+                {
+                    foreach (var line in Timings.GenerateReport().Split('\n'))
+                        sender.Reply(line.TrimEnd('\r'));
+                }
+                else
+                {
+                    sender.Reply("§7Timings are currently §cdisabled§7. Use §6/timings on§7 to start profiling.");
+                }
+                return;
+            }
+
+            var sub = args[0].ToLowerInvariant();
+            switch (sub)
+            {
+                case "on" or "start" or "enable":
+                    Timings.Start();
+                    sender.Reply("§aTimings collection enabled. Run §6/timings report§a after a while to inspect results.");
+                    break;
+
+                case "off" or "stop" or "disable":
+                    Timings.Stop();
+                    sender.Reply("§cTimings collection stopped. Run §6/timings report§c to view collected data or §6/timings reset§c to clear.");
+                    break;
+
+                case "reset" or "clear":
+                    Timings.Reset();
+                    sender.Reply("§aTimings data has been reset.");
+                    break;
+
+                case "report" or "paste" or "view":
+                    if (Timings.SampledTicks == 0)
+                    {
+                        sender.Reply("§cNo timings data collected yet. Run §6/timings on§c and let the server tick.");
+                        return;
+                    }
+                    foreach (var line in Timings.GenerateReport().Split('\n'))
+                        sender.Reply(line.TrimEnd('\r'));
+                    break;
+
+                default:
+                    sender.Reply("§cUsage: /timings [on|off|reset|report]");
+                    break;
+            }
         });
 
         Add("stop", "Stops the server cleanly.", "", "bedrokia.command.stop", (_, _) => Stop());
