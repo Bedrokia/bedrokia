@@ -325,6 +325,9 @@ public sealed class ServerEvents(Logger logger)
     public event Action<MobInteractEvent>? MobInteract;
     internal bool HasMobInteract => MobInteract is not null;
 
+    /// <summary>A player hit or used an NPC (<see cref="BedrokiaServer.Npcs"/>).</summary>
+    public event Action<NpcInteractEvent>? NpcInteract;
+
     public event Action<PlayerInteractEntityEvent>? PlayerInteractEntity;
     internal bool HasPlayerInteractEntity => PlayerInteractEntity is not null;
 
@@ -530,6 +533,7 @@ public sealed class ServerEvents(Logger logger)
     internal bool OnMobBreed(MobBreedEvent e) => Fire(MobBreed, e);
     internal bool OnMobInteract(MobInteractEvent e) => Fire(MobInteract, e);
     internal bool OnPlayerInteractEntity(PlayerInteractEntityEvent e) => Fire(PlayerInteractEntity, e);
+    internal bool OnNpcInteract(NpcInteractEvent e) => Fire(NpcInteract, e);
     internal bool OnMobTame(MobTameEvent e) => Fire(MobTame, e);
     internal bool OnMobLeash(MobLeashEvent e) => Fire(MobLeash, e);
     internal bool OnProjectileLaunch(ProjectileLaunchEvent e) => Fire(ProjectileLaunch, e);
@@ -678,6 +682,7 @@ public sealed class ServerEvents(Logger logger)
         MobBreed = null;
         MobInteract = null;
         PlayerInteractEntity = null;
+        NpcInteract = null;
         MobTame = null;
         MobLeash = null;
         ProjectileLaunch = null;

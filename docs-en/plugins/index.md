@@ -160,6 +160,7 @@ action (the block comes back, the message is not sent...).
 | `PlayerHeldSlotChange` | `PlayerHeldSlotChangeEvent`: `Player`, `OldSlot`, `NewSlot` | yes |
 | `PlayerInteractBlock` | `PlayerInteractBlockEvent`: `Player`, `Position`, `Block`, `Face` | yes |
 | `PlayerInteractEntity` | `PlayerInteractEntityEvent`: `Player`, `EntityId`, `Mob` | yes |
+| `NpcInteract` | `NpcInteractEvent`: `Player`, `Npc`, `Attack` (hit or used) | yes |
 | `ContainerOpen` / `ContainerClose` | `ContainerOpenEvent`: `Player`, `Position`, `ContainerKind`, `Items`; `ContainerCloseEvent`: `Player` | yes / no |
 | `PlayerCraftItem` | `PlayerCraftItemEvent`: `Player`, `Result` (editable), `Ingredients` | yes |
 | `PlayerEnchantItem` | `PlayerEnchantItemEvent`: `Player`, `Item`, `LevelCost` and `LapisCost` (editable) | yes |
@@ -235,6 +236,21 @@ server keep running.
 | `Server.Schedule(ticks, action)` | runs an action later |
 | `Server.Plugins.Get(name)` | another plugin |
 | `Server.Config` | `server.properties` settings |
+
+## NPCs
+
+`Server.Npcs` shows characters that stand still with their own skin (shop keepers, crates...). Players see them within
+64 blocks; hitting or using one fires `NpcInteract`. They are not saved: the plugin spawns them again when it starts.
+
+```csharp
+var skin = NpcManager.SkinFromPng("crate", File.ReadAllBytes("crate.png"), File.ReadAllText("crate.geo.json"));
+var npc = Server.Npcs.Spawn(Server.World, 0.5, 64, 0.5, yaw: 90, "§dCrate", skin);
+npc.Tag = "crate";
+Events.NpcInteract += e => e.Player.SendMessage("Crate: " + e.Npc.Tag);
+```
+
+`SkinFromPng` reads 8-bit RGBA or RGB PNGs (scaled down to 128×128 when larger) and uses the geometry of the
+`.geo.json` file when given. `Server.Npcs.Remove(npc)` removes it; `Find(entityId)` and `All` find it.
 
 ## Custom-looking items
 

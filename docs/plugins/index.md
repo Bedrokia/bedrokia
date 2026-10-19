@@ -160,6 +160,7 @@ l'action (le bloc revient, le message n'est pas envoyé...).
 | `PlayerHeldSlotChange` | `PlayerHeldSlotChangeEvent` : `Player`, `OldSlot`, `NewSlot` | oui |
 | `PlayerInteractBlock` | `PlayerInteractBlockEvent` : `Player`, `Position`, `Block`, `Face` | oui |
 | `PlayerInteractEntity` | `PlayerInteractEntityEvent` : `Player`, `EntityId`, `Mob` | oui |
+| `NpcInteract` | `NpcInteractEvent` : `Player`, `Npc`, `Attack` (frappé ou utilisé) | oui |
 | `ContainerOpen` / `ContainerClose` | `ContainerOpenEvent` : `Player`, `Position`, `ContainerKind`, `Items` ; `ContainerCloseEvent` : `Player` | oui / non |
 | `PlayerCraftItem` | `PlayerCraftItemEvent` : `Player`, `Result` (modifiable), `Ingredients` | oui |
 | `PlayerEnchantItem` | `PlayerEnchantItemEvent` : `Player`, `Item`, `LevelCost` et `LapisCost` (modifiables) | oui |
@@ -235,6 +236,22 @@ autres plugins et le serveur continuent.
 | `Server.Schedule(ticks, action)` | lance une action plus tard |
 | `Server.Plugins.Get(nom)` | un autre plugin |
 | `Server.Config` | réglages de `server.properties` |
+
+## PNJ
+
+`Server.Npcs` affiche des personnages immobiles avec leur propre skin (marchands, caisses...). Les joueurs les voient à
+64 blocs ; les frapper ou les utiliser déclenche `NpcInteract`. Ils ne sont pas sauvegardés : le plugin les fait
+réapparaître au démarrage.
+
+```csharp
+var skin = NpcManager.SkinFromPng("caisse", File.ReadAllBytes("caisse.png"), File.ReadAllText("caisse.geo.json"));
+var npc = Server.Npcs.Spawn(Server.World, 0.5, 64, 0.5, yaw: 90, "§dCaisse", skin);
+npc.Tag = "caisse";
+Events.NpcInteract += e => e.Player.SendMessage("Caisse : " + e.Npc.Tag);
+```
+
+`SkinFromPng` lit les PNG RGBA ou RGB 8 bits (réduits à 128×128 s'ils sont plus grands) et prend la géométrie du
+fichier `.geo.json` s'il est donné. `Server.Npcs.Remove(npc)` le retire, `Find(entityId)` et `All` le retrouvent.
 
 ## Objets personnalisés
 
