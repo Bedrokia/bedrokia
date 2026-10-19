@@ -140,13 +140,14 @@ public sealed partial class BedrockConnection
         _eatingSince = -1;
         _server.Broadcast(EntityPackets.Event(EntityId, EntityPackets.EventDeath));
 
+        // The crafting grid and cursor go back to the inventory first, so they are listed (and kept or dropped) with
+        // the rest; what does not fit falls on the ground even with keep-inventory, instead of vanishing.
+        var overflow = Inventory.ReturnCraftingItems();
         var drops = new List<ItemStack>();
         foreach (var inventory in new[] { Inventory.Main, Inventory.Armour, Inventory.Offhand })
             for (var slot = 0; slot < inventory.Size; slot++)
                 if (inventory[slot] is { } stack)
                     drops.Add(stack);
-        foreach (var stack in Inventory.ReturnCraftingItems())
-            drops.Add(stack);
 
         var deathEvent = new PlayerDeathEvent(this, _lastDamageSource, $"{Name} died", _server.Config.KeepInventory, drops);
         _server.Events.OnPlayerDeath(deathEvent);
@@ -154,16 +155,17 @@ public sealed partial class BedrockConnection
         if (deathEvent.DeathMessage is { Length: > 0 } msg)
             _server.BroadcastMessage(msg);
 
+        var (x, y, z) = (Position.X, Position.Y - EyeHeight + 0.5f, Position.Z);
         if (!deathEvent.KeepInventory)
         {
             foreach (var inventory in new[] { Inventory.Main, Inventory.Armour, Inventory.Offhand })
                 for (var slot = 0; slot < inventory.Size; slot++)
                     inventory[slot] = null;
-
-            var (x, y, z) = (Position.X, Position.Y - EyeHeight + 0.5f, Position.Z);
             foreach (var stack in deathEvent.Drops)
                 _server.DropItem(stack, x, y, z);
         }
+        foreach (var stack in overflow)
+            _server.DropItem(stack, x, y, z);
 
         Send([.. Inventory.ContentPackets()]);
     }
@@ -339,8 +341,8 @@ public sealed partial class BedrockConnection
             return;
         }
         var (dx, dy, dz) = face switch { 0 => (0, -2, 0), 1 => (0, 1, 0), 2 => (0, 0, -1), 3 => (0, 0, 1), 4 => (-1, 0, 0), _ => (1, 0, 0) };
-        _server.Mobs.Spawn(kind, x + dx + 0.5, y + dy, z + dz + 0.5);
-        if (GameMode != GameMode.Creative)
+        // A plugin can cancel the spawn (EntitySpawn): then the egg is not used up.
+        if (_server.Mobs.Spawn(kind, x + dx + 0.5, y + dy, z + dz + 0.5) is not null && GameMode != GameMode.Creative)
             Send(Inventory.ConsumeHeld());
     }
 
