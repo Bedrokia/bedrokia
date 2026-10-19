@@ -768,7 +768,9 @@ public sealed partial class BedrockConnection
         heldBlock ??= PlacedBlock(Inventory.Held); // beds, doors, signs... are items that place a block of their own
         if (action != clickBlock || heldId == 0 || heldBlock is null || heldBlock.IsAir)
             return; // not placing a block: interaction only
-        var (px, py, pz) = face switch
+        // Clicking a replaceable block (tall grass, a thin snow layer...) puts the new block in its place, as the client
+        // predicts it: placing next to it left a second, ghost block on the client.
+        var (px, py, pz) = _server.World.GetBlock(bx, by, bz) is { IsAir: false } target && IsReplaceable(target) ? (bx, by, bz) : face switch
         {
             0 => (bx, by - 1, bz),
             1 => (bx, by + 1, bz),
@@ -805,8 +807,17 @@ public sealed partial class BedrockConnection
     public PlayerData Snapshot() => new(Position.X, Position.Y - EyeHeight, Position.Z, GameMode, Inventory.SelectedSlot,
         PlayerData.Save(Inventory.Main), PlayerData.Save(Inventory.Armour), PlayerData.Save(Inventory.Offhand), ExperienceLevel, ExperienceProgress, PlayerData.Save(Inventory.EnderChest));
 
+    // Blocks a placed block replaces (Dragonfly block/*.go ReplaceableBy).
     private static readonly HashSet<string> Replaceable =
-        ["minecraft:air", "minecraft:water", "minecraft:short_grass", "minecraft:tall_grass", "minecraft:snow_layer", "minecraft:fern"];
+    [
+        "minecraft:air", "minecraft:water", "minecraft:flowing_water", "minecraft:lava", "minecraft:flowing_lava",
+        "minecraft:short_grass", "minecraft:tall_grass", "minecraft:fern", "minecraft:large_fern", "minecraft:deadbush",
+        "minecraft:seagrass", "minecraft:vine", "minecraft:glow_lichen", "minecraft:fire", "minecraft:snow_layer",
+    ];
+
+    // A snow layer is only replaced while it is one layer thick (Dragonfly block/snow.go).
+    private static bool IsReplaceable(BlockType? block) => block is not null && Replaceable.Contains(block.Name)
+        && (block.Name != "minecraft:snow_layer" || Convert.ToInt32(block.States.GetValueOrDefault("height", 0)) == 0);
 
     /// <summary>The player's current game mode (changed with the gamemode command).</summary>
     public GameMode GameMode { get; private set; }
@@ -827,7 +838,7 @@ public sealed partial class BedrockConnection
         var dz = z + 0.5 - Position.Z;
         var held = Inventory.Held;
         var survival = GameMode != GameMode.Creative;
-        if (current is null || SpawnProtected(x, z) || !Replaceable.Contains(current.Name) || dx * dx + dy * dy + dz * dz > MaxReach * MaxReach
+        if (current is null || SpawnProtected(x, z) || !IsReplaceable(current) || dx * dx + dy * dy + dz * dz > MaxReach * MaxReach
             || y is < Chunk.MinY or > Chunk.MaxY
             || survival && PlacedBlock(held)?.Name != block.Name
             || !_server.Events.OnPlace(new Plugins.BlockEvent(this, x, y, z, block))) // survival: the block must really be in hand
@@ -839,10 +850,11 @@ public sealed partial class BedrockConnection
             return;
         }
         var parts = BlockPlacement.Place(block, x, y, z, face, clickY, Yaw, Pitch,
-            (fx, fy, fz) => world.GetBlock(fx, fy, fz) is { } b && Replaceable.Contains(b.Name) && !SpawnProtected(fx, fz));
-        if (parts.Count == 0)
+            (fx, fy, fz) => IsReplaceable(world.GetBlock(fx, fy, fz)) && !SpawnProtected(fx, fz));
+        // Like Dragonfly, a solid block cannot go where a player stands (no room for the door top either).
+        if (parts.Count == 0 || parts.Any(p => Entities.BlockPhysics.IsSolid(p.Block) && OccupiedByPlayer(p.X, p.Y, p.Z)))
         {
-            Send(Packets.UpdateBlock(x, y, z, current.NetworkId)); // no room for the second half (door top, bed head)
+            Send(Packets.UpdateBlock(x, y, z, current.NetworkId)); // undo the client's prediction
             if (survival)
                 Send(InventoryPackets.InventorySlot(InventoryPackets.WindowInventory, Inventory.SelectedSlot, held));
             return;
@@ -866,6 +878,17 @@ public sealed partial class BedrockConnection
         if (survival)
             Send(Inventory.ConsumeHeld());
     }
+
+    // True when a player's box (0.6 wide, 1.8 high from the feet) overlaps the block at (x, y, z).
+    // ponytail: mobs are not checked yet; they get pushed out by their own physics.
+    private bool OccupiedByPlayer(int x, int y, int z) => _server.Players.Any(p =>
+    {
+        if (!p.IsInGame)
+            return false;
+        var (px, eyes, pz) = p.Position;
+        var feet = eyes - EyeHeight;
+        return px + 0.3 > x && px - 0.3 < x + 1 && pz + 0.3 > z && pz - 0.3 < z + 1 && feet + 1.8 > y && feet < y + 1;
+    });
 
     private void BreakBlock(int x, int y, int z)
     {

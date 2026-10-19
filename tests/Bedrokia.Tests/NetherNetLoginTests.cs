@@ -177,10 +177,18 @@ public sealed class NetherNetLoginTests : IAsyncDisposable
         Assert.Equal(0u, pickup.VarUInt32()); // slot 0
         await bob.Expect(Bedrokia.Server.Network.InventoryPackets.TakeItemActorId);
 
-        // She puts the dirt back (clicking the block below, face up): placed, and her slot empties.
+        // Snow fell in the hole. She puts the dirt back by clicking the thin snow layer (face up): like the client
+        // predicts it, the dirt replaces the snow instead of going on top of it. Her slot empties.
+        var snowSet = new TaskCompletionSource();
+        _server.RunOnMainThread(() =>
+        {
+            _server.World.SetBlock(spawn.X + 2, spawn.Y - 1, spawn.Z, Bedrokia.Server.Game.Blocks.ByName("snow_layer")!);
+            snowSet.SetResult();
+        });
+        await snowSet.Task.WaitAsync(Timeout);
         var dirtItem = Bedrokia.Server.Game.Items.ByName("dirt")!;
         alice.Send(PacketId.InventoryTransaction, w => w.VarInt32(0).Bool(false).VarUInt32(2).VarUInt32(0)
-            .VarInt32(0).Byte(0).BlockPos(spawn.X + 2, spawn.Y - 2, spawn.Z)
+            .VarInt32(0).Byte(0).BlockPos(spawn.X + 2, spawn.Y - 1, spawn.Z)
             .Byte(1).VarInt32(0).Byte(0) // face up, hotbar slot, hand
             .Int16(dirtItem.RuntimeId).UInt16(1).VarUInt32(0).Bool(false).VarUInt32(dirt.NetworkId).VarUInt32(0));
         var placed = new BedrockReader(await bob.Expect(PacketId.UpdateBlock));
@@ -194,6 +202,18 @@ public sealed class NetherNetLoginTests : IAsyncDisposable
         emptied.Bool();
         emptied.Bool();
         Assert.Equal(0, emptied.Bytes(2)[0]); // air
+
+        // In creative, she tries to put dirt where she stands (on top of the dirt): refused, her client is corrected.
+        _server.EnqueueCommand("gamemode creative Alice");
+        await alice.Expect(PacketId.SetPlayerGameType);
+        alice.Send(PacketId.InventoryTransaction, w => w.VarInt32(0).Bool(false).VarUInt32(2).VarUInt32(0)
+            .VarInt32(0).Byte(0).BlockPos(spawn.X + 2, spawn.Y - 1, spawn.Z)
+            .Byte(1).VarInt32(0).Byte(0)
+            .Int16(dirtItem.RuntimeId).UInt16(1).VarUInt32(0).Bool(false).VarUInt32(dirt.NetworkId).VarUInt32(0));
+        var refused = new BedrockReader(await alice.Expect(PacketId.UpdateBlock));
+        refused.VarUInt32();
+        Assert.Equal((spawn.X + 2, spawn.Y, spawn.Z), (refused.VarInt32(), refused.VarInt32(), refused.VarInt32()));
+        Assert.NotEqual(dirt.NetworkId, refused.VarUInt32()); // the block that really is there (air or grass)
 
         // Alice is kicked: Bob removes her.
         _server.EnqueueCommand("kick Alice");
