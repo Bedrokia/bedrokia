@@ -46,13 +46,39 @@ public sealed class BatchCodec(bool withHeader = true)
         _receive = new Cipher(key);
     }
 
+    public byte[] Encode(byte[] packet)
+    {
+        var packetLen = BedrockWriter.VarUInt32Length((uint)packet.Length) + packet.Length;
+        if (CompressionEnabled && packetLen < _compressionThreshold)
+        {
+            // Below compression threshold: 0xFF (CompressionNone) with zero extra intermediate buffer allocations
+            var output = new BedrockWriter(packetLen + (withHeader ? 2 : 1));
+            if (withHeader)
+                output.Byte(Header);
+            output.Byte(CompressionNone);
+            output.ByteArray(packet);
+            var data = output.ToArray();
+            return _send is null ? data : _send.Encrypt(data);
+        }
+
+        var batch = new BedrockWriter(packetLen);
+        batch.ByteArray(packet);
+        return EncodePayload(batch.ToArray());
+    }
+
     public byte[] Encode(IEnumerable<byte[]> packets)
     {
+        if (packets is IList<byte[]> list && list.Count == 1)
+            return Encode(list[0]);
+
         var batch = new BedrockWriter();
         foreach (var packet in packets)
             batch.ByteArray(packet);
-        var payload = batch.ToArray();
+        return EncodePayload(batch.ToArray());
+    }
 
+    private byte[] EncodePayload(byte[] payload)
+    {
         var output = new BedrockWriter(payload.Length + 16);
         if (withHeader)
             output.Byte(Header);
@@ -72,6 +98,7 @@ public sealed class BatchCodec(bool withHeader = true)
         var data = output.ToArray();
         return _send is null ? data : _send.Encrypt(data);
     }
+
 
     /// <summary>Splits one batch into packets (each starting with its varuint header).</summary>
     /// <exception cref="InvalidDataException">Bad header, checksum, compression or framing.</exception>

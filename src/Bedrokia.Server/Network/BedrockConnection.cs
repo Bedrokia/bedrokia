@@ -1141,9 +1141,29 @@ public sealed partial class BedrockConnection
         }
     }
 
+    internal BatchCodec Codec => _codec;
+
+    internal void SendRawBatch(byte[] framedBatch, bool preferUnreliable = false)
+    {
+        if (_stage != Stage.Closed)
+            _transport.Send(framedBatch, preferUnreliable);
+    }
+
+    internal void Send(byte[] packet)
+    {
+        if (_stage != Stage.Closed)
+            _transport.Send(_codec.Encode(packet));
+    }
+
     internal void Send(params byte[][] packets)
     {
         if (_stage != Stage.Closed)
-            _transport.Send(_codec.Encode(packets));
+        {
+            if (packets.Length == 1)
+                _transport.Send(_codec.Encode(packets[0]));
+            else
+                _transport.Send(_codec.Encode(packets));
+        }
     }
 }
+
