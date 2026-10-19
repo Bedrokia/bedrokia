@@ -95,7 +95,7 @@ public sealed partial class BedrockConnection : IEnchanter
     // Bookshelves two blocks away with air in between (Dragonfly searchBookshelves), at most 15.
     private int Bookshelves()
     {
-        var world = _server.World;
+        var world = World;
         var (tx, ty, tz) = _enchantTable;
         var shelves = 0;
         for (var x = -1; x <= 1; x++)

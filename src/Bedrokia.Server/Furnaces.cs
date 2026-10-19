@@ -19,26 +19,27 @@ namespace Bedrokia.Server;
 public sealed partial class BedrokiaServer
 {
     // Furnaces that may be cooking; one stays here until it has nothing left to do.
-    private readonly HashSet<(int X, int Y, int Z)> _furnaces = [];
+    private readonly HashSet<(World World, (int X, int Y, int Z) At)> _furnaces = [];
 
-    internal void WatchFurnace((int X, int Y, int Z) at) => _furnaces.Add(at);
+    internal void WatchFurnace((int X, int Y, int Z) at, World world) => _furnaces.Add((world, at));
 
     /// <summary>Closes the container at <paramref name="at"/> for everyone looking into it (it was broken).</summary>
-    internal void CloseContainerFor((int X, int Y, int Z) at)
+    internal void CloseContainerFor((int X, int Y, int Z) at, World world)
     {
-        foreach (var player in _players.Where(p => p.OpenContainerAt == at))
+        foreach (var player in _players.Where(p => p.OpenContainerAt == at && p.World == world))
             player.CloseContainer(notifyClient: true);
-        _furnaces.Remove(at);
+        _furnaces.Remove((world, at));
     }
 
     private void TickFurnaces()
     {
-        foreach (var at in _furnaces.ToList())
+        foreach (var key in _furnaces.ToList())
         {
+            var (world, at) = key;
             var (x, y, z) = at;
-            if (World.GetBlockEntity(x, y, z) is not { Items: { } items } furnace || furnace.Id is not ("Furnace" or "BlastFurnace" or "Smoker"))
+            if (world.GetBlockEntity(x, y, z) is not { Items: { } items } furnace || furnace.Id is not ("Furnace" or "BlastFurnace" or "Smoker"))
             {
-                _furnaces.Remove(at);
+                _furnaces.Remove(key);
                 continue;
             }
             var input = items[0];
@@ -53,8 +54,8 @@ public sealed partial class BedrokiaServer
                 var container = fuel.Type.Name == "minecraft:lava_bucket" ? ItemStack.Of("bucket") : null;
                 fuel.SetCount(fuel.Count - 1);
                 items[1] = fuel.Count > 0 ? fuel : container;
-                SetLit(x, y, z, true);
-                SendFurnaceContents(at, items);
+                SetLit(world, x, y, z, true);
+                SendFurnaceContents(world, at, items);
             }
             if (furnace.BurnTicks > 0)
             {
@@ -68,7 +69,7 @@ public sealed partial class BedrokiaServer
                         items[2] = result;
                     else
                         output.SetCount(output.Count + 1);
-                    SendFurnaceContents(at, items);
+                    SendFurnaceContents(world, at, items);
                 }
                 else if (!canCook)
                     furnace.CookTicks = 0;
@@ -76,37 +77,37 @@ public sealed partial class BedrokiaServer
             else
             {
                 furnace.CookTicks = 0;
-                SetLit(x, y, z, false);
+                SetLit(world, x, y, z, false);
                 if (!canCook || fuel is null)
-                    _furnaces.Remove(at); // idle: nothing to burn or nothing to cook
+                    _furnaces.Remove(key); // idle: nothing to burn or nothing to cook
             }
-            World.LoadedChunk(x >> 4, z >> 4)!.Dirty = true;
+            world.LoadedChunk(x >> 4, z >> 4)!.Dirty = true;
             if (CurrentTick % 4 == 0)
-                foreach (var viewer in _players.Where(p => p.OpenContainerAt == at))
+                foreach (var viewer in _players.Where(p => p.OpenContainerAt == at && p.World == world))
                     viewer.Send(BedrockConnection.ContainerData(0, furnace.CookTicks), BedrockConnection.ContainerData(1, furnace.BurnTicks),
                         BedrockConnection.ContainerData(2, furnace.BurnDuration));
         }
     }
 
-    private void SendFurnaceContents((int X, int Y, int Z) at, Inventory items)
+    private void SendFurnaceContents(World world, (int X, int Y, int Z) at, Inventory items)
     {
         var packet = InventoryPackets.InventoryContent(BedrockConnection.WindowContainer, items);
-        foreach (var viewer in _players.Where(p => p.OpenContainerAt == at))
+        foreach (var viewer in _players.Where(p => p.OpenContainerAt == at && p.World == world))
             viewer.Send(packet);
     }
 
     // furnace <-> lit_furnace (same facing), and the same for blast furnaces and smokers.
-    private void SetLit(int x, int y, int z, bool lit)
+    private void SetLit(World world, int x, int y, int z, bool lit)
     {
-        if (World.GetBlock(x, y, z) is not { } block || !block.Name.StartsWith("minecraft:"))
+        if (world.GetBlock(x, y, z) is not { } block || !block.Name.StartsWith("minecraft:"))
             return;
         var name = block.Name["minecraft:".Length..];
         var target = lit ? (name.StartsWith("lit_") ? null : "lit_" + name) : (name.StartsWith("lit_") ? name[4..] : null);
         if (target is null || Blocks.ByKey(new BlockType(0, "minecraft:" + target, block.States).Key) is not { } swapped)
             return;
-        var entity = World.GetBlockEntity(x, y, z);
-        World.SetBlock(x, y, z, swapped);
-        World.SetBlockEntity(x, y, z, entity); // same furnace, new look
-        Broadcast(Packets.UpdateBlock(x, y, z, swapped.NetworkId));
+        var entity = world.GetBlockEntity(x, y, z);
+        world.SetBlock(x, y, z, swapped);
+        world.SetBlockEntity(x, y, z, entity); // same furnace, new look
+        BroadcastIn(world, Packets.UpdateBlock(x, y, z, swapped.NetworkId));
     }
 }

@@ -17,7 +17,7 @@ namespace Bedrokia.Server.Game;
 /// when nothing feeds it, two water sources make a third, and water meeting lava makes obsidian or cobblestone.
 /// Block states: "liquid_depth" 0 = source, 1-7 = flowing level, 8+ = falling.
 /// </summary>
-public sealed class Fluids(BedrokiaServer server)
+public sealed class Fluids(BedrokiaServer server, World world)
 {
     private const int MaxUpdatesPerTick = 2000;
 
@@ -46,7 +46,7 @@ public sealed class Fluids(BedrokiaServer server)
     public void Wake(int x, int y, int z)
     {
         foreach (var (dx, dy, dz) in Around)
-            if (IsLiquid(server.World.GetBlock(x + dx, y + dy, z + dz)))
+            if (IsLiquid(world.GetBlock(x + dx, y + dy, z + dz)))
                 Schedule(x + dx, y + dy, z + dz);
     }
 
@@ -55,9 +55,10 @@ public sealed class Fluids(BedrokiaServer server)
 
     private void Schedule(int x, int y, int z)
     {
-        if (!_queued.Add((x, y, z)) || server.World.GetBlock(x, y, z) is not { } block)
+        if (!_queued.Add((x, y, z)) || world.GetBlock(x, y, z) is not { } block)
             return;
-        var due = server.CurrentTick + (IsWater(block) || !IsLiquid(block) ? 5 : 30);
+        // Lava is faster and flows further in the Nether (vanilla: every 10 ticks, 7 blocks).
+        var due = server.CurrentTick + (IsWater(block) || !IsLiquid(block) ? 5 : world.Dimension == 1 ? 10 : 30);
         if (!_due.TryGetValue(due, out var set))
             _due[due] = set = [];
         set.Add((x, y, z));
@@ -81,11 +82,10 @@ public sealed class Fluids(BedrokiaServer server)
 
     private void Update(int x, int y, int z)
     {
-        var world = server.World;
         if (world.GetBlock(x, y, z) is not { } block || !IsLiquid(block))
             return;
         var kind = IsWater(block) ? "water" : "lava";
-        var step = kind == "water" ? 1 : 2;
+        var step = kind == "water" || world.Dimension == 1 ? 1 : 2;
         var depth = Depth(block);
 
         if (depth != 0)
@@ -121,7 +121,6 @@ public sealed class Fluids(BedrokiaServer server)
     // water also becomes a source between two sources over solid ground or water.
     private int? Incoming(int x, int y, int z, string kind, int step)
     {
-        var world = server.World;
         if (world.GetBlock(x, y + 1, z) is { } above && IsLiquid(above) && IsWater(above) == (kind == "water"))
             return 8;
         int? best = null;
@@ -144,7 +143,7 @@ public sealed class Fluids(BedrokiaServer server)
 
     private bool CanFlowInto(int x, int y, int z, string kind, int depth, out BlockType? target)
     {
-        target = server.World.GetBlock(x, y, z);
+        target = world.GetBlock(x, y, z);
         if (target is null || y < Chunk.MinY)
             return false;
         if (IsLiquid(target))
@@ -164,23 +163,23 @@ public sealed class Fluids(BedrokiaServer server)
             // Water touching lava: a lava source turns to obsidian, flowing lava (or lava onto water) to cobblestone.
             var lavaSource = !IsWater(target) && Depth(target) == 0;
             Set(x, y, z, Blocks.ByName(lavaSource ? "obsidian" : kind == "lava" && y < 0 ? "stone" : "cobblestone")!);
-            server.Broadcast(Protocol.Packets.LevelEvent(1004, x, y, z, 0)); // fizz
+            server.BroadcastIn(world, Protocol.Packets.LevelEvent(1004, x, y, z, 0)); // fizz
             return;
         }
         if (target is not null && !target.IsAir && !IsLiquid(target))
             foreach (var drop in DropRules.Drops(target, null, Random.Shared)) // washed-away plants and torches
-                server.DropItem(drop, x + 0.5f, y + 0.5f, z + 0.5f);
+                server.DropItem(drop, x + 0.5f, y + 0.5f, z + 0.5f, world: world);
         Set(x, y, z, Liquid(kind, depth));
     }
 
     private void Set(int x, int y, int z, BlockType block)
     {
-        if (!server.World.SetBlock(x, y, z, block))
+        if (!world.SetBlock(x, y, z, block))
             return;
-        server.Broadcast(Protocol.Packets.UpdateBlock(x, y, z, block.NetworkId));
+        server.BroadcastIn(world, Protocol.Packets.UpdateBlock(x, y, z, block.NetworkId));
         foreach (var (dx, dy, dz) in Around)
             if (dx != 0 || dy != 0 || dz != 0 || IsLiquid(block))
-                if (IsLiquid(server.World.GetBlock(x + dx, y + dy, z + dz)))
+                if (IsLiquid(world.GetBlock(x + dx, y + dy, z + dz)))
                     Schedule(x + dx, y + dy, z + dz);
     }
 }

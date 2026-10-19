@@ -94,7 +94,7 @@ public sealed partial class BedrockConnection
         var (packets, remaining) = Inventory.Add(stack);
         Send([.. packets]);
         if (remaining > 0)
-            _server.DropItem(stack.Split(remaining), Position.X, Position.Y - EyeHeight, Position.Z);
+            _server.DropItem(stack.Split(remaining), Position.X, Position.Y - EyeHeight, Position.Z, world: World);
     }
 
     /// <summary>Item in the main hand, null if empty.</summary>

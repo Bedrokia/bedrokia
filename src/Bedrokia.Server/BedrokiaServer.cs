@@ -49,7 +49,6 @@ public sealed partial class BedrokiaServer
     private readonly List<BedrockConnection> _players = []; // logged in (spawning or in game)
     private long _nextEntityId;
     private NetherNetListener _netherNet = null!;
-    private DroppedItems _droppedItems = null!;
 
     /// <summary>Mobs of the overworld (spawning, AI, combat).</summary>
     public MobManager Mobs { get; }
@@ -57,11 +56,28 @@ public sealed partial class BedrokiaServer
     /// <summary>Packs from resource_packs/, sent to players at login.</summary>
     public ResourcePacks ResourcePacks { get; private set; } = null!;
 
-    /// <summary>Flowing water and lava.</summary>
-    public Fluids Fluids { get; }
+    /// <summary>Flowing water and lava of the overworld (each world has its own: <see cref="World.Fluids"/>).</summary>
+    public Fluids Fluids => World.Fluids;
 
-    /// <summary>Sand and gravel falling as entities.</summary>
-    public FallingBlocks FallingBlocks { get; }
+    /// <summary>Sand and gravel falling as entities in the overworld (see <see cref="World.FallingBlocks"/>).</summary>
+    public FallingBlocks FallingBlocks => World.FallingBlocks;
+
+    /// <summary>The Nether: worlds/&lt;level-name&gt;/nether/.</summary>
+    public World Nether { get; private set; } = null!;
+
+    /// <summary>Every open world (overworld, then the Nether).</summary>
+    public IEnumerable<World> Worlds => new[] { World, Nether }.Where(w => w is not null); // none before RunAsync
+
+    /// <summary>The open world of a dimension (0 overworld, 1 nether).</summary>
+    public World WorldOf(int dimension) => dimension == 1 && Nether is not null ? Nether : World;
+
+    // Each world simulates its own items on the ground, liquids and falling blocks.
+    private void Attach(World world)
+    {
+        world.DroppedItems = new DroppedItems(world);
+        world.Fluids = new Fluids(this, world);
+        world.FallingBlocks = new FallingBlocks(this, world);
+    }
 
     internal long NextEntityId() => Interlocked.Increment(ref _nextEntityId);
 
@@ -85,8 +101,6 @@ public sealed partial class BedrokiaServer
             logger.Error(permissionsError);
         Commands = new CommandManager(logger);
         Mobs = new MobManager(this);
-        FallingBlocks = new FallingBlocks(this);
-        Fluids = new Fluids(this);
         Events = new ServerEvents(logger);
         Plugins = new PluginManager(this);
         RegisterBuiltinCommands();
@@ -128,7 +142,7 @@ public sealed partial class BedrokiaServer
 
     /// <summary>Total number of entities active in the world (mobs, items, falling blocks, players).</summary>
     public int TotalEntitiesCount =>
-        Mobs.All.Count + (_droppedItems?.All.Count ?? 0) + FallingBlocks.Count + _players.Count;
+        Mobs.All.Count + Worlds.Sum(w => (w.DroppedItems?.All.Count ?? 0) + (w.FallingBlocks?.Count ?? 0)) + _players.Count;
 
     private long _lastTickTimestamp;
 
@@ -148,7 +162,15 @@ public sealed partial class BedrokiaServer
             Game.Import.BedrockWorldImport.ImportAll(Config.WorldsDirectory, Logger);
             ResourcePacks = ResourcePacks.Load(ResourcePacksDirectory, Logger);
             World = World.OpenOrCreate(Path.Combine(Config.WorldsDirectory, Config.LevelName), Config.Seed);
-            _droppedItems = new DroppedItems(World);
+            Attach(World);
+            var netherFolder = Path.Combine(World.Folder, "nether");
+            if (!File.Exists(Path.Combine(netherFolder, "world.properties")))
+            {
+                Directory.CreateDirectory(netherFolder);
+                File.WriteAllText(Path.Combine(netherFolder, "world.properties"), "generator=nether\n");
+            }
+            Nether = World.OpenOrCreate(netherFolder, World.Generator.Seed);
+            Attach(Nether);
             Plugins.LoadAll(PluginsDirectory, PluginDataDirectory);
             Logger.Info($"World '{Config.LevelName}': seed {World.Generator.Seed}, spawn {World.Spawn}.");
             _netherNet = new NetherNetListener(new IPEndPoint(IPAddress.Any, Config.Port),
@@ -235,6 +257,19 @@ public sealed partial class BedrokiaServer
             player.Send(packet);
     }
 
+    /// <summary>Sends <paramref name="packet"/> to the players in <paramref name="world"/> only (blocks, entities, effects).</summary>
+    public void BroadcastIn(World world, byte[] packet)
+    {
+        foreach (var player in _players.Where(p => p.IsInGame && p.World == world))
+            player.Send(packet);
+    }
+
+    public void BroadcastInExcept(World world, BedrockConnection except, byte[] packet)
+    {
+        foreach (var player in _players.Where(p => p.IsInGame && p != except && p.World == world))
+            player.Send(packet);
+    }
+
     // "§e" colour codes are for the game, not for the console.
     private static string StripFormatting(string text) => System.Text.RegularExpressions.Regex.Replace(text, "§.", "");
 
@@ -258,7 +293,7 @@ public sealed partial class BedrokiaServer
     {
         try
         {
-            var saved = World.Save();
+            var saved = Worlds.Sum(w => w.Save());
             foreach (var player in _players.Where(p => p.IsInGame))
                 player.Snapshot().Write(player.Info!.Uuid);
             if (saved > 0)
@@ -270,72 +305,90 @@ public sealed partial class BedrokiaServer
         }
     }
 
-    /// <summary>Drops <paramref name="stack"/> in the world at the given position (it falls to the ground).</summary>
     /// <summary>
     /// Gravity blocks (sand, red sand, gravel, concrete powder) from (x, y, z) upwards fall onto the first
-    /// supporting block below. Call after a block changes at or under (x, y, z).
+    /// supporting block below. Call after a block changes at or under (x, y, z). Default world: the overworld.
     /// </summary>
-    public void ApplyGravity(int x, int y, int z)
+    public void ApplyGravity(int x, int y, int z, World? world = null)
     {
+        world ??= World;
         for (var cy = y; cy < Chunk.MaxY; cy++)
         {
-            var block = World.GetBlock(x, cy, z);
+            var block = world.GetBlock(x, cy, z);
             if (block is null || !Falls(block))
                 return;
-            if (BlockPhysics.IsSolid(World.GetBlock(x, cy - 1, z)) || cy <= Chunk.MinY)
+            if (BlockPhysics.IsSolid(world.GetBlock(x, cy - 1, z)) || cy <= Chunk.MinY)
                 return; // supported: nothing above it can fall either
-            World.SetBlock(x, cy, z, Blocks.Air);
-            Broadcast(Packets.UpdateBlock(x, cy, z, Blocks.Air.NetworkId));
-            FallingBlocks.Spawn(x, cy, z, block); // the blocks above follow in the next loop turns
+            world.SetBlock(x, cy, z, Blocks.Air);
+            BroadcastIn(world, Packets.UpdateBlock(x, cy, z, Blocks.Air.NetworkId));
+            world.FallingBlocks.Spawn(x, cy, z, block); // the blocks above follow in the next loop turns
         }
     }
 
     private static bool Falls(BlockType block) =>
         block.Name is "minecraft:sand" or "minecraft:red_sand" or "minecraft:gravel" || block.Name.EndsWith("_concrete_powder");
 
-    public void DropItem(ItemStack stack, float x, float y, float z, (float X, float Y, float Z)? velocity = null, int pickupDelay = DroppedItems.PickupDelayTicks)
+    /// <summary>Removes every item lying on the ground in every world (a "clear lag"); returns how many there were.</summary>
+    public int ClearDroppedItems()
     {
-        if (_droppedItems is null)
+        var count = 0;
+        foreach (var world in Worlds)
+            foreach (var item in world.DroppedItems?.All.ToList() ?? [])
+            {
+                world.DroppedItems!.Remove(item);
+                BroadcastIn(world, Packets.RemoveActor(item.EntityId));
+                count++;
+            }
+        return count;
+    }
+
+    /// <summary>Drops <paramref name="stack"/> at the given position (it falls to the ground). Default world: the overworld.</summary>
+    public void DropItem(ItemStack stack, float x, float y, float z, (float X, float Y, float Z)? velocity = null,
+        int pickupDelay = DroppedItems.PickupDelayTicks, World? world = null)
+    {
+        world ??= World;
+        if (world?.DroppedItems is null)
             return;
-        var item = _droppedItems.Spawn(Interlocked.Increment(ref _nextEntityId), stack, x, y, z, CurrentTick);
+        var item = world.DroppedItems.Spawn(Interlocked.Increment(ref _nextEntityId), stack, x, y, z, CurrentTick);
         if (velocity is { } v)
             (item.Vx, item.Vy, item.Vz) = v;
         item.PickupDelay = pickupDelay;
         item.SentPosition = (item.X, item.Y, item.Z);
         item.SentVelocity = (item.Vx, item.Vy, item.Vz);
-        Broadcast(InventoryPackets.AddItemActor(item.EntityId, stack, item.X, item.Y + DroppedItems.NetworkOffset, item.Z, item.Vx, item.Vy, item.Vz));
+        BroadcastIn(world, InventoryPackets.AddItemActor(item.EntityId, stack, item.X, item.Y + DroppedItems.NetworkOffset, item.Z, item.Vx, item.Vy, item.Vz));
     }
 
-    private void TickDroppedItems()
+    private void TickDroppedItems(World world)
     {
-        if (_droppedItems is null)
+        var items = world.DroppedItems;
+        if (items is null)
             return;
-        _droppedItems.Tick();
+        items.Tick();
         // Only what changed, with the item's network offset (Dragonfly Movement.Send / ViewEntityMovement).
-        foreach (var item in _droppedItems.All)
+        foreach (var item in items.All)
         {
             var position = (item.X, item.Y, item.Z);
             var (sx, sy, sz) = item.SentPosition;
             if (float.IsNaN(sx) || MathF.Abs(position.X - sx) + MathF.Abs(position.Y - sy) + MathF.Abs(position.Z - sz) > 0.001f)
             {
                 item.SentPosition = position;
-                Broadcast(EntityPackets.MoveAbsolute(item.EntityId, item.X, item.Y + DroppedItems.NetworkOffset, item.Z, 0, 0, item.OnGround));
+                BroadcastIn(world, EntityPackets.MoveAbsolute(item.EntityId, item.X, item.Y + DroppedItems.NetworkOffset, item.Z, 0, 0, item.OnGround));
             }
             var velocity = (item.Vx, item.Vy, item.Vz);
             if (velocity != item.SentVelocity)
             {
                 item.SentVelocity = velocity;
-                Broadcast(EntityPackets.Motion(item.EntityId, item.Vx, item.Vy, item.Vz));
+                BroadcastIn(world, EntityPackets.Motion(item.EntityId, item.Vx, item.Vy, item.Vz));
             }
         }
-        
-        foreach (var item in _droppedItems.Expire(CurrentTick))
-            Broadcast(Packets.RemoveActor(item.EntityId));
-        foreach (var item in _droppedItems.All.ToList())
+
+        foreach (var item in items.Expire(CurrentTick))
+            BroadcastIn(world, Packets.RemoveActor(item.EntityId));
+        foreach (var item in items.All.ToList())
         {
             if (CurrentTick - item.SpawnTick < item.PickupDelay)
                 continue;
-            var taker = _players.FirstOrDefault(p => p.IsInGame
+            var taker = _players.FirstOrDefault(p => p.IsInGame && p.World == world
                 && Math.Abs(p.Position.X - item.X) < 1.5 && Math.Abs(p.Position.Z - item.Z) < 1.5
                 && Math.Abs(p.Position.Y - 1.62 - item.Y) < 2);
             if (taker is null)
@@ -344,11 +397,11 @@ public sealed partial class BedrokiaServer
             if (remaining == item.Stack.Count)
                 continue; // inventory full
             taker.Send([.. packets]);
-            _droppedItems.Remove(item);
-            Broadcast(InventoryPackets.TakeItemActor(item.EntityId, taker.EntityId));
-            Broadcast(Packets.RemoveActor(item.EntityId));
+            items.Remove(item);
+            BroadcastIn(world, InventoryPackets.TakeItemActor(item.EntityId, taker.EntityId));
+            BroadcastIn(world, Packets.RemoveActor(item.EntityId));
             if (remaining > 0)
-                DropItem(item.Stack.Split(remaining), item.X, item.Y, item.Z); // ponytail: leftover respawns as a new entity
+                DropItem(item.Stack.Split(remaining), item.X, item.Y, item.Z, world: world); // ponytail: leftover respawns as a new entity
         }
     }
 
@@ -365,13 +418,15 @@ public sealed partial class BedrokiaServer
                 World.Time++;
 
             using (Timings.Track(Timings.DroppedItems))
-                TickDroppedItems();
+                foreach (var world in Worlds)
+                    TickDroppedItems(world);
 
             using (Timings.Track(Timings.Mobs))
                 Mobs.Tick(CurrentTick);
 
             using (Timings.Track(Timings.FallingBlocks))
-                FallingBlocks.Tick();
+                foreach (var world in Worlds)
+                    world.FallingBlocks.Tick();
 
             using (Timings.Track(Timings.Furnaces))
                 TickFurnaces();
@@ -396,8 +451,11 @@ public sealed partial class BedrokiaServer
                 using (Timings.Track(Timings.World))
                 {
                     SaveWorld();
-                    World.Unload((x, z) => _players.Any(p =>
+                    foreach (var world in Worlds)
+                        world.Unload((x, z) => _players.Any(p =>
                     {
+                        if (p.World != world)
+                            return false;
                         var (px, pz) = p.ChunkPosition;
                         var r = p.ViewRadius + 2;
                         return Math.Abs(px - x) <= r && Math.Abs(pz - z) <= r;
@@ -498,14 +556,14 @@ public sealed partial class BedrokiaServer
         var others = _players.Where(p => p.IsInGame && p != connection).ToList();
         var gameMode = (int)Config.GameMode;
         connection.Send(PlayerPackets.PlayerListAdd([.. others.Select(p => p.Info!), connection.Info!]));
-        foreach (var other in others)
+        foreach (var other in others.Where(o => o.World == connection.World))
             connection.Send(PlayerPackets.AddPlayer(other.Info!, other.Position.X, other.Position.Y, other.Position.Z, other.Pitch, other.Yaw, gameMode));
 
         var info = connection.Info!;
         BroadcastExcept(connection, PlayerPackets.PlayerListAdd([info]));
-        BroadcastExcept(connection, PlayerPackets.AddPlayer(info, connection.Position.X, connection.Position.Y, connection.Position.Z,
+        BroadcastInExcept(connection.World, connection, PlayerPackets.AddPlayer(info, connection.Position.X, connection.Position.Y, connection.Position.Z,
             connection.Pitch, connection.Yaw, gameMode));
-        foreach (var item in _droppedItems.All)
+        foreach (var item in connection.World.DroppedItems.All)
             connection.Send(InventoryPackets.AddItemActor(item.EntityId, item.Stack, item.X, item.Y, item.Z, item.Vx, item.Vy, item.Vz));
         BroadcastMessage($"§e{connection.Name} joined the game");
         Events.OnJoin(connection);

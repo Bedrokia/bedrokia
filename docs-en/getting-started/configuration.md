@@ -55,7 +55,7 @@ Each world has its own `worlds/<name>/world.properties`:
 
 | Key | Role |
 |---|---|
-| `generator` | `normal` (vanilla terrain and biomes), `flat` or `void` |
+| `generator` | `normal` (vanilla terrain and biomes), `flat`, `void` or `nether` |
 | `flat-layers` | layers of a flat world, bottom to top: `bedrock,3*stone,2*dirt,grass_block` |
 | `flat-biome` | biome of flat or void worlds: `plains`, `desert`, `ice_plains`, `mushroom_island`... |
 | `daylight-cycle` | `on`/`off`: time passes |

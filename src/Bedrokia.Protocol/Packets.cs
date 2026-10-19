@@ -179,9 +179,9 @@ public static class Packets
         .BlockPos(x, y, z).VarUInt32(radiusBlocks).UInt32(0)
         .ToArray();
 
-    public static byte[] LevelChunk(int chunkX, int chunkZ, uint subChunkCount, byte[] payload) => Begin(PacketId.LevelChunk)
+    public static byte[] LevelChunk(int chunkX, int chunkZ, uint subChunkCount, byte[] payload, int dimension = 0) => Begin(PacketId.LevelChunk)
         .VarInt32(chunkX).VarInt32(chunkZ)
-        .VarInt32(0) // overworld
+        .VarInt32(dimension) // 0 overworld, 1 nether
         .VarUInt32(subChunkCount)
         .Bool(false) // no sub-chunk limit
         .Bool(false) // blob cache disabled
@@ -288,6 +288,7 @@ public static class Packets
         long Time,
         int Difficulty = 2,
         bool DaylightCycle = true,
+        int Dimension = 0,
         IReadOnlyList<CustomBlockDefinition>? CustomBlocks = null);
 
     /// <summary>Field order from gophertunnel (MIT) packet/start_game.go at protocol 2193.</summary>
@@ -301,7 +302,7 @@ public static class Packets
             .Float32(0).Float32(0) // pitch, yaw
             .Int64(0) // seed
             .Int16(0).String("") // spawn biome type, user defined biome
-            .VarInt32(0) // dimension: overworld
+            .VarInt32(d.Dimension) // 0 overworld, 1 nether
             .VarInt32(1) // generator: infinite
             .VarInt32(d.GameMode) // world game mode
             .Bool(false) // hardcore

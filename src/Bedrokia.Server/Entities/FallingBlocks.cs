@@ -18,7 +18,7 @@ namespace Bedrokia.Server.Entities;
 /// on the first solid block (or drops as an item if its landing spot is taken). Physics from vanilla (gravity 0.04,
 /// drag 0.98 per tick). Game thread only.
 /// </summary>
-public sealed class FallingBlocks(BedrokiaServer server)
+public sealed class FallingBlocks(BedrokiaServer server, World world)
 {
     private sealed class Falling(long entityId, int x, double y, int z, BlockType block)
     {
@@ -43,7 +43,7 @@ public sealed class FallingBlocks(BedrokiaServer server)
     {
         var falling = new Falling(server.NextEntityId(), x, y, z, block);
         _falling.Add(falling);
-        server.Broadcast(EntityPackets.AddActor(falling.EntityId, "minecraft:falling_block", x + 0.5, y + NetworkOffset, z + 0.5, 0, 1, 1, 0,
+        server.BroadcastIn(world, EntityPackets.AddActor(falling.EntityId, "minecraft:falling_block", x + 0.5, y + NetworkOffset, z + 0.5, 0, 1, 1, 0,
             0.98f, 0.98f, EntityPackets.FlagGravity | EntityPackets.FlagHasCollision, variant: unchecked((int)block.NetworkId)));
     }
 
@@ -55,25 +55,25 @@ public sealed class FallingBlocks(BedrokiaServer server)
             falling.Vy = falling.Vy * 0.98 - 0.04; // drag before gravity, as Dragonfly
             var next = falling.Y + falling.Vy;
             var floor = (int)Math.Floor(next);
-            var landed = BlockPhysics.IsSolid(server.World.GetBlock(falling.X, floor, falling.Z));
+            var landed = BlockPhysics.IsSolid(world.GetBlock(falling.X, floor, falling.Z));
             if (!landed && falling.Ticks < 600 && next > Chunk.MinY)
             {
                 falling.Y = next;
-                server.Broadcast(EntityPackets.MoveAbsolute(falling.EntityId, falling.X + 0.5, falling.Y + NetworkOffset, falling.Z + 0.5, 0, 0, false));
-                server.Broadcast(EntityPackets.Motion(falling.EntityId, 0, falling.Vy, 0));
+                server.BroadcastIn(world, EntityPackets.MoveAbsolute(falling.EntityId, falling.X + 0.5, falling.Y + NetworkOffset, falling.Z + 0.5, 0, 0, false));
+                server.BroadcastIn(world, EntityPackets.Motion(falling.EntityId, 0, falling.Vy, 0));
                 continue;
             }
             _falling.Remove(falling);
-            server.Broadcast(Bedrokia.Protocol.Packets.RemoveActor(falling.EntityId));
+            server.BroadcastIn(world, Bedrokia.Protocol.Packets.RemoveActor(falling.EntityId));
             var landY = floor + 1;
-            var target = server.World.GetBlock(falling.X, landY, falling.Z);
+            var target = world.GetBlock(falling.X, landY, falling.Z);
             if (target is not null && !BlockPhysics.IsSolid(target))
             {
-                server.World.SetBlock(falling.X, landY, falling.Z, falling.Block);
-                server.Broadcast(Bedrokia.Protocol.Packets.UpdateBlock(falling.X, landY, falling.Z, falling.Block.NetworkId));
+                world.SetBlock(falling.X, landY, falling.Z, falling.Block);
+                server.BroadcastIn(world, Bedrokia.Protocol.Packets.UpdateBlock(falling.X, landY, falling.Z, falling.Block.NetworkId));
             }
             else if (ItemStack.Of(falling.Block.Name) is { } item)
-                server.DropItem(item, falling.X + 0.5f, landY + 0.5f, falling.Z + 0.5f);
+                server.DropItem(item, falling.X + 0.5f, landY + 0.5f, falling.Z + 0.5f, world: world);
         }
     }
 }

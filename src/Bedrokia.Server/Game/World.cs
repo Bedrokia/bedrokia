@@ -44,6 +44,14 @@ public sealed class World
 
     public IWorldGenerator Generator { get; }
 
+    /// <summary>Bedrock dimension id: 0 overworld, 1 nether.</summary>
+    public int Dimension => Generator is Generation.NetherGenerator ? 1 : 0;
+
+    // Per-world simulation, set up by the server when it opens the world.
+    public DroppedItems DroppedItems { get; internal set; } = null!;
+    public Fluids Fluids { get; internal set; } = null!;
+    public Entities.FallingBlocks FallingBlocks { get; internal set; } = null!;
+
     /// <summary>world.properties of this world (generator, day/night cycle).</summary>
     public WorldSettings Settings { get; }
 

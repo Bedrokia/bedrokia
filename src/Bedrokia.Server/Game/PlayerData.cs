@@ -18,7 +18,7 @@ namespace Bedrokia.Server.Game;
 
 public sealed record PlayerData(float X, float Y, float Z, GameMode GameMode, int SelectedSlot,
     List<PlayerData.SavedStack> Main, List<PlayerData.SavedStack> Armour, List<PlayerData.SavedStack> Offhand,
-    int Level = 0, float Progress = 0, List<PlayerData.SavedStack>? EnderChest = null)
+    int Level = 0, float Progress = 0, List<PlayerData.SavedStack>? EnderChest = null, int Dimension = 0)
 {
     /// <param name="Nbt">Item NBT (enchantments...) as base64 little-endian NBT, null when none.</param>
     public sealed record SavedStack(int Slot, string Item, int Count, short Meta, string? Block, string? Nbt = null);

@@ -337,7 +337,8 @@ public sealed class WorldGenerator : IWorldGenerator
             }
     }
 
-    private static void Vein(Chunk chunk, JavaRandom random, BlockType ore, int size, int originX, int originY, int originZ)
+    /// <summary>One ore vein; it replaces stone and deepslate, or only <paramref name="host"/> when given (netherrack...).</summary>
+    internal static void Vein(Chunk chunk, JavaRandom random, BlockType ore, int size, int originX, int originY, int originZ, BlockType? host = null)
     {
         var deep = originY < 0;
         var angle = random.NextFloat() * Math.PI;
@@ -360,7 +361,7 @@ public sealed class WorldGenerator : IWorldGenerator
                 if (dx * dx + dy * dy + dz * dz >= 1)
                     continue;
                 var current = chunk.GetBlock(x, y, z);
-                if (current == Blocks.Stone || (deep && current == Blocks.Deepslate))
+                if (host is not null ? current == host : current == Blocks.Stone || (deep && current == Blocks.Deepslate))
                     chunk.SetBlock(x, y, z, ore);
             }
         }

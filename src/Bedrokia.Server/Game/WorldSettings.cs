@@ -66,9 +66,9 @@ public sealed class WorldSettings
             switch (line[..separator].Trim().ToLowerInvariant())
             {
                 case "generator":
-                    settings.Generator = value.ToLowerInvariant() is "normal" or "flat" or "void"
+                    settings.Generator = value.ToLowerInvariant() is "normal" or "flat" or "void" or "nether"
                         ? value.ToLowerInvariant()
-                        : throw new InvalidDataException($"{path}:{lineNumber}: generator must be normal, flat or void.");
+                        : throw new InvalidDataException($"{path}:{lineNumber}: generator must be normal, flat, void or nether.");
                     break;
                 case "flat-layers":
                     settings.FlatLayers = value;
@@ -94,7 +94,7 @@ public sealed class WorldSettings
         [
             $"# {Product.Name} world settings - {Product.CreatedBy}",
             "# Changing the generator only affects chunks that were never generated.",
-            "# normal (vanilla terrain and biomes), flat or void",
+            "# normal (vanilla terrain and biomes), flat, void or nether (the Nether dimension)",
             $"generator={Generator}",
             "# flat worlds: layers from the bottom up, count*block (e.g. bedrock,3*stone,2*dirt,grass_block)",
             $"flat-layers={FlatLayers}",
@@ -110,6 +110,7 @@ public sealed class WorldSettings
     {
         "flat" => new FlatGenerator(seed, ParseLayers(FlatLayers), BiomeId(FlatBiome)),
         "void" => new FlatGenerator(seed, [], BiomeId(FlatBiome)),
+        "nether" => new Generation.NetherGenerator(seed),
         _ => new WorldGenerator(seed),
     };
 

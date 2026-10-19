@@ -70,7 +70,7 @@ public sealed partial class BedrockConnection
         AddExhaustion(0.1f);
         Health = Math.Max(0, Health - amount);
         SendVitals();
-        _server.Broadcast(EntityPackets.Event(EntityId, EntityPackets.EventHurt));
+        _server.BroadcastIn(World, EntityPackets.Event(EntityId, EntityPackets.EventHurt));
         if (ev.ApplyKnockback)
         {
             var dx = Position.X - ev.KnockbackOrigin.X;
@@ -141,7 +141,7 @@ public sealed partial class BedrockConnection
         DduiSession.CloseAll();
         _fallPeak = float.NaN;
         _eatingSince = -1;
-        _server.Broadcast(EntityPackets.Event(EntityId, EntityPackets.EventDeath));
+        _server.BroadcastIn(World, EntityPackets.Event(EntityId, EntityPackets.EventDeath));
 
         // The crafting grid and cursor go back to the inventory first, so they are listed (and kept or dropped) with
         // the rest; what does not fit falls on the ground even with keep-inventory, instead of vanishing.
@@ -165,10 +165,10 @@ public sealed partial class BedrockConnection
                 for (var slot = 0; slot < inventory.Size; slot++)
                     inventory[slot] = null;
             foreach (var stack in deathEvent.Drops)
-                _server.DropItem(stack, x, y, z);
+                _server.DropItem(stack, x, y, z, world: World);
         }
         foreach (var stack in overflow)
-            _server.DropItem(stack, x, y, z);
+            _server.DropItem(stack, x, y, z, world: World);
 
         Send([.. Inventory.ContentPackets()]);
     }
@@ -192,11 +192,11 @@ public sealed partial class BedrockConnection
         Saturation = 5;
         _exhaustion = 0;
         SendVitals();
-        Teleport(rx, ry - EyeHeight, rz);
+        ChangeDimension(_server.World!, rx, ry - EyeHeight, rz, respawn: true); // dying in the Nether brings the player back to the overworld
         // Others still see the corpse: re-add the player.
-        _server.BroadcastExcept(this, Packets.RemoveActor(EntityId));
+        _server.BroadcastInExcept(World, this, Packets.RemoveActor(EntityId));
         if (Info is not null)
-            _server.BroadcastExcept(this, PlayerPackets.AddPlayer(Info, Position.X, Position.Y, Position.Z, Pitch, Yaw, (int)GameMode));
+            _server.BroadcastInExcept(World, this, PlayerPackets.AddPlayer(Info, Position.X, Position.Y, Position.Z, Pitch, Yaw, (int)GameMode));
     }
 
     /// <summary>Called every tick by the server.</summary>
@@ -206,6 +206,7 @@ public sealed partial class BedrockConnection
             _hurtTicks--;
         if (_server.CurrentTick % 100 == 0)
             PruneExpiredForms(_server.CurrentTick);
+        TickPortal();
         if (Dead || GameMode == GameMode.Creative)
             return;
 
@@ -326,7 +327,7 @@ public sealed partial class BedrockConnection
             return;
         var fallen = _fallPeak - y;
         _fallPeak = float.NaN;
-        var feet = _server.World.GetBlock((int)Math.Floor(Position.X), (int)Math.Floor(y - EyeHeight), (int)Math.Floor(Position.Z));
+        var feet = World.GetBlock((int)Math.Floor(Position.X), (int)Math.Floor(y - EyeHeight), (int)Math.Floor(Position.Z));
         if (fallen > 3.5f && feet != Blocks.Water)
         {
             _hurtTicks = 0;
@@ -362,7 +363,7 @@ public sealed partial class BedrockConnection
             return;
         var damage = AttackDamage(Inventory.Held);
         AddExhaustion(0.1f);
-        _server.BroadcastExcept(this, EntityPackets.Swing(EntityId));
+        _server.BroadcastInExcept(World, this, EntityPackets.Swing(EntityId));
         if (_server.Mobs.Find(target) is { } mob)
         {
             var dx = mob.X - Position.X;
@@ -419,7 +420,7 @@ public sealed partial class BedrockConnection
     private bool SpawnProtected(int x, int z)
     {
         var radius = _server.Config.SpawnProtection;
-        if (radius <= 0 || IsOp)
+        if (radius <= 0 || IsOp || World != _server.World)
             return false;
         var (sx, _, sz) = _server.World.Spawn;
         return Math.Abs(x - sx) <= radius && Math.Abs(z - sz) <= radius;
@@ -495,7 +496,7 @@ public sealed partial class BedrockConnection
     /// </summary>
     private void OnBlockPick(int x, int y, int z)
     {
-        if (Dead || _server.World.GetBlock(x, y, z) is not { IsAir: false } block || ItemStack.Of(block.Name) is not { } item)
+        if (Dead || World.GetBlock(x, y, z) is not { IsAir: false } block || ItemStack.Of(block.Name) is not { } item)
             return;
         var main = Inventory.Main;
         var found = Enumerable.Range(0, main.Size).FirstOrDefault(i => main[i]?.Type == item.Type, -1);
