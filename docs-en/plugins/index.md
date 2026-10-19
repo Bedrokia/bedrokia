@@ -17,9 +17,13 @@ plugins/
     ├── src/                    the C# code (every .cs, sub-folders included)
     │   ├── MyPlugin.cs
     │   └── Commands/...
+    ├── libs/                   .NET libraries the code uses (a MySQL driver...), optional
     └── resources/
         └── config.yml          default config, copied to plugin_data/MyPlugin/ on first start
 ```
+
+The DLLs in `libs/` are referenced when `src/` is compiled and loaded with the plugin (with their own dependencies
+when those are in `libs/` too).
 
 Also accepted: a single file `plugins/MyPlugin.cs`, or a DLL `plugins/MyPlugin.dll` (a .NET 10 library that
 references `Bedrokia.Server`).
