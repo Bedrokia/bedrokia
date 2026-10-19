@@ -11,6 +11,7 @@
 
 using Bedrokia.Protocol;
 using Bedrokia.Server.Entities;
+using Bedrokia.Server.Events;
 using Bedrokia.Server.Game;
 using Bedrokia.Server.Game.Generation;
 using Bedrokia.Server.Network;
@@ -256,6 +257,13 @@ public sealed partial class BedrokiaServer
     {
         world ??= World;
         var id = NextEntityId();
+        if (Events.HasTntPrime)
+        {
+            var ev = new TntPrimeEvent(id, new BlockPos(x, y, z), fuse);
+            if (!Events.OnTntPrime(ev))
+                return;
+            fuse = ev.FuseTicks;
+        }
         _tnt.Add((id, world, x, y, z, CurrentTick + fuse));
         BroadcastIn(world, EntityPackets.AddActor(id, "minecraft:tnt", x + 0.5, y, z + 0.5, 0, 1, 1, 0, 0.98f, 0.98f,
             EntityPackets.FlagGravity | EntityPackets.FlagHasCollision | (1L << 10))); // 10: ignited
@@ -293,33 +301,52 @@ public sealed partial class BedrokiaServer
             affected.Add(new BlockPos(bx, by, bz));
         }
 
+        bool breaksBlocks = true;
+        bool dropItems = true;
         if (Events.HasExplosion)
         {
             var ev = new ExplosionEvent(new System.Numerics.Vector3((float)x, (float)y, (float)z), radius, affected);
             if (!Events.OnExplosion(ev))
                 return;
-            radius = (int)ev.Radius;
+            radius = (int)Math.Max(0, ev.Radius);
+            breaksBlocks = ev.BreaksBlocks;
         }
 
-        foreach (var pos in affected)
+        if (breaksBlocks && affected.Count > 0 && Events.HasExplosionBlocks)
         {
-            var (bx, by, bz) = (pos.X, pos.Y, pos.Z);
-            if (world.GetBlock(bx, by, bz) is not { IsAir: false } block)
-                continue;
-            if (world.GetBlockEntity(bx, by, bz)?.Items is { } contents)
-                for (var slot = 0; slot < contents.Size; slot++)
-                    if (contents[slot] is { } stack)
-                        DropItem(stack, bx + 0.5f, by + 0.5f, bz + 0.5f, world: world);
-            SetBlockAndUpdate(bx, by, bz, Blocks.Air, world);
-            if (block.Name == "minecraft:tnt")
-                PrimeTnt(bx, by, bz, 10 + _blockRandom.Next(20), world);
-            else if (_blockRandom.Next(4) == 0)
-                foreach (var drop in DropRules.Drops(block, null, Random.Shared))
-                    DropItem(drop, bx + 0.5f, by + 0.5f, bz + 0.5f, world: world);
+            var blocksEv = new ExplosionBlocksEvent(new System.Numerics.Vector3((float)x, (float)y, (float)z), affected);
+            if (!Events.OnExplosionBlocks(blocksEv))
+            {
+                breaksBlocks = false;
+            }
+            else
+            {
+                dropItems = blocksEv.DropItems;
+            }
         }
-        BroadcastIn(world, Packets.LevelEvent(2025, cx, cy, cz, 0));
-        foreach (var pos in affected)
-            ApplyGravity(pos.X, pos.Y + 1, pos.Z, world);
+
+        if (breaksBlocks)
+        {
+            foreach (var pos in affected)
+            {
+                var (bx, by, bz) = (pos.X, pos.Y, pos.Z);
+                if (world.GetBlock(bx, by, bz) is not { IsAir: false } block)
+                    continue;
+                if (dropItems && world.GetBlockEntity(bx, by, bz)?.Items is { } contents)
+                    for (var slot = 0; slot < contents.Size; slot++)
+                        if (contents[slot] is { } stack)
+                            DropItem(stack, bx + 0.5f, by + 0.5f, bz + 0.5f, world: world);
+                SetBlockAndUpdate(bx, by, bz, Blocks.Air, world);
+                if (block.Name == "minecraft:tnt")
+                    PrimeTnt(bx, by, bz, 10 + _blockRandom.Next(20), world);
+                else if (dropItems && _blockRandom.Next(4) == 0)
+                    foreach (var drop in DropRules.Drops(block, null, Random.Shared))
+                        DropItem(drop, bx + 0.5f, by + 0.5f, bz + 0.5f, world: world);
+            }
+            BroadcastIn(world, Packets.LevelEvent(2025, cx, cy, cz, 0));
+            foreach (var pos in affected)
+                ApplyGravity(pos.X, pos.Y + 1, pos.Z, world);
+        }
         var reach = radius * 2;
         foreach (var player in _players.Where(p => p.IsInGame && p.World == world))
         {

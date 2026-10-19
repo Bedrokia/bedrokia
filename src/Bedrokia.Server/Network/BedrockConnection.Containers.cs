@@ -50,7 +50,10 @@ public sealed partial class BedrockConnection
         {
             var openEv = new ContainerOpenEvent(this, WindowContainer, type, new BlockPos(x, y, z), entity.Id, contents);
             if (!_server.Events.OnContainerOpen(openEv))
+            {
+                Send(InventoryPackets.ContainerClose(WindowContainer, 0));
                 return true;
+            }
         }
 
         Inventory.OpenContainer = (contents, entity.Id);
