@@ -8,7 +8,9 @@
   <Folder Name="/examples/">
     <Project Path="examples/plugins/CustomContent/CustomContent.csproj" />
     <Project Path="examples/plugins/Listeners/Listeners.csproj" />
+    <Project Path="examples/plugins/MagicItems/MagicItems.csproj" />
     <Project Path="examples/plugins/Ping/Ping.csproj" />
+    <Project Path="examples/plugins/Showcase/Showcase.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Bedrokia.Tests/Bedrokia.Tests.csproj" />

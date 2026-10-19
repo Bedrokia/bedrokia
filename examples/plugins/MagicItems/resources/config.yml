@@ -1,0 +1,18 @@
+# MagicItems - configuration (plugin_data/MagicItems/config.yml)
+
+staff:
+  name: "§e§lBâton de foudre"
+  # Ticks between two lightning strikes (20 = 1 second)
+  cooldown: 20
+
+boots:
+  name: "§b§lBottes de vitesse"
+  # Effect levels: 0 = I, 1 = II...
+  speed-level: 1
+  jump-level: 0
+
+jump-pad:
+  name: "§a§lTremplin"
+  # Horizontal and vertical push
+  forward: 1.2
+  up: 1.3

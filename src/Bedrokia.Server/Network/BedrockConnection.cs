@@ -277,11 +277,17 @@ public sealed partial class BedrockConnection
     {
         if (reader.Remaining == 0)
             return;
-        var runtimeId = reader.VarUInt64();
+        reader.VarUInt64(); // claimed runtime id: ignored, a player can only emote as itself
         var emoteId = reader.String();
         var flags = reader.Remaining > 0 ? reader.Byte() : (byte)0;
-        _server.BroadcastExcept(this, Packets.Emote(runtimeId, emoteId, flags));
+        // Dragonfly session/handler_emote.go: one emote per second, so a client cannot flood every other player.
+        if (emoteId.Length > 64 || _server.CurrentTick - _lastEmoteTick < BedrokiaServer.TicksPerSecond)
+            return;
+        _lastEmoteTick = _server.CurrentTick;
+        _server.BroadcastExcept(this, Packets.Emote((ulong)EntityId, emoteId, flags));
     }
+
+    private long _lastEmoteTick = long.MinValue / 2;
 
     private void OnInteract(ref BedrockReader reader)
     {
