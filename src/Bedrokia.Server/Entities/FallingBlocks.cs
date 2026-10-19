@@ -41,6 +41,13 @@ public sealed class FallingBlocks(BedrokiaServer server, World world)
 
     public void Spawn(int x, int y, int z, BlockType block)
     {
+        if (server.Events.HasBlockFall)
+        {
+            var fallEv = new BlockFallEvent(new BlockPos(x, y, z), (uint)block.NetworkId);
+            if (!server.Events.OnBlockFall(fallEv))
+                return;
+        }
+
         var falling = new Falling(server.NextEntityId(), x, y, z, block);
         _falling.Add(falling);
         server.BroadcastIn(world, EntityPackets.AddActor(falling.EntityId, "minecraft:falling_block", x + 0.5, y + NetworkOffset, z + 0.5, 0, 1, 1, 0,
@@ -67,10 +74,28 @@ public sealed class FallingBlocks(BedrokiaServer server, World world)
             server.BroadcastIn(world, Bedrokia.Protocol.Packets.RemoveActor(falling.EntityId));
             var landY = floor + 1;
             var target = world.GetBlock(falling.X, landY, falling.Z);
-            if (target is not null && !BlockPhysics.IsSolid(target))
+            var landBlockId = (uint)falling.Block.NetworkId;
+            var blockToPlace = falling.Block;
+            bool dropAsItem = false;
+
+            if (server.Events.HasBlockLand)
             {
-                world.SetBlock(falling.X, landY, falling.Z, falling.Block);
-                server.BroadcastIn(world, Bedrokia.Protocol.Packets.UpdateBlock(falling.X, landY, falling.Z, falling.Block.NetworkId));
+                var landEv = new BlockLandEvent((ulong)falling.EntityId, new BlockPos(falling.X, landY, falling.Z), landBlockId);
+                if (!server.Events.OnBlockLand(landEv))
+                {
+                    // Si annulé -> drop en DroppedItem
+                    dropAsItem = true;
+                }
+                else if (landEv.BlockId != landBlockId)
+                {
+                    blockToPlace = Blocks.ById(unchecked((ushort)landEv.BlockId)) ?? falling.Block;
+                }
+            }
+
+            if (!dropAsItem && target is not null && !BlockPhysics.IsSolid(target))
+            {
+                world.SetBlock(falling.X, landY, falling.Z, blockToPlace);
+                server.BroadcastIn(world, Bedrokia.Protocol.Packets.UpdateBlock(falling.X, landY, falling.Z, blockToPlace.NetworkId));
             }
             else if (ItemStack.Of(falling.Block.Name) is { } item)
                 server.DropItem(item, falling.X + 0.5f, landY + 0.5f, falling.Z + 0.5f, world: world);
