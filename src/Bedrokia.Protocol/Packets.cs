@@ -56,7 +56,10 @@ public static class PacketId
     public const uint PlayerSkin = 93;
     public const uint BookEdit = 97;
     public const uint NPCRequest = 98;
+    public const uint ModalFormRequest = 100;
     public const uint ModalFormResponse = 101;
+    public const uint ServerSettingsRequest = 102;
+    public const uint ServerSettingsResponse = 103;
     public const uint SetLocalPlayerAsInitialised = 113;
     public const uint NetworkChunkPublisherUpdate = 121;
     public const uint BiomeDefinitionList = 122;
@@ -79,6 +82,11 @@ public static class PacketId
     public const uint ServerBoundLoadingScreen = 312;
     public const uint JigsawStructureData = 313;
     public const uint ServerBoundDiagnostics = 315;
+    public const uint ClientboundDataDrivenUIShowScreen = 320;
+    public const uint ClientboundDataDrivenUICloseAllScreens = 321;
+    public const uint ClientboundDataDrivenUIReload = 322;
+    public const uint ClientboundDataStore = 323;
+    public const uint ServerboundDataStore = 324;
     public const uint VoxelShapes = 337;
     public const uint SetPlayerFurnaceOptions = 351;
 }

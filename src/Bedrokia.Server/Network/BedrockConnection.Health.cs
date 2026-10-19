@@ -14,6 +14,7 @@ using Bedrokia.Server.Core;
 using Bedrokia.Server.Entities;
 using Bedrokia.Server.Game;
 using Bedrokia.Server.Game.Custom.Items;
+using Bedrokia.Server.Game.Ui.Forms;
 
 namespace Bedrokia.Server.Network;
 
@@ -136,6 +137,8 @@ public sealed partial class BedrockConnection
     private void Die()
     {
         Dead = true;
+        CloseAllForms(FormCancelReason.UserClosed);
+        DduiSession.CloseAll();
         _fallPeak = float.NaN;
         _eatingSince = -1;
         _server.Broadcast(EntityPackets.Event(EntityId, EntityPackets.EventDeath));
@@ -201,6 +204,8 @@ public sealed partial class BedrockConnection
     {
         if (_hurtTicks > 0)
             _hurtTicks--;
+        if (_server.CurrentTick % 100 == 0)
+            PruneExpiredForms(_server.CurrentTick);
         if (Dead || GameMode == GameMode.Creative)
             return;
 
