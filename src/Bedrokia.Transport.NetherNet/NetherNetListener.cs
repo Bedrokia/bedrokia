@@ -62,6 +62,35 @@ public sealed class NetherNetListener : IDisposable
 
     public IPEndPoint LocalEndPoint => (IPEndPoint)_tcp.LocalEndpoint;
 
+    /// <summary>
+    /// IPv4 address announced in the WebRTC candidates instead of the machine's own ones, for a server behind Docker
+    /// or NAT (Pterodactyl): players cannot reach a container's 172.x address. Null: the local addresses.
+    /// </summary>
+    public IPAddress? PublicAddress { get; init; }
+
+    /// <summary>Puts <paramref name="address"/> in every IPv4 host candidate of an SDP, dropping the duplicates this makes.</summary>
+    internal static string WithPublicAddress(string sdp, IPAddress address)
+    {
+        var lines = new List<string>();
+        var seen = new HashSet<string>();
+        foreach (var line in sdp.Split("\r\n"))
+        {
+            // a=candidate:<foundation> <component> <transport> <priority> <address> <port> typ <type> ...
+            var fields = line.Split(' ');
+            if (line.StartsWith("a=candidate:", StringComparison.Ordinal) && fields.Length > 7 && fields[7] == "host"
+                && IPAddress.TryParse(fields[4], out var ip) && ip.AddressFamily == AddressFamily.InterNetwork)
+            {
+                fields[4] = address.ToString();
+                if (!seen.Add(fields[4] + ":" + fields[5]))
+                    continue;
+                lines.Add(string.Join(' ', fields));
+            }
+            else
+                lines.Add(line);
+        }
+        return string.Join("\r\n", lines);
+    }
+
     /// <summary>A WebRTC connection was negotiated; it raises <see cref="NetherNetSession.Connected"/> once usable.</summary>
     public event Action<NetherNetSession>? SessionOpened;
 
@@ -194,6 +223,8 @@ public sealed class NetherNetListener : IDisposable
         {
             // The guide asks to strip the identity before handing the offer to WebRTC.
             answer = await WhipWhepServer.AnswerAsync(peer, SdpIdentity.WithoutIdentity(offer), true);
+            if (PublicAddress is not null)
+                answer = WithPublicAddress(answer, PublicAddress);
         }
         catch
         {

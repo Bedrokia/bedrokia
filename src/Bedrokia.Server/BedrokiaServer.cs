@@ -192,7 +192,11 @@ public sealed partial class BedrokiaServer
             Logger.Info($"World '{Config.LevelName}': seed {World.Generator.Seed}, spawn {World.Spawn}.");
             _netherNet = new NetherNetListener(new IPEndPoint(IPAddress.Any, Config.Port),
                     ServerIdentityKey.LoadOrCreate(Path.Combine("data", "nethernet-identity.pem")),
-                    VerifyNetherNetToken, allowAnonymous: !Config.OnlineMode, Config.ParseWebRtcPorts());
+                    VerifyNetherNetToken, allowAnonymous: !Config.OnlineMode, Config.ParseWebRtcPorts())
+            {
+                // Pterodactyl gives 0.0.0.0 for an allocation on every address: not one players can reach.
+                PublicAddress = IPAddress.TryParse(Config.PublicIp, out var publicIp) && !publicIp.Equals(IPAddress.Any) ? publicIp : null,
+            };
         }
         catch (Exception e)
         {

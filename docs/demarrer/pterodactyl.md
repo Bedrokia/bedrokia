@@ -24,6 +24,9 @@ Bedrokia utilise **NetherNet** : un port TCP pour se connecter, puis un port UDP
   2. **Plage choisie** : réserver une plage d'allocations et mettre `WEBRTC_PORTS` à `premier-dernier`
      (par ex. `25700-25730`).
 
+Dans Docker, le serveur ne connaît que son adresse interne (172.x) : l'egg écrit donc l'IP de l'allocation dans `public-ip`.
+Si l'allocation est sur `0.0.0.0`, mettre soi-même l'IP publique dans `public-ip`, sinon la console affiche *WebRTC connection failed*.
+
 Si les joueurs restent bloqués sur « Connexion au serveur… », c'est presque toujours la plage UDP qui n'est pas ouverte.
 
 ## Variables

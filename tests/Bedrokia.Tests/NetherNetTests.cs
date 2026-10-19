@@ -173,4 +173,20 @@ public sealed class NetherNetTests : IDisposable
         Assert.Equal(_serverKey.ExportSubjectPublicKeyInfo(), key!.ExportSubjectPublicKeyInfo());
         Assert.True(signed.IndexOf("a=identity:", StringComparison.Ordinal) < signed.IndexOf("m=", StringComparison.Ordinal));
     }
+
+    [Fact]
+    public void PublicAddressReplacesHostCandidates()
+    {
+        var sdp = string.Join("\r\n",
+            "m=application 9 UDP/DTLS/SCTP webrtc-datachannel",
+            "a=candidate:1 1 udp 2130706431 172.18.0.2 19132 typ host generation 0",
+            "a=candidate:2 1 udp 2130706431 10.0.0.5 19132 typ host generation 0",
+            "a=candidate:3 1 udp 2130706431 fe80::1 19132 typ host generation 0",
+            "a=candidate:4 1 udp 1694498815 9.9.9.9 40000 typ srflx raddr 0.0.0.0 rport 0");
+        var rewritten = NetherNetListener.WithPublicAddress(sdp, IPAddress.Parse("54.39.102.50")).Split("\r\n");
+        Assert.Equal(4, rewritten.Length); // the second IPv4 host candidate became a duplicate
+        Assert.Equal("a=candidate:1 1 udp 2130706431 54.39.102.50 19132 typ host generation 0", rewritten[1]);
+        Assert.Contains("fe80::1", rewritten[2]);
+        Assert.Contains("9.9.9.9 40000 typ srflx", rewritten[3]);
+    }
 }
