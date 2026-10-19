@@ -47,6 +47,19 @@ public class BlockSystemsTests
     }
 
     [Fact]
+    public void Self_changing_blocks_have_their_states()
+    {
+        // Each change done by random ticks and fire must land on a real block state, or it silently does nothing.
+        Assert.NotEqual(Blocks.ByName("fire"), Bedrokia.Server.Network.BedrockConnection.With(Blocks.ByName("fire")!, "age", 5));
+        Assert.NotEqual(Blocks.ByName("farmland"), Bedrokia.Server.Network.BedrockConnection.With(Blocks.ByName("farmland")!, "moisturized_amount", 7));
+        Assert.NotEqual(Blocks.ByName("nether_wart"), Bedrokia.Server.Network.BedrockConnection.With(Blocks.ByName("nether_wart")!, "age", 1));
+        Assert.Equal((byte)1, Place("oak_leaves", 1, 0, 0).Single().Block.States["persistent_bit"]); // placed leaves never decay
+        Assert.Equal((30, 60), Bedrokia.Server.BedrokiaServer.Flammability(Blocks.ByName("oak_leaves")));
+        Assert.Equal((5, 20), Bedrokia.Server.BedrokiaServer.Flammability(Blocks.ByName("oak_planks")));
+        Assert.Equal((0, 0), Bedrokia.Server.BedrokiaServer.Flammability(Blocks.ByName("stone")));
+    }
+
+    [Fact]
     public void Furnaces_know_what_to_cook_and_burn()
     {
         Assert.Equal("iron_ingot", Smelting.Result("Furnace", ItemStack.Of("raw_iron")!));
