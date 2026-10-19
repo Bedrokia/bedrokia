@@ -50,6 +50,20 @@ public sealed class NetherNetTests : IDisposable
     internal static async Task<(RTCPeerConnection Peer, RTCDataChannel Reliable, HttpResponseMessage Response)> ConnectAsync(
         IPEndPoint signaling, ECDsa? identityKey)
     {
+        // ICE between two local peers sometimes never completes on GitHub's runners (0fcf4d8): one more try, from scratch.
+        try
+        {
+            return await ConnectOnceAsync(signaling, identityKey, TimeSpan.FromSeconds(15));
+        }
+        catch (TimeoutException)
+        {
+            return await ConnectOnceAsync(signaling, identityKey, Timeout);
+        }
+    }
+
+    private static async Task<(RTCPeerConnection Peer, RTCDataChannel Reliable, HttpResponseMessage Response)> ConnectOnceAsync(
+        IPEndPoint signaling, ECDsa? identityKey, TimeSpan timeout)
+    {
         var config = new RTCConfiguration { certificates2 = [NetherNetListener.CreateDtlsCertificate()] };
         var peer = new RTCPeerConnection(config);
         var reliable = await peer.createDataChannel(NetherNetSession.ReliableLabel, new RTCDataChannelInit { ordered = true });
@@ -72,7 +86,15 @@ public sealed class NetherNetTests : IDisposable
             reliable.onopen += () => open.TrySetResult();
             if (reliable.readyState == RTCDataChannelState.open)
                 open.TrySetResult();
-            await open.Task.WaitAsync(Timeout);
+            try
+            {
+                await open.Task.WaitAsync(timeout);
+            }
+            catch (TimeoutException)
+            {
+                peer.close();
+                throw;
+            }
         }
         return (peer, reliable, response);
     }
