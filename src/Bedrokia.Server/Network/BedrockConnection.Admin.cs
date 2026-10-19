@@ -51,6 +51,22 @@ public sealed partial class BedrockConnection
         }
     }
 
+    private bool _nameTagVisible = true;
+
+    /// <summary>Whether the other players see this player's name above the head (PocketMine setNameTagVisible).</summary>
+    public bool NameTagVisible
+    {
+        get => _nameTagVisible;
+        set
+        {
+            if (_nameTagVisible == value)
+                return;
+            _nameTagVisible = value;
+            if (IsInGame)
+                _server.BroadcastInExcept(World, this, PlayerPackets.SetPlayerData(EntityId, Name, value));
+        }
+    }
+
     /// <summary>Frozen players cannot move: every move is sent back to where they are.</summary>
     public bool Frozen { get; set; }
 
@@ -68,7 +84,7 @@ public sealed partial class BedrockConnection
             if (value)
                 _server.BroadcastInExcept(World, this, Packets.RemoveActor(EntityId));
             else
-                _server.BroadcastInExcept(World, this, PlayerPackets.AddPlayer(Info!, Position.X, Position.Y, Position.Z, Pitch, Yaw, (int)GameMode));
+                _server.BroadcastInExcept(World, this, PlayerPackets.AddPlayer(Info!, Position.X, Position.Y, Position.Z, Pitch, Yaw, (int)GameMode, NameTagVisible));
         }
     }
 

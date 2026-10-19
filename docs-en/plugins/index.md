@@ -211,6 +211,7 @@ server keep running.
 | `SetSpeed(speed)` | walk speed (vanilla 0.1) |
 | `AddEffect(new EffectInstance(EffectType.Poison, level, ticks))` / `RemoveEffect(EffectType)` / `ClearEffects()` / `GetActiveEffects()` | effects run by the server (regeneration, poison, wither, strength, resistance...); potions and milk too |
 | `SetHealth(health)` / `SetFood(food, saturation)` | heal, feed (20 = full) |
+| `NameTagVisible` / `PlaySound(sound)` / `Server.PlaySound(sound, x, y, z, world)` | hide the name above the head; play a sound (`random.pop`, `random.totem`...) |
 | `CanFly`, `God`, `Frozen`, `Vanished` | flying in survival, invincible, unable to move, invisible to the other players |
 | `ClearInventory(armour)` / `SyncInventory()` | empty the inventory; resend the inventory after changing slots |
 | `ChangeDimension(world, x, y, z)` | send to another world (`Server.World`, `Server.Nether`) |

@@ -80,6 +80,10 @@ public sealed partial class BedrockConnection
         .Float32(0).Float32(float.MaxValue).Float32(speed).Float32(0).Float32(float.MaxValue).Float32(0.1f).String("minecraft:movement").VarUInt32(0)
         .VarUInt64(0).ToArray());
 
+    /// <summary>Plays a sound to this player only, where they stand.</summary>
+    public void PlaySound(string name, float volume = 1, float pitch = 1) =>
+        Send(BedrokiaServer.SoundPacket(name, Position.X, Position.Y, Position.Z, volume, pitch));
+
     /// <summary>Pushes the player (blocks per tick; 1.0 up is a big jump).</summary>
     public void SetMotion(double vx, double vy, double vz) => Send(EntityPackets.Motion(EntityId, vx, vy, vz));
 
