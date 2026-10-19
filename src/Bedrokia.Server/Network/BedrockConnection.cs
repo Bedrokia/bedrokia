@@ -806,6 +806,12 @@ public sealed partial class BedrockConnection
 
         if (action == clickAir)
         {
+            if (Inventory.Held is { } inHand && _server.Events.HasPlayerItemUse
+                && !_server.Events.OnPlayerItemUse(new PlayerItemUseEvent(this, inHand)))
+            {
+                Send(InventoryPackets.InventorySlot(InventoryPackets.WindowInventory, Inventory.SelectedSlot, Inventory.Held));
+                return;
+            }
             if (!TryEquipHeld()) // right click with armour in hand: the client already shows it worn
                 StartEating();
             return;
