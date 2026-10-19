@@ -14,7 +14,9 @@ Bedrock 26.50 (protocole 2193) · NetherNet / WebRTC · Plugins en C# sans compi
 
 🇬🇧 [English](README.md) · 🇫🇷 **Français**
 
-[📖 Documentation](https://nexiumpvp2.github.io/bedrokia/) · [📝 Changelog](https://nexiumpvp2.github.io/bedrokia/projet/changelog/) · [⬇️ Téléchargements](https://github.com/Nexiumpvp2/bedrokia/releases/latest) · [🦖 Egg Pterodactyl](deploy/pterodactyl/egg-bedrokia.json)
+[📖 Documentation](https://nexiumpvp2.github.io/bedrokia/) · [📝 Changelog](https://nexiumpvp2.github.io/bedrokia/projet/changelog/) · [⬇️ Téléchargements](https://github.com/Nexiumpvp2/bedrokia/releases/latest) · [🦖 Egg Pterodactyl](deploy/pterodactyl/egg-bedrokia.json) · [💬 Discord](https://discord.gg/C2VTugEMMa)
+
+[![Discord](https://img.shields.io/badge/Discord-rejoindre-5865F2?logo=discord&logoColor=white)](https://discord.gg/C2VTugEMMa)
 
 </div>
 

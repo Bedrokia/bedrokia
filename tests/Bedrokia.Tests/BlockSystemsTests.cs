@@ -131,3 +131,31 @@ public class WallAndPluginTests
         Assert.Equal(1, ticks);
     }
 }
+
+public class CustomToolTests
+{
+    [Fact]
+    public void A_registered_custom_pickaxe_harvests_ores_and_mines_faster()
+    {
+        var diamondOre = Blocks.ByName("diamond_ore")!;
+        var pickaxe = ItemStack.Of("diamond_pickaxe")!; // stands in for a custom item: the table is keyed by name
+        Assert.NotEmpty(DropRules.Drops(diamondOre, pickaxe, new Random(1)));
+        var hand = DropRules.BreakTicks(diamondOre, null);
+        DropRules.RegisterTool("minecraft:stick", "pickaxe", 3, 12);
+        var stick = ItemStack.Of("stick")!;
+        Assert.NotEmpty(DropRules.Drops(diamondOre, stick, new Random(1)));
+        Assert.True(DropRules.BreakTicks(diamondOre, stick) < hand);
+    }
+}
+
+public class ToolInfoTests
+{
+    [Fact]
+    public void Tool_info_tells_kind_and_level()
+    {
+        Assert.Equal(("pickaxe", 2), DropRules.ToolInfo(ItemStack.Of("iron_pickaxe")));
+        Assert.Equal(("axe", 0), DropRules.ToolInfo(ItemStack.Of("golden_axe")));
+        Assert.Equal(("", -1), DropRules.ToolInfo(ItemStack.Of("dirt")));
+        Assert.Equal(("", -1), DropRules.ToolInfo(null));
+    }
+}

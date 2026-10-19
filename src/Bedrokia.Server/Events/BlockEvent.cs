@@ -26,4 +26,10 @@ public sealed class BlockEvent(BedrockConnection player, int x, int y, int z, Bl
 
     /// <summary>The block broken, placed, or clicked.</summary>
     public BlockType Block => block;
+
+    /// <summary>Break only: the items that will drop (empty outside survival); change the list to change them.</summary>
+    public List<ItemStack> Drops { get; set; } = [];
+
+    /// <summary>Break only: the experience the player gets.</summary>
+    public int Xp { get; set; }
 }

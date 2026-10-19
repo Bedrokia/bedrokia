@@ -65,3 +65,27 @@ public class CommandPermissionTests
         Assert.True(packet.Length > 0);
     }
 }
+
+public class CommandUsageTests
+{
+    [Fact]
+    public void Usages_become_typed_overloads_for_tab_completion()
+    {
+        var overloads = CommandManager.ParseUsage("add <joueur:player> <montant:float> [raison...] || mode <mode:survival|creative>");
+        Assert.Equal(2, overloads.Count);
+        Assert.Equal(["add"], overloads[0][0].Options!); // subcommand word
+        Assert.Equal(8u, overloads[0][1].Type); // target: online players on Tab
+        Assert.Equal(3u, overloads[0][2].Type);
+        Assert.True(overloads[0][3].Optional);
+        Assert.Equal(70u, overloads[0][3].Type); // rest of the line
+        Assert.Equal(["survival", "creative"], overloads[1][1].Options!);
+        Assert.Equal("add <joueur> <montant> [raison...] | mode <mode>",
+            CommandManager.DisplayUsage("add <joueur:player> <montant:float> [raison...] || mode <mode:survival|creative>"));
+
+        using var logger = new Logger(LogLevel.Warn, null);
+        var manager = new CommandManager(logger);
+        manager.Register("gm", "", "<mode:survival|creative> [player:player]", false, (_, _) => { });
+        var packet = System.Text.Encoding.UTF8.GetString(manager.AvailableCommandsPacket(true));
+        Assert.Contains("survival", packet); // the choices travel as enum values
+    }
+}

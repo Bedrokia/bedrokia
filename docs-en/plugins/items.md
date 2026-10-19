@@ -93,7 +93,12 @@ public sealed class MyPlugin : Plugin
 ### Tools and mining
 
 - `WithDigger(IReadOnlyList<DestroySpeed> speeds, bool useEfficiency = true)`: mines some blocks or block categories
-  faster.
+  faster. A name starting with `query.` is a tag query, e.g. `"query.any_tag('stone', 'metal')"`.
+- `WithTool(string kind, int level, double speed)`: the item mines like a vanilla tool on the server: `kind` =
+  `pickaxe`, `axe`, `shovel`, `hoe` or `sword`; `level` = 0 wood/gold, 1 stone, 2 iron, 3 diamond, 4 netherite (which
+  ores drop); `speed` (diamond 8).
+- `DropRules.ToolInfo(item)`: kind and level of a held tool (vanilla or custom), e.g. to decide the drops of a custom
+  block.
 
 ```csharp
 CustomItemBuilder.Create("my_server:super_pickaxe")

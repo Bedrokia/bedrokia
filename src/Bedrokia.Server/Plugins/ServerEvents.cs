@@ -142,6 +142,10 @@ public sealed class ServerEvents(Logger logger)
     public event Action<ItemUseEvent>? ItemUse;
     internal bool HasItemUse => ItemUse is not null;
 
+    /// <summary>Right click in the air with an item in hand.</summary>
+    public event Action<PlayerItemUseEvent>? PlayerItemUse;
+    internal bool HasPlayerItemUse => PlayerItemUse is not null;
+
     public event Action<PlayerInteractBlockEvent>? PlayerInteractBlock;
     internal bool HasPlayerInteractBlock => PlayerInteractBlock is not null;
 
@@ -464,6 +468,7 @@ public sealed class ServerEvents(Logger logger)
     internal bool OnBreak(BlockEvent e) => Fire(BlockBreak, e);
     internal bool OnPlace(BlockEvent e) => Fire(BlockPlace, e);
     internal bool OnItemUse(ItemUseEvent e) => Fire(ItemUse, e);
+    internal bool OnPlayerItemUse(PlayerItemUseEvent e) => Fire(PlayerItemUse, e);
     internal bool OnPlayerInteractBlock(PlayerInteractBlockEvent e) => Fire(PlayerInteractBlock, e);
     internal bool OnSignChange(SignChangeEvent e) => Fire(SignChange, e);
     internal bool OnBlockUse(BlockUseEvent e) => Fire(BlockUse, e);
@@ -608,6 +613,7 @@ public sealed class ServerEvents(Logger logger)
         BlockBreak = null;
         BlockPlace = null;
         ItemUse = null;
+        PlayerItemUse = null;
         PlayerInteractBlock = null;
         SignChange = null;
         BlockUse = null;

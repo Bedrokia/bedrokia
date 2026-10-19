@@ -300,10 +300,24 @@ public sealed class CustomItemBuilder
             _onUse);
     }
 
+    /// <summary>
+    /// Mines like a vanilla tool on the server: <paramref name="kind"/> pickaxe, axe, shovel, hoe or sword; harvest
+    /// <paramref name="level"/> 0 wood/gold, 1 stone, 2 iron, 3 diamond, 4 netherite; <paramref name="speed"/> (diamond 8).
+    /// </summary>
+    public CustomItemBuilder WithTool(string kind, int level, double speed)
+    {
+        _tool = (kind, level, speed);
+        return this;
+    }
+
+    private (string Kind, int Level, double Speed)? _tool;
+
     public CustomItem Register()
     {
         var item = Build();
         CustomItemRegistry.Register(item);
+        if (_tool is { } tool)
+            DropRules.RegisterTool(item.Identifier, tool.Kind, tool.Level, tool.Speed);
         return item;
     }
 }

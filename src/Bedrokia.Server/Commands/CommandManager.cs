@@ -126,7 +126,7 @@ public sealed class CommandManager(Logger logger)
         }
         catch (CommandUsageException)
         {
-            sender.Reply($"§cUsage: {command.Name} {command.Usage}");
+            sender.Reply($"§cUsage: {command.Name} {DisplayUsage(command.Usage)}");
         }
         catch (Exception e)
         {
@@ -139,8 +139,9 @@ public sealed class CommandManager(Logger logger)
     }
 
     /// <summary>
-    /// AvailableCommands packet (gophertunnel packet/available_commands.go, protocol 2193) with the commands this
-    /// sender may run, so the client lists and auto-completes them. Every parameter is sent as a plain string.
+    /// AvailableCommands packet (gophertunnel packet/available_commands.go and protocol/command.go, protocol 2193)
+    /// with the commands this sender may run, so the client lists them and Tab proposes the arguments: online
+    /// players, numbers, fixed choices... The parameter types come from the usage, see <see cref="ParseUsage"/>.
     /// </summary>
     public byte[] AvailableCommandsPacket(bool isOp) =>
         AvailableCommandsPacket(perm => isOp || string.IsNullOrWhiteSpace(perm) || perm.Equals("everyone", StringComparison.OrdinalIgnoreCase));
@@ -152,28 +153,119 @@ public sealed class CommandManager(Logger logger)
     /// <summary>Sends commands filtered by a predicate.</summary>
     public byte[] AvailableCommandsPacket(Func<string?, bool> canRun)
     {
-        const uint valid = 0x100000, typeString = 56, typeRawText = 70;
+        const uint valid = 0x100000, enumFlag = 0x200000;
         var visible = All.Where(c => canRun(c.Permission)).ToList();
-        var w = new BedrockWriter().VarUInt32(AvailableCommandsId)
-            .VarUInt32(0).VarUInt32(0).VarUInt32(0).VarUInt32(0).VarUInt32(0) // enum values, chained values, suffixes, enums, chained
-            .VarUInt32((uint)visible.Count);
-        foreach (var command in visible)
+        var overloads = visible.Select(c => ParseUsage(c.Usage)).ToList();
+
+        // Every fixed choice (subcommands, modes...) becomes an enum; identical lists share one.
+        var values = new List<string>();
+        var valueIndex = new Dictionary<string, int>();
+        var enums = new List<(string Name, List<int> Values)>();
+        var enumIndex = new Dictionary<string, int>();
+        int EnumOf(string name, IReadOnlyList<string> options)
         {
-            var parameters = command.Usage.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            w.String(command.Name).String(command.Description).UInt16(0).String("any")
-                .UInt32(uint.MaxValue) // no aliases
-                .VarUInt32(0) // chained subcommand offsets
-                .VarUInt32(1).Bool(false).VarUInt32((uint)parameters.Length);
-            foreach (var parameter in parameters)
+            var key = string.Join('|', options);
+            if (enumIndex.TryGetValue(key, out var existing))
+                return existing;
+            var indices = new List<int>();
+            foreach (var option in options)
             {
-                var name = parameter.Trim('<', '>', '[', ']');
-                var rest = name.EndsWith("...");
-                w.String(rest ? name[..^3] : name).UInt32(valid | (rest ? typeRawText : typeString))
-                    .Bool(parameter.StartsWith('[')).Byte(0);
+                if (!valueIndex.TryGetValue(option, out var v))
+                {
+                    valueIndex[option] = v = values.Count;
+                    values.Add(option);
+                }
+                indices.Add(v);
+            }
+            enums.Add((options.Count == 1 ? options[0] : name, indices));
+            return enumIndex[key] = enums.Count - 1;
+        }
+        var types = overloads.Select(command => command.Select(overload => overload.Select(p =>
+            p.Options is { } options ? valid | enumFlag | (uint)EnumOf(p.Name, options) : valid | p.Type).ToList()).ToList()).ToList();
+
+        var w = new BedrockWriter().VarUInt32(AvailableCommandsId).VarUInt32((uint)values.Count);
+        foreach (var value in values)
+            w.String(value);
+        w.VarUInt32(0).VarUInt32(0).VarUInt32((uint)enums.Count); // chained values, suffixes, enums
+        foreach (var (name, indices) in enums)
+        {
+            w.String(name).VarUInt32((uint)indices.Count);
+            foreach (var index in indices)
+                w.UInt32((uint)index);
+        }
+        w.VarUInt32(0).VarUInt32((uint)visible.Count); // chained subcommands, commands
+        for (var c = 0; c < visible.Count; c++)
+        {
+            w.String(visible[c].Name).String(visible[c].Description).UInt16(0).String("any")
+                .UInt32(uint.MaxValue) // aliases are registered as commands of their own
+                .VarUInt32(0) // chained subcommand offsets
+                .VarUInt32((uint)overloads[c].Count);
+            for (var o = 0; o < overloads[c].Count; o++)
+            {
+                w.Bool(false).VarUInt32((uint)overloads[c][o].Count);
+                for (var p = 0; p < overloads[c][o].Count; p++)
+                {
+                    var parameter = overloads[c][o][p];
+                    w.String(parameter.Name).UInt32(types[c][o][p]).Bool(parameter.Optional).Byte(0);
+                }
             }
         }
         return w.VarUInt32(0).VarUInt32(0).ToArray(); // dynamic enums, constraints
     }
+
+    /// <summary>A command parameter for the client: name, protocol type, optional, or a fixed list of choices.</summary>
+    public sealed record UsageParameter(string Name, uint Type, bool Optional, IReadOnlyList<string>? Options);
+
+    /// <summary>
+    /// Reads a usage into overloads. Overloads are separated by "||"; a parameter is &lt;name&gt; (required) or
+    /// [name] (optional), with an optional type after a colon: player (online players on Tab), int, float, bool,
+    /// text (the rest of the line), pos (x y z), or choices "a|b|c". A bare word is a fixed subcommand.
+    /// "&lt;message...&gt;" is the rest of the line too. Without a type the parameter is a string.
+    /// Example: "add &lt;joueur:player&gt; &lt;montant:float&gt; || mode &lt;mode:survival|creative&gt;".
+    /// </summary>
+    public static List<List<UsageParameter>> ParseUsage(string usage)
+    {
+        const uint typeInt = 1, typeFloat = 3, typeTarget = 8, typeString = 56, typePosition = 65, typeRawText = 70;
+        var result = new List<List<UsageParameter>>();
+        foreach (var overload in usage.Split("||"))
+        {
+            var parameters = new List<UsageParameter>();
+            foreach (var token in overload.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var optional = token.StartsWith('[');
+                var inner = token.Trim('<', '>', '[', ']');
+                if (!optional && !token.StartsWith('<'))
+                {
+                    parameters.Add(new UsageParameter(inner, typeString, false, [inner])); // subcommand word
+                    continue;
+                }
+                var colon = inner.IndexOf(':');
+                var name = colon < 0 ? inner : inner[..colon];
+                var type = colon < 0 ? "" : inner[(colon + 1)..];
+                if (name.EndsWith("..."))
+                    (name, type) = (name[..^3], "text");
+                else if (colon < 0 && name.Contains('|'))
+                    (name, type) = ("value", name); // "<on|off>": choices without a name
+                IReadOnlyList<string>? options = type.Contains('|') ? type.Split('|', StringSplitOptions.RemoveEmptyEntries)
+                    : type == "bool" ? ["true", "false"] : null;
+                parameters.Add(new UsageParameter(name, type switch
+                {
+                    "player" or "target" => typeTarget,
+                    "int" => typeInt,
+                    "float" or "number" => typeFloat,
+                    "text" or "message" => typeRawText,
+                    "pos" or "position" => typePosition,
+                    _ => typeString,
+                }, optional, options));
+            }
+            result.Add(parameters);
+        }
+        return result;
+    }
+
+    /// <summary>The usage as players read it: types removed, overloads one after another.</summary>
+    public static string DisplayUsage(string usage) =>
+        System.Text.RegularExpressions.Regex.Replace(usage, @"([<\[])([^:<>\[\]]+):[^<>\[\]]*([>\]])", "$1$2$3").Replace(" || ", " | ");
 }
 
 /// <summary>Thrown by a command whose arguments are wrong; the manager replies with the usage.</summary>
