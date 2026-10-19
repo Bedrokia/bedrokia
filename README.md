@@ -12,6 +12,8 @@
 
 Bedrock 26.50 (protocole 2193) · NetherNet / WebRTC · Plugins en C# sans compilation · Apache-2.0
 
+🇫🇷 **Français** · 🇬🇧 [English](README.en.md)
+
 [📖 Documentation](https://nexiumpvp2.github.io/bedrokia/) · [📝 Changelog](https://nexiumpvp2.github.io/bedrokia/projet/changelog/) · [⬇️ Téléchargements](https://github.com/Nexiumpvp2/bedrokia/releases/latest) · [🦖 Egg Pterodactyl](deploy/pterodactyl/egg-bedrokia.json)
 
 </div>
@@ -66,7 +68,7 @@ lisible, c'est cool. 😎
 | **Blocs** | Pose orientée (escaliers, bûches, portes, lits…), coffres, coffre de l'Ender, tonneaux, fours / hauts fourneaux / fumoirs, portes, trappes, leviers, boutons, lits (réapparition, nuit sautée), murets connectés, gravité (sable, gravier), eau et lave qui coulent, cultures, arbres, TNT et explosions |
 | **Joueurs** | Inventaire complet, artisanat (toutes les recettes vanilla), enchantements, expérience, faim, dégâts, chute, mort, armure, objets lâchés et ramassés |
 | **Mobs** | Animaux et monstres qui apparaissent, se déplacent, attaquent, lâchent des objets ; creepers qui explosent |
-| **Serveur** | `server.properties` comme PocketMine-MP, ops, liste blanche, bannissements, ~35 commandes, packs de ressources |
+| **Serveur** | `server.properties` comme PocketMine-MP, ops, liste blanche, bannissements, permissions et groupes, ~35 commandes, packs de ressources, annonce des nouvelles versions dans la console |
 | **Plugins** | Plugins C# organisés comme Bukkit / PocketMine (`plugin.yml`, `src/`, `resources/config.yml`), **compilés automatiquement au démarrage**, événements annulables, commandes, titres, scoreboard, effets, particules |
 
 Ce qui manque encore : coffres doubles, panneaux éditables, enclume, tailleur de pierre, meule, Nether et End,
@@ -173,7 +175,7 @@ src/Bedrokia.Cli/                 exécutable `bedrokia`
 tests/Bedrokia.Tests/             tests automatiques
 examples/plugins/                 plugins d'exemple
 deploy/                           service systemd, egg Pterodactyl
-docs/                             documentation (Material for MkDocs, publiée sur GitHub Pages)
+docs/ docs-en/                    documentation en français et en anglais (Material for MkDocs, sur GitHub Pages)
 ```
 
 ## ⚖️ Licence et sources

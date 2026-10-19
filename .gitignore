@@ -21,3 +21,6 @@ out/
 /white-list.txt
 /banned-players.txt
 *.pem
+
+# Shared with docs/ (copied by the docs workflow before the English build)
+/docs-en/assets/

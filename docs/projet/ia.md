@@ -41,7 +41,9 @@ Tous les mainteneurs sont les bienvenus, humains comme IA. 😎
 
 ### Écrire la documentation
 
-La doc est dans `docs/` (Markdown, thème [Material for MkDocs](https://squidfunk.github.io/mkdocs-material/)).
+La doc est dans `docs/` (français) et `docs-en/` (anglais), en Markdown avec le thème
+[Material for MkDocs](https://squidfunk.github.io/mkdocs-material/). Une page ajoutée dans une langue doit idéalement
+l'être aussi dans l'autre, avec le même emplacement.
 
 - **Ajouter une page** : créer un fichier `.md` dans le bon dossier (`demarrer/`, `plugins/`, `projet/`). Il apparaît
   tout seul dans le menu ; pour choisir sa place, l'ajouter dans le `.nav.yml` du dossier.

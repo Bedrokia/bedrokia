@@ -52,4 +52,4 @@ Bedrokia intègre un système granulaire de permissions avec groupes (grades), h
   - `-bedrokia.command.stop` : interdit explicitement la commande `/stop` (même si `*` est accordé).
 - **Opérateurs** : Les opérateurs possèdent automatiquement `*` par défaut, sauf négation explicite.
 - **Autocomplétion dynamique** : Dès qu'une permission ou un groupe est modifié via `/perm`, la liste des commandes autorisées est immédiatement rafraîchie sur le client Bedrock du joueur.
-- **Stockage sécurisé** : Les permissions et groupes sont enregistrés de façon atomique dans `permissions.json` (avec assainissement strict des pseudos pour prévenir toute faille d'injection ou de traversée de chemin).
+- **Stockage** : les permissions et groupes sont enregistrés dans `permissions.json`, chaque joueur sous son pseudo exact (sans tenir compte des majuscules). Si ce fichier est abîmé, il est copié dans `permissions.json.broken-<date>` et l'erreur s'affiche dans la console.

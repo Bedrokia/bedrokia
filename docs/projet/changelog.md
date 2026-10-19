@@ -7,9 +7,74 @@ title: Changelog
 Chaque changement publié sur `main` devient une nouvelle version. Cette page est **générée automatiquement** à
 partir des releases GitHub à chaque mise à jour de la documentation.
 
-## v0.3.5 { #v0-3-5 }
+## v0.3.9 { #v0-3-9 }
 
 <span class="bk-date">19 octobre 2026</span> <span class="bk-latest">DERNIÈRE VERSION</span>
+
+<div class="bk-downloads" markdown>
+
+[:material-linux: Linux / Pterodactyl](https://github.com/Nexiumpvp2/bedrokia/releases/download/v0.3.9/bedrokia){ .md-button }
+[:material-microsoft-windows: Windows](https://github.com/Nexiumpvp2/bedrokia/releases/download/v0.3.9/bedrokia.exe){ .md-button }
+[:material-egg: Egg Pterodactyl](https://github.com/Nexiumpvp2/bedrokia/releases/download/v0.3.9/egg-bedrokia.json){ .md-button }
+
+</div>
+
+!!! info "Documentation"
+
+    - draft of a styled home page template (not used by the site yet) ([`a463923`](https://github.com/Nexiumpvp2/bedrokia/commit/a463923c72cc06fa95f895ae32cee00a3bbda227))
+
+## v0.3.8 { #v0-3-8 }
+
+<span class="bk-date">19 octobre 2026</span>
+
+<div class="bk-downloads" markdown>
+
+[:material-linux: Linux / Pterodactyl](https://github.com/Nexiumpvp2/bedrokia/releases/download/v0.3.8/bedrokia){ .md-button }
+[:material-microsoft-windows: Windows](https://github.com/Nexiumpvp2/bedrokia/releases/download/v0.3.8/bedrokia.exe){ .md-button }
+[:material-egg: Egg Pterodactyl](https://github.com/Nexiumpvp2/bedrokia/releases/download/v0.3.8/egg-bedrokia.json){ .md-button }
+
+</div>
+
+!!! success "Nouveautés"
+
+    - servers announce new Bedrokia releases in the console, with the download link ([`b39641e`](https://github.com/Nexiumpvp2/bedrokia/commit/b39641ed02c5ee5558e560cac0da354e6b5ffbef))
+
+## v0.3.7 { #v0-3-7 }
+
+<span class="bk-date">19 octobre 2026</span>
+
+<div class="bk-downloads" markdown>
+
+[:material-linux: Linux / Pterodactyl](https://github.com/Nexiumpvp2/bedrokia/releases/download/v0.3.7/bedrokia){ .md-button }
+[:material-microsoft-windows: Windows](https://github.com/Nexiumpvp2/bedrokia/releases/download/v0.3.7/bedrokia.exe){ .md-button }
+[:material-egg: Egg Pterodactyl](https://github.com/Nexiumpvp2/bedrokia/releases/download/v0.3.7/egg-bedrokia.json){ .md-button }
+
+</div>
+
+!!! info "Documentation"
+
+    - README links to every documentation page and the changelog ([`4b1a63b`](https://github.com/Nexiumpvp2/bedrokia/commit/4b1a63b9cba7781963a283ac1a561f2ce205ad09))
+
+## v0.3.6 { #v0-3-6 }
+
+<span class="bk-date">19 octobre 2026</span>
+
+<div class="bk-downloads" markdown>
+
+[:material-linux: Linux / Pterodactyl](https://github.com/Nexiumpvp2/bedrokia/releases/download/v0.3.6/bedrokia){ .md-button }
+[:material-microsoft-windows: Windows](https://github.com/Nexiumpvp2/bedrokia/releases/download/v0.3.6/bedrokia.exe){ .md-button }
+[:material-egg: Egg Pterodactyl](https://github.com/Nexiumpvp2/bedrokia/releases/download/v0.3.6/egg-bedrokia.json){ .md-button }
+
+</div>
+
+??? info "Documentation"
+
+    - new-pages glob may match nothing ([`b36de8d`](https://github.com/Nexiumpvp2/bedrokia/commit/b36de8d2c69c5cb0732227ff9c0bde8939f098e6))
+    - Material for MkDocs site, menu built from folders, changelog generated from releases ([`ae9bfaf`](https://github.com/Nexiumpvp2/bedrokia/commit/ae9bfaf6485aabd9fd19cf7cefdabe2c8c63e5cc))
+
+## v0.3.5 { #v0-3-5 }
+
+<span class="bk-date">19 octobre 2026</span>
 
 <div class="bk-downloads" markdown>
 
@@ -19,7 +84,7 @@ partir des releases GitHub à chaque mise à jour de la documentation.
 
 </div>
 
-!!! danger "Sécurité"
+??? danger "Sécurité"
 
     - players no longer share permissions through similar names; a broken permissions.json is kept ([`81c24e1`](https://github.com/Nexiumpvp2/bedrokia/commit/81c24e1c3546a239b4e1eeb642d12c9a65f2f255))
 
@@ -35,7 +100,7 @@ partir des releases GitHub à chaque mise à jour de la documentation.
 
 </div>
 
-!!! success "Nouveautés"
+??? success "Nouveautés"
 
     - granular permissions, groups with inheritance, chat prefixes and /perm command (#2) ([`4c282bd`](https://github.com/Nexiumpvp2/bedrokia/commit/4c282bd2c3fef6f8b5680181a07d4a56a6c86e26))
 
@@ -51,7 +116,7 @@ partir des releases GitHub à chaque mise à jour de la documentation.
 
 </div>
 
-!!! bug "Corrections"
+??? bug "Corrections"
 
     - blocks placed twice on snow and tall grass, and blocks placed inside players ([`71cf0f8`](https://github.com/Nexiumpvp2/bedrokia/commit/71cf0f83154084602db69b55779b7da3a9208469))
 

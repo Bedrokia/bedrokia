@@ -58,6 +58,14 @@ plugins:
   - awesome-nav # menu from the folders and their .nav.yml: new pages appear by themselves
 
 extra:
+  # Language switcher in the header (the English site is built from docs-en/ by mkdocs.en.yml into site/en/).
+  alternate:
+    - name: Français
+      link: /bedrokia/
+      lang: fr
+    - name: English
+      link: /bedrokia/en/
+      lang: en
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/Nexiumpvp2/bedrokia
