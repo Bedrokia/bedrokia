@@ -100,6 +100,8 @@ All plugin code runs on the **game thread** (20 ticks per second): no locks need
 | `ReloadConfig()` | reads `config.yml` again |
 | `Log`, `LogWarning`, `LogError` | writes to the console, prefixed with the plugin name |
 | `RegisterCommand(name, description, usage, opOnly, action)` | adds a command from code |
+| `RegisterCommand(name, description, usage, permission, action)` | command needing a permission node (`""` for everyone, `"op"`, or `"myplugin.fly"`) |
+| `UnregisterCommand(name)` | removes a command, for example a server command the plugin replaces |
 
 ## Config
 

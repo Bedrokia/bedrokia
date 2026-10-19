@@ -87,4 +87,11 @@ public abstract class Plugin
     /// <summary>Adds a command from code (commands can also be declared in plugin.yml).</summary>
     public void RegisterCommand(string name, string description, string usage, bool opOnly, Action<CommandSender, string[]> execute) =>
         Server.Commands.Register(name, description, usage, opOnly, execute);
+
+    /// <summary>Adds a command that needs a permission node ("" for everyone, "op" for operators, or e.g. "myplugin.fly").</summary>
+    public void RegisterCommand(string name, string description, string usage, string permission, Action<CommandSender, string[]> execute) =>
+        Server.Commands.Register(name, description, usage, permission, execute);
+
+    /// <summary>Removes a command, for example a built-in one this plugin replaces.</summary>
+    public bool UnregisterCommand(string name) => Server.Commands.Unregister(name);
 }
