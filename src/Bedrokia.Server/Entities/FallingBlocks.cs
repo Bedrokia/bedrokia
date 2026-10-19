@@ -36,6 +36,9 @@ public sealed class FallingBlocks(BedrokiaServer server)
 
     private readonly List<Falling> _falling = [];
 
+    /// <summary>Number of falling blocks currently active in the world.</summary>
+    public int Count => _falling.Count;
+
     public void Spawn(int x, int y, int z, BlockType block)
     {
         var falling = new Falling(server.NextEntityId(), x, y, z, block);

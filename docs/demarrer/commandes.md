@@ -42,6 +42,8 @@ s'ajoutent à cette liste et apparaissent dans l'autocomplétion du jeu.
 | `xp <nombre>[L] [joueur]` | donne de l'expérience (`30L` = 30 niveaux) |
 | `perm user <joueur> <info\|setgroup\|add\|remove> [valeur]` (`permission`) | gère les permissions et le groupe d'un joueur |
 | `perm group <groupe> <list\|add\|remove\|setprefix\|setparent> [valeur]` | gère les permissions, l'héritage et le préfixe d'un groupe |
+| `tps` | affiche les performances du serveur (TPS, durée des ticks MSPT, mémoire) |
+| `timings [on\|off\|reset\|report]` | profileur de performances détaillées des sous-systèmes du serveur (entités, blocs, monde, tâches) |
 
 ## Système de Permissions
 
