@@ -120,7 +120,8 @@ public sealed partial class BedrockConnection : IEnchanter
     }
 
     /// <summary>Experience dropped by a block mined in survival (vanilla amounts; given directly, no orbs).</summary>
-    private static int BlockExperience(string name) => name.Replace("deepslate_", "").Replace("lit_", "") switch
+    /// <summary>Experience a vanilla block gives when mined with the right tool (ores), 0 for most blocks.</summary>
+    public static int BlockExperience(string name) => name.Replace("deepslate_", "").Replace("lit_", "") switch
     {
         "minecraft:coal_ore" => Random.Shared.Next(0, 3),
         "minecraft:diamond_ore" or "minecraft:emerald_ore" => Random.Shared.Next(3, 8),

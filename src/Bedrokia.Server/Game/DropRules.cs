@@ -144,6 +144,10 @@ public static class DropRules
         return damage >= 1 ? 0 : (int)Math.Ceiling(1 / damage);
     }
 
+    /// <summary>The tool that mines a vanilla block fastest: pickaxe, axe, shovel, hoe, or "" for none.</summary>
+    public static string EffectiveTool(BlockType block) =>
+        block.Name.StartsWith("minecraft:") ? EffectiveTool(block.Name["minecraft:".Length..]) : "";
+
     private static string EffectiveTool(string block) => block switch
     {
         _ when PickaxeTier.ContainsKey(block) || block.Contains("stone") || block.Contains("brick") || block.Contains("ore")
