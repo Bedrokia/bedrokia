@@ -500,7 +500,7 @@ public sealed partial class BedrockConnection
         // Others still see the corpse: re-add the player.
         _server.BroadcastInExcept(World, this, Packets.RemoveActor(EntityId));
         if (Info is not null && !Vanished)
-            _server.BroadcastInExcept(World, this, PlayerPackets.AddPlayer(Info, Position.X, Position.Y, Position.Z, Pitch, Yaw, (int)GameMode, NameTagVisible));
+            _server.BroadcastInExcept(World, this, AddPlayerPacket());
     }
 
     /// <summary>Called every tick by the server.</summary>
