@@ -1,0 +1,8 @@
+# Menu order (mkdocs-awesome-nav). "*" adds every other page or folder automatically: a new .md file
+# dropped in docs/ or in a section folder appears in the menu without touching this file.
+nav:
+  - index.md
+  - Démarrer: demarrer
+  - Plugins: plugins
+  - Projet: projet
+  - "*"

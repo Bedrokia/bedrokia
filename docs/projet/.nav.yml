@@ -1,0 +1,6 @@
+nav:
+  - changelog.md
+  - roadmap.md
+  - architecture.md
+  - ia.md
+  - "*"

@@ -1,8 +1,8 @@
 ---
-title: Items personnalises
+title: Objets personnalisés
 ---
 
-# Items personnalises (Custom Items)
+# Objets personnalisés
 
 Bedrokia dispose d'un moteur natif d'objets personnalises inspire de l'architecture par composants NBT du protocole officiel Minecraft Bedrock.
 

@@ -26,4 +26,4 @@ title: Feuille de route
 - Redstone
 - Blocs et objets personnalisés (add-ons) pour les plugins
 
-Les idées et contributions sont les bienvenues : voir [Le projet et l'IA](ia).
+Les idées et contributions sont les bienvenues : voir [Le projet et l'IA](ia.md).

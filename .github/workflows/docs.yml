@@ -1,0 +1,53 @@
+name: Docs
+
+# The documentation site (Material for MkDocs) is rebuilt and published after every CI run on main, so new pages
+# and the changelog of the new release appear by themselves. On other branches it is only built (strict) to
+# check it, nothing is published.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  push:
+    branches-ignore: [main]
+    paths: ['docs/**', 'mkdocs.yml', '.github/scripts/changelog.mjs', '.github/workflows/docs.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install "mkdocs-material==9.*" "mkdocs-awesome-nav==3.*"
+      - name: Changelog from the GitHub releases
+        run: node .github/scripts/changelog.mjs page > docs/projet/changelog.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: mkdocs build --strict
+      - uses: actions/upload-pages-artifact@v3
+        if: github.event_name != 'push'
+        with:
+          path: site
+
+  deploy:
+    if: github.event_name != 'push'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

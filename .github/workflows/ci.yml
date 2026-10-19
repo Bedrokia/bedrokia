@@ -84,12 +84,16 @@ jobs:
           merge-multiple: true
       - name: Zip the example plugins
         run: cd examples && zip -r ../artifacts/example-plugins.zip plugins -x '*.csproj' '*/bin/*' '*/obj/*'
+      - name: Release notes (commits since the last release, sorted by kind)
+        run: node .github/scripts/changelog.mjs release "$TAG" > notes.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG }}
           name: Bedrokia ${{ env.TAG }}
           target_commitish: ${{ github.sha }}
-          generate_release_notes: true
+          body_path: notes.md
           make_latest: true
           files: |
             artifacts/bedrokia

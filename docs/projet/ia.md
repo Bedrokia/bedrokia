@@ -38,3 +38,26 @@ Tous les mainteneurs sont les bienvenus, humains comme IA. 😎
 - Garder le style du code autour : C# moderne, noms clairs, commentaires qui expliquent le *pourquoi*.
 - La bannière Bedrokia en tête de chaque fichier `.cs`.
 - Un changement = des tests qui passent.
+
+### Écrire la documentation
+
+La doc est dans `docs/` (Markdown, thème [Material for MkDocs](https://squidfunk.github.io/mkdocs-material/)).
+
+- **Ajouter une page** : créer un fichier `.md` dans le bon dossier (`demarrer/`, `plugins/`, `projet/`). Il apparaît
+  tout seul dans le menu ; pour choisir sa place, l'ajouter dans le `.nav.yml` du dossier.
+- **Publication** : le site est reconstruit et publié automatiquement après chaque push sur `main`, avec le
+  changelog généré à partir des releases.
+- **Aperçu sur son PC** :
+
+```bash
+pip install "mkdocs-material==9.*" "mkdocs-awesome-nav==3.*"
+```
+
+```bash
+mkdocs serve
+```
+
+### Messages de commit
+
+Commencer par le type de changement, pour que le changelog les range au bon endroit :
+`feat:` (nouveauté), `fix:` (correction), `security:` (sécurité), `perf:`, `docs:`, ou rien (autres changements).
