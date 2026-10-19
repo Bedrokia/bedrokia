@@ -45,21 +45,38 @@ public static class Items
     public static int Count => ByNameMap.Count;
 
     /// <summary>ItemRegistry packet with every vanilla item.</summary>
-    public static byte[] RegistryPacket { get; }
+    public static byte[] RegistryPacket { get; private set; }
 
     /// <summary>CreativeContent packet with the vanilla creative inventory.</summary>
-    public static byte[] CreativeContentPacket { get; }
+    public static byte[] CreativeContentPacket { get; private set; }
 
-    public static int CreativeItemCount { get; }
+    public static int CreativeItemCount { get; private set; }
 
     /// <summary>Creative inventory entries; creative network id N is index N - 1.</summary>
     internal static List<ItemStack> CreativeTemplates { get; } = [];
+
+    private static readonly List<(ItemStack Stack, int GroupIndex)> CustomCreativeEntries = [];
 
     internal static short ShieldRuntimeId { get; }
 
     public static ItemType? ByName(string name) => ByNameMap.GetValueOrDefault(name.Contains(':') ? name : "minecraft:" + name);
 
     public static ItemType? ByRuntimeId(short runtimeId) => ByRuntimeIdMap.GetValueOrDefault(runtimeId);
+
+    public static void RegisterCustomItem(ItemType item, bool isCreative = true, int creativeGroupIndex = 0)
+    {
+        ByNameMap[item.Name] = item;
+        ByRuntimeIdMap[item.RuntimeId] = item;
+        RegistryPacket = BuildRegistry();
+        if (isCreative)
+        {
+            var template = new ItemStack(item, 1, 0, Blocks.ByName(item.Name)?.NetworkId ?? 0);
+            CustomCreativeEntries.Add((template, creativeGroupIndex));
+            CreativeTemplates.Clear();
+            CreativeContentPacket = BuildCreativeContent(out var count);
+            CreativeItemCount = count;
+        }
+    }
 
     private static byte[] BuildRegistry()
     {
@@ -97,6 +114,17 @@ public static class Items
             CreativeTemplates.Add(template);
             body.VarUInt32((uint)itemCount).Bytes(stack.ToArray()).VarUInt32((uint)groupIndex);
         }
+
+        foreach (var (stack, groupIndex) in CustomCreativeEntries)
+        {
+            itemCount++;
+            CreativeTemplates.Add(stack);
+            var stackWriter = new BedrockWriter();
+            stackWriter.VarInt32(stack.Type.RuntimeId).UInt16((ushort)stack.Count).VarUInt32((ushort)stack.Meta).VarInt32(unchecked((int)stack.BlockRuntimeId));
+            WriteUserData(stackWriter, stack.Nbt, stack.Type.RuntimeId == ShieldRuntimeId);
+            body.VarUInt32((uint)itemCount).Bytes(stackWriter.ToArray()).VarUInt32((uint)groupIndex);
+        }
+
         w.VarUInt32((uint)itemCount).Bytes(body.ToArray());
         return w.ToArray();
     }

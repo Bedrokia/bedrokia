@@ -33,17 +33,18 @@ public sealed class BlockEntity(string id, int slots)
     public int CookTicks, BurnTicks, BurnDuration;
 
     /// <summary>The block entity a block needs, or null.</summary>
-    public static BlockEntity? For(BlockType block) => block.Name["minecraft:".Length..] switch
-    {
-        "chest" or "trapped_chest" => new BlockEntity("Chest", 27),
-        "barrel" => new BlockEntity("Barrel", 27),
-        "ender_chest" => new BlockEntity("EnderChest", 0),
-        "furnace" or "lit_furnace" => new BlockEntity("Furnace", 3),
-        "blast_furnace" or "lit_blast_furnace" => new BlockEntity("BlastFurnace", 3),
-        "smoker" or "lit_smoker" => new BlockEntity("Smoker", 3),
-        "bed" => new BlockEntity("Bed", 0),
-        _ => null,
-    };
+    public static BlockEntity? For(BlockType block) =>
+        !block.Name.StartsWith("minecraft:") ? null : block.Name["minecraft:".Length..] switch
+        {
+            "chest" or "trapped_chest" => new BlockEntity("Chest", 27),
+            "barrel" => new BlockEntity("Barrel", 27),
+            "ender_chest" => new BlockEntity("EnderChest", 0),
+            "furnace" or "lit_furnace" => new BlockEntity("Furnace", 3),
+            "blast_furnace" or "lit_blast_furnace" => new BlockEntity("BlastFurnace", 3),
+            "smoker" or "lit_smoker" => new BlockEntity("Smoker", 3),
+            "bed" => new BlockEntity("Bed", 0),
+            _ => null,
+        };
 
     /// <summary>What the client receives (no contents: those are sent when the container is opened).</summary>
     public OrderedDictionary<string, object> NetworkNbt(int x, int y, int z)

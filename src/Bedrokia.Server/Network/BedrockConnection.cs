@@ -46,6 +46,7 @@ public sealed partial class BedrockConnection
         EntityId = entityId;
         Inventory.Rejected = reason => _server.Logger.Debug($"{Name}: {reason}");
         Inventory.Accepted = summary => _server.Logger.Debug($"{Name}: {summary}");
+        RegisterHandlers();
     }
 
     public PlayerIdentity? Identity { get; private set; }
@@ -152,67 +153,15 @@ public sealed partial class BedrockConnection
                     Send(chunk);
                 break;
             }
-            case (_, PacketId.RequestChunkRadius) when _stage >= Stage.ChunkRadius:
+            case (_, PacketId.RequestChunkRadius) when _stage >= Stage.ChunkRadius && _stage < Stage.InGame:
                 OnRequestChunkRadius(reader.VarInt32());
                 break;
             case (Stage.Spawning, PacketId.SetLocalPlayerAsInitialised):
                 _stage = Stage.InGame;
                 _server.OnPlayerJoined(this);
                 break;
-            case (Stage.InGame, PacketId.PlayerAuthInput):
-                OnPlayerAuthInput(ref reader);
-                break;
-            case (Stage.InGame, PacketId.InventoryTransaction):
-                OnInventoryTransaction(ref reader);
-                break;
-            case (Stage.InGame, InventoryPackets.ItemStackRequestId):
-                Send([.. Inventory.HandleRequests(ref reader, GameMode, DropFromHand)]);
-                RefreshEnchantOptions();
-                SyncOpenContainer();
-                break;
-            case (Stage.InGame, InventoryPackets.MobEquipmentId):
-            {
-                reader.VarUInt64(); // runtime id
-                SkipItemInstance(ref reader);
-                reader.Byte(); // inventory slot
-                var hotbar = reader.Byte();
-                if (reader.Byte() == InventoryPackets.WindowInventory && hotbar < 9)
-                    Inventory.SelectedSlot = hotbar;
-                break;
-            }
-            case (Stage.InGame, InventoryPackets.InteractId):
-                // The client waits for this ContainerOpen before showing its own inventory (E key).
-                if (reader.Byte() == InventoryPackets.InteractOpenInventory && !_inventoryOpen)
-                {
-                    _inventoryOpen = true;
-                    Send(InventoryPackets.ContainerOpen(0, InventoryPackets.ContainerTypeInventory,
-                        (int)Position.X, (int)Position.Y, (int)Position.Z));
-                }
-                break;
-            case (Stage.InGame, InventoryPackets.ContainerCloseId):
-            {
-                var window = reader.Byte();
-                var type = reader.Byte();
-                _inventoryOpen = false;
-                CloseContainer(notifyClient: false);
-                foreach (var stack in Inventory.ReturnCraftingItems())
-                    _server.DropItem(stack, Position.X, Position.Y - EyeHeight + 0.5f, Position.Z);
-                Send(InventoryPackets.ContainerClose(window, window == InventoryPackets.WindowCraftingTable
-                    ? InventoryPackets.ContainerTypeWorkbench : type));
-                Send([.. Inventory.ContentPackets()]);
-                break;
-            }
-            case (Stage.InGame, 34): // BlockPickRequest (middle click)
-                OnBlockPick(reader.VarInt32(), reader.VarInt32(), reader.VarInt32());
-                break;
-            case (Stage.InGame, Entities.EntityPackets.RespawnId):
-                OnRespawnRequest(ref reader);
-                break;
-            case (Stage.InGame, CommandManager.CommandRequestId):
-                _server.Commands.Dispatch(CommandSender, reader.String());
-                break;
-            case (Stage.InGame, PacketId.Text):
-                OnText(ref reader);
+            case (Stage.InGame, _):
+                HandleInGamePacket(id, ref reader);
                 break;
             case (Stage.NetworkSettings or Stage.Login or Stage.Handshake, _):
                 throw new InvalidDataException($"Unexpected packet {id} during login.");
@@ -222,6 +171,228 @@ public sealed partial class BedrockConnection
                     _server.Logger.Debug($"{Name}: ignored packet id {id}");
                 break;
         }
+    }
+
+    private delegate void PacketHandler(ref BedrockReader reader);
+
+    private readonly Dictionary<uint, PacketHandler?> _handlers = [];
+
+    private void RegisterHandlers()
+    {
+        _handlers[PacketId.ActorEvent] = null;
+        _handlers[PacketId.AdventureSettings] = null;
+        _handlers[PacketId.Animate] = null;
+        _handlers[PacketId.AnvilDamage] = null;
+        _handlers[PacketId.BlockActorData] = OnBlockActorData;
+        _handlers[PacketId.BlockPickRequest] = OnBlockPickRequest;
+        _handlers[PacketId.BookEdit] = OnBookEdit;
+        _handlers[PacketId.BossEvent] = null;
+        _handlers[PacketId.ClientCacheBlobStatus] = OnClientCacheBlobStatus;
+        _handlers[PacketId.CommandRequest] = OnCommandRequest;
+        _handlers[PacketId.ContainerClose] = OnContainerClose;
+        _handlers[PacketId.Emote] = OnEmote;
+        _handlers[PacketId.EmoteList] = null;
+        _handlers[PacketId.FilterText] = null;
+        _handlers[PacketId.Interact] = OnInteract;
+        _handlers[PacketId.InventoryTransaction] = OnInventoryTransactionPacket;
+        _handlers[PacketId.ItemStackRequest] = OnItemStackRequest;
+        _handlers[PacketId.LecternUpdate] = OnLecternUpdate;
+        _handlers[PacketId.MobEquipment] = OnMobEquipment;
+        _handlers[PacketId.ModalFormResponse] = OnModalFormResponse;
+        _handlers[PacketId.MovePlayer] = null;
+        _handlers[PacketId.NPCRequest] = OnNPCRequest;
+        _handlers[PacketId.PlayerAction] = OnPlayerAction;
+        _handlers[PacketId.PlayerAuthInput] = OnPlayerAuthInput;
+        _handlers[PacketId.PlayerSkin] = OnPlayerSkin;
+        _handlers[PacketId.RequestAbility] = OnRequestAbility;
+        _handlers[PacketId.RequestChunkRadius] = OnRequestChunkRadiusPacket;
+        _handlers[PacketId.Respawn] = OnRespawnPacket;
+        _handlers[PacketId.SetPlayerFurnaceOptions] = null;
+        _handlers[PacketId.SetPlayerInventoryOptions] = null;
+        _handlers[PacketId.SubChunkRequest] = OnSubChunkRequest;
+        _handlers[PacketId.Text] = OnTextPacket;
+        _handlers[PacketId.ServerBoundLoadingScreen] = OnServerBoundLoadingScreen;
+        _handlers[PacketId.ServerBoundDiagnostics] = OnServerBoundDiagnostics;
+    }
+
+    private void HandleInGamePacket(uint id, ref BedrockReader reader)
+    {
+        if (_handlers.TryGetValue(id, out var handler))
+        {
+            handler?.Invoke(ref reader);
+        }
+        else
+        {
+            if (_ignoredPackets.Add(id))
+                _server.Logger.Debug($"{Name}: ignored packet id {id}");
+        }
+    }
+
+    private void OnBlockActorData(ref BedrockReader reader)
+    {
+        if (reader.Remaining == 0)
+            return;
+        reader.VarInt32();
+        reader.VarUInt32();
+        reader.VarInt32();
+        _ = reader.Bytes(reader.Remaining);
+    }
+
+    private void OnBlockPickRequest(ref BedrockReader reader)
+    {
+        if (reader.Remaining == 0)
+            return;
+        OnBlockPick(reader.VarInt32(), reader.VarInt32(), reader.VarInt32());
+    }
+
+    private void OnBookEdit(ref BedrockReader reader)
+    {
+        _ = reader.Bytes(reader.Remaining);
+    }
+
+    private void OnClientCacheBlobStatus(ref BedrockReader reader)
+    {
+        _ = reader.Bytes(reader.Remaining);
+    }
+
+    private void OnCommandRequest(ref BedrockReader reader)
+    {
+        _server.Commands.Dispatch(CommandSender, reader.String());
+    }
+
+    private void OnContainerClose(ref BedrockReader reader)
+    {
+        var window = reader.Byte();
+        var type = reader.Byte();
+        _inventoryOpen = false;
+        CloseContainer(notifyClient: false);
+        foreach (var stack in Inventory.ReturnCraftingItems())
+            _server.DropItem(stack, Position.X, Position.Y - EyeHeight + 0.5f, Position.Z);
+        Send(InventoryPackets.ContainerClose(window, window == InventoryPackets.WindowCraftingTable
+            ? InventoryPackets.ContainerTypeWorkbench : type));
+        Send([.. Inventory.ContentPackets()]);
+    }
+
+    private void OnEmote(ref BedrockReader reader)
+    {
+        if (reader.Remaining == 0)
+            return;
+        var runtimeId = reader.VarUInt64();
+        var emoteId = reader.String();
+        var flags = reader.Remaining > 0 ? reader.Byte() : (byte)0;
+        _server.BroadcastExcept(this, Packets.Emote(runtimeId, emoteId, flags));
+    }
+
+    private void OnInteract(ref BedrockReader reader)
+    {
+        if (reader.Byte() == InventoryPackets.InteractOpenInventory && !_inventoryOpen)
+        {
+            _inventoryOpen = true;
+            Send(InventoryPackets.ContainerOpen(0, InventoryPackets.ContainerTypeInventory,
+                (int)Position.X, (int)Position.Y, (int)Position.Z));
+        }
+    }
+
+    private void OnInventoryTransactionPacket(ref BedrockReader reader)
+    {
+        OnInventoryTransaction(ref reader);
+    }
+
+    private void OnItemStackRequest(ref BedrockReader reader)
+    {
+        Send([.. Inventory.HandleRequests(ref reader, GameMode, DropFromHand)]);
+        RefreshEnchantOptions();
+        SyncOpenContainer();
+    }
+
+    private void OnLecternUpdate(ref BedrockReader reader)
+    {
+        _ = reader.Bytes(reader.Remaining);
+    }
+
+    private void OnMobEquipment(ref BedrockReader reader)
+    {
+        reader.VarUInt64();
+        SkipItemInstance(ref reader);
+        reader.Byte();
+        var hotbar = reader.Byte();
+        if (reader.Byte() == InventoryPackets.WindowInventory && hotbar < 9)
+            Inventory.SelectedSlot = hotbar;
+    }
+
+    private void OnModalFormResponse(ref BedrockReader reader)
+    {
+        if (reader.Remaining == 0)
+            return;
+        reader.VarUInt32();
+        _ = reader.Bytes(reader.Remaining);
+    }
+
+    private void OnNPCRequest(ref BedrockReader reader)
+    {
+        _ = reader.Bytes(reader.Remaining);
+    }
+
+    private void OnPlayerAction(ref BedrockReader reader)
+    {
+        if (reader.Remaining == 0)
+            return;
+        reader.VarUInt64();
+        var action = reader.VarInt32();
+        var x = reader.Remaining > 0 ? reader.VarInt32() : 0;
+        var y = reader.Remaining > 0 ? reader.VarUInt32() : 0;
+        var z = reader.Remaining > 0 ? reader.VarInt32() : 0;
+        if (reader.Remaining >= 3)
+        {
+            reader.VarInt32();
+            reader.VarUInt32();
+            reader.VarInt32();
+        }
+        var face = reader.Remaining > 0 ? reader.VarInt32() : 0;
+        OnBlockAction(action, x, (int)y, z, face);
+    }
+
+    private void OnPlayerSkin(ref BedrockReader reader)
+    {
+        _ = reader.Bytes(reader.Remaining);
+    }
+
+    private void OnRequestAbility(ref BedrockReader reader)
+    {
+        if (reader.Remaining == 0)
+            return;
+        reader.VarInt32();
+        _ = reader.Bytes(reader.Remaining);
+    }
+
+    private void OnRequestChunkRadiusPacket(ref BedrockReader reader)
+    {
+        OnRequestChunkRadius(reader.VarInt32());
+    }
+
+    private void OnRespawnPacket(ref BedrockReader reader)
+    {
+        OnRespawnRequest(ref reader);
+    }
+
+    private void OnSubChunkRequest(ref BedrockReader reader)
+    {
+        _ = reader.Bytes(reader.Remaining);
+    }
+
+    private void OnTextPacket(ref BedrockReader reader)
+    {
+        OnText(ref reader);
+    }
+
+    private void OnServerBoundLoadingScreen(ref BedrockReader reader)
+    {
+        _ = reader.Bytes(reader.Remaining);
+    }
+
+    private void OnServerBoundDiagnostics(ref BedrockReader reader)
+    {
+        _ = reader.Bytes(reader.Remaining);
     }
 
     private void OnRequestNetworkSettings(int protocol)
@@ -349,7 +520,8 @@ public sealed partial class BedrockConnection
                         EntityId, (int)GameMode,
                         Position.X, Position.Y, Position.Z,
                         spawn.X, spawn.Y, spawn.Z,
-                        _server.Config.LevelName, world.Time, (int)_server.Config.Difficulty, world.Settings.DaylightCycle)),
+                        _server.Config.LevelName, world.Time, (int)_server.Config.Difficulty, world.Settings.DaylightCycle,
+                        Game.Custom.Blocks.CustomBlockRegistry.GetDefinitions())),
                     Items.RegistryPacket,
                     Biome.DefinitionListPacket);
                 break;

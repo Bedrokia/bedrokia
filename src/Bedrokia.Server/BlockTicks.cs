@@ -105,7 +105,7 @@ public sealed partial class BedrokiaServer
     /// <summary>One growth step (random tick) or a bone meal use; returns true if something grew.</summary>
     public bool Grow(int x, int y, int z, bool boneMeal)
     {
-        if (World.GetBlock(x, y, z) is not { } block)
+        if (World.GetBlock(x, y, z) is not { } block || !block.Name.StartsWith("minecraft:"))
             return false;
         var name = block.Name["minecraft:".Length..];
         if (name is "wheat" or "carrots" or "potatoes" or "beetroot" or "pumpkin_stem" or "melon_stem"
