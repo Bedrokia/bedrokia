@@ -1,0 +1,356 @@
+// ┌───────────────────────────────────────────────────────────────────┐
+// │  ____  _____ ____  ____   ___  _  __ ___    _                     │
+// │ | __ )| ____|  _ \|  _ \ / _ \| |/ /|_ _|  / \                    │
+// │ |  _ \|  _| | | | | |_) | | | | ' /  | |  / _ \                   │
+// │ | |_) | |___| |_| |  _ <| |_| | . \  | | / ___ \                  │
+// │ |____/|_____|____/|_| \_\\___/|_|\_\|___/_/   \_\                 │
+// │                                                                   │
+// │  Bedrokia - Minecraft: Bedrock Edition server software            │
+// │  Licensed under the Apache License 2.0 - see LICENSE              │
+// └───────────────────────────────────────────────────────────────────┘
+
+using System.Text.Json;
+using System.Text.RegularExpressions;
+
+namespace Bedrokia.Server.Permissions;
+
+/// <summary>Represents a permission group/role (like LuckPerms or Dragonfly).</summary>
+public sealed class PermissionGroup
+{
+    public string Name { get; set; } = "";
+    public string Prefix { get; set; } = "";
+    public int Priority { get; set; }
+    public string? Parent { get; set; }
+    public List<string> Permissions { get; set; } = [];
+}
+
+/// <summary>Per-player permission and group assignment.</summary>
+public sealed class PlayerPermissionData
+{
+    public string Group { get; set; } = "default";
+    public List<string> Permissions { get; set; } = [];
+}
+
+/// <summary>JSON storage structure for permissions and groups.</summary>
+public sealed class PermissionStorage
+{
+    public Dictionary<string, PermissionGroup> Groups { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, PlayerPermissionData> Players { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+}
+
+/// <summary>
+/// Manages granular permissions, groups/ranks with inheritance, prefixes, and thread-safe atomic persistence.
+/// </summary>
+public sealed class PermissionManager
+{
+    private readonly string _path;
+    private readonly object _lock = new();
+    private PermissionStorage _storage = new();
+
+    public const string DefaultGroupName = "default";
+
+    public PermissionManager(string path)
+    {
+        _path = path;
+        Load();
+    }
+
+    /// <summary>Normalizes player and group names to prevent path traversal or invalid characters.</summary>
+    public static string Sanitize(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return "";
+        // Strip out path traversal indicators and illegal identifier chars
+        var cleaned = name.Replace("../", "").Replace("..\\", "").Trim().ToLowerInvariant();
+        return Regex.Replace(cleaned, @"[^a-z0-9_.-]", "");
+    }
+
+    public void Load()
+    {
+        lock (_lock)
+        {
+            if (File.Exists(_path))
+            {
+                try
+                {
+                    var json = File.ReadAllText(_path);
+                    var loaded = JsonSerializer.Deserialize<PermissionStorage>(json);
+                    if (loaded is not null)
+                    {
+                        _storage = loaded;
+                        // Ensure case-insensitive comparer
+                        _storage.Groups = new Dictionary<string, PermissionGroup>(_storage.Groups, StringComparer.OrdinalIgnoreCase);
+                        _storage.Players = new Dictionary<string, PlayerPermissionData>(_storage.Players, StringComparer.OrdinalIgnoreCase);
+                    }
+                }
+                catch
+                {
+                    _storage = new PermissionStorage();
+                }
+            }
+
+            if (!_storage.Groups.ContainsKey(DefaultGroupName))
+            {
+                _storage.Groups[DefaultGroupName] = new PermissionGroup
+                {
+                    Name = DefaultGroupName,
+                    Prefix = "",
+                    Priority = 0,
+                    Permissions =
+                    [
+                        "bedrokia.command.help",
+                        "bedrokia.command.version",
+                        "bedrokia.command.plugin",
+                        "bedrokia.command.list",
+                        "bedrokia.command.seed",
+                        "bedrokia.command.me",
+                        "bedrokia.command.tell",
+                        "bedrokia.command.spawn"
+                    ]
+                };
+            }
+        }
+    }
+
+    /// <summary>Atomically saves permissions to disk via a temporary file replacement.</summary>
+    public void Save()
+    {
+        lock (_lock)
+        {
+            var directory = Path.GetDirectoryName(Path.GetFullPath(_path));
+            if (!string.IsNullOrEmpty(directory))
+                Directory.CreateDirectory(directory);
+
+            var tmpPath = _path + ".tmp";
+            var json = JsonSerializer.Serialize(_storage, new JsonSerializerOptions { WriteIndented = true });
+            File.WriteAllText(tmpPath, json);
+            File.Move(tmpPath, _path, overwrite: true);
+        }
+    }
+
+    public bool HasPermission(string playerName, string? permission, bool isOp = false)
+    {
+        if (string.IsNullOrWhiteSpace(permission))
+            return true;
+
+        var effective = GetEffectivePermissions(playerName);
+        return PermissionEvaluator.Evaluate(permission, effective, isOp);
+    }
+
+    public List<string> GetEffectivePermissions(string playerName)
+    {
+        var cleanName = Sanitize(playerName);
+        lock (_lock)
+        {
+            var result = new List<string>();
+
+            // 1. Direct player permissions (highest precedence)
+            if (_storage.Players.TryGetValue(cleanName, out var playerData))
+            {
+                result.AddRange(playerData.Permissions);
+            }
+
+            // 2. Group permissions (traversing inheritance DAG with cycle detection)
+            var groupName = playerData?.Group ?? DefaultGroupName;
+            var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var currentGroup = groupName;
+
+            while (!string.IsNullOrEmpty(currentGroup) && visited.Add(currentGroup))
+            {
+                if (_storage.Groups.TryGetValue(currentGroup, out var group))
+                {
+                    result.AddRange(group.Permissions);
+                    currentGroup = group.Parent;
+                }
+                else
+                {
+                    break;
+                }
+            }
+
+            return result;
+        }
+    }
+
+    public string GetPlayerPrefix(string playerName)
+    {
+        var cleanName = Sanitize(playerName);
+        lock (_lock)
+        {
+            if (_storage.Players.TryGetValue(cleanName, out var playerData) &&
+                _storage.Groups.TryGetValue(playerData.Group, out var group))
+            {
+                return group.Prefix;
+            }
+
+            if (_storage.Groups.TryGetValue(DefaultGroupName, out var defaultGroup))
+                return defaultGroup.Prefix;
+
+            return "";
+        }
+    }
+
+    public void CreateGroup(string name, string prefix = "", int priority = 0, string? parent = null)
+    {
+        var clean = Sanitize(name);
+        if (string.IsNullOrEmpty(clean))
+            return;
+
+        lock (_lock)
+        {
+            if (!_storage.Groups.TryGetValue(clean, out var group))
+            {
+                group = new PermissionGroup { Name = clean };
+                _storage.Groups[clean] = group;
+            }
+            group.Prefix = prefix;
+            group.Priority = priority;
+            group.Parent = string.IsNullOrEmpty(parent) ? null : Sanitize(parent);
+            Save();
+        }
+    }
+
+    public bool RemoveGroup(string name)
+    {
+        var clean = Sanitize(name);
+        if (clean == DefaultGroupName)
+            return false;
+
+        lock (_lock)
+        {
+            var removed = _storage.Groups.Remove(clean);
+            if (removed)
+                Save();
+            return removed;
+        }
+    }
+
+    public void AddGroupPermission(string groupName, string permission)
+    {
+        if (string.IsNullOrWhiteSpace(permission))
+            return;
+        var clean = Sanitize(groupName);
+        if (string.IsNullOrEmpty(clean))
+            return;
+        var perm = permission.Trim();
+        lock (_lock)
+        {
+            if (!_storage.Groups.TryGetValue(clean, out var group))
+            {
+                group = new PermissionGroup { Name = clean };
+                _storage.Groups[clean] = group;
+            }
+
+            if (!group.Permissions.Contains(perm, StringComparer.OrdinalIgnoreCase))
+            {
+                group.Permissions.Add(perm);
+                Save();
+            }
+        }
+    }
+
+    public void RemoveGroupPermission(string groupName, string permission)
+    {
+        if (string.IsNullOrWhiteSpace(permission))
+            return;
+        var clean = Sanitize(groupName);
+        if (string.IsNullOrEmpty(clean))
+            return;
+        var perm = permission.Trim();
+        lock (_lock)
+        {
+            if (_storage.Groups.TryGetValue(clean, out var group))
+            {
+                group.Permissions.RemoveAll(p => p.Equals(perm, StringComparison.OrdinalIgnoreCase));
+                Save();
+            }
+        }
+    }
+
+    public void SetPlayerGroup(string playerName, string groupName)
+    {
+        var cleanPlayer = Sanitize(playerName);
+        if (string.IsNullOrEmpty(cleanPlayer))
+            return;
+        var cleanGroup = Sanitize(groupName);
+        if (string.IsNullOrEmpty(cleanGroup))
+            cleanGroup = DefaultGroupName;
+        lock (_lock)
+        {
+            if (!_storage.Players.TryGetValue(cleanPlayer, out var data))
+            {
+                data = new PlayerPermissionData();
+                _storage.Players[cleanPlayer] = data;
+            }
+            data.Group = cleanGroup;
+            Save();
+        }
+    }
+
+    public string GetPlayerGroup(string playerName)
+    {
+        var cleanPlayer = Sanitize(playerName);
+        lock (_lock)
+        {
+            return _storage.Players.TryGetValue(cleanPlayer, out var data) ? data.Group : DefaultGroupName;
+        }
+    }
+
+    public void AddPlayerPermission(string playerName, string permission)
+    {
+        if (string.IsNullOrWhiteSpace(permission))
+            return;
+        var cleanPlayer = Sanitize(playerName);
+        if (string.IsNullOrEmpty(cleanPlayer))
+            return;
+        var perm = permission.Trim();
+        lock (_lock)
+        {
+            if (!_storage.Players.TryGetValue(cleanPlayer, out var data))
+            {
+                data = new PlayerPermissionData();
+                _storage.Players[cleanPlayer] = data;
+            }
+
+            if (!data.Permissions.Contains(perm, StringComparer.OrdinalIgnoreCase))
+            {
+                data.Permissions.Add(perm);
+                Save();
+            }
+        }
+    }
+
+    public void RemovePlayerPermission(string playerName, string permission)
+    {
+        if (string.IsNullOrWhiteSpace(permission))
+            return;
+        var cleanPlayer = Sanitize(playerName);
+        if (string.IsNullOrEmpty(cleanPlayer))
+            return;
+        var perm = permission.Trim();
+        lock (_lock)
+        {
+            if (_storage.Players.TryGetValue(cleanPlayer, out var data))
+            {
+                data.Permissions.RemoveAll(p => p.Equals(perm, StringComparison.OrdinalIgnoreCase));
+                Save();
+            }
+        }
+    }
+
+    public IReadOnlyDictionary<string, PermissionGroup> Groups
+    {
+        get
+        {
+            lock (_lock) return new Dictionary<string, PermissionGroup>(_storage.Groups, StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
+    public IReadOnlyDictionary<string, PlayerPermissionData> Players
+    {
+        get
+        {
+            lock (_lock) return new Dictionary<string, PlayerPermissionData>(_storage.Players, StringComparer.OrdinalIgnoreCase);
+        }
+    }
+}
