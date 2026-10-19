@@ -218,7 +218,7 @@ public static class PlayerPackets
             .VarUInt32(0) // animations
             .UInt32(0).UInt32(0).ByteArray([]) // no cape
             .ByteArray(Encoding.UTF8.GetBytes(geometryJson))
-            .ByteArray([]) // geometry engine version
+            .ByteArray(geometryJson == "" ? [] : Encoding.UTF8.GetBytes(ProtocolInfo.GameVersion)) // a custom model needs it (the client crashes without)
             .ByteArray([]) // animation data
             .String("") // cape id
             .String(skinId) // full id
