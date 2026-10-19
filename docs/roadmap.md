@@ -13,6 +13,7 @@ title: Feuille de route
   cultures, arbres, TNT
 - Mobs (animaux, monstres, creepers)
 - Commandes, ops, liste blanche, bannissements, packs de ressources
+- Système complet de permissions fines (nœuds, jokers, négations), groupes/grades avec héritage et préfixes, commande /perm
 - Plugins C# sans compilation, egg Pterodactyl
 
 ## À faire
@@ -24,6 +25,5 @@ title: Feuille de route
 - Nether et End, portails
 - Redstone
 - Blocs et objets personnalisés (add-ons) pour les plugins
-- Permissions fines pour les commandes des plugins
 
 Les idées et contributions sont les bienvenues : voir [Le projet et l'IA](ia).
