@@ -23,7 +23,7 @@ public sealed class PlayerDeathEvent(
     DamageSource? source,
     string? deathMessage,
     bool keepInventory,
-    List<ItemStack> drops) : CancellableEvent
+    List<ItemStack> drops) // not cancellable: the player is already dead; keep the inventory with KeepInventory
 {
     public BedrockConnection Player => player;
     public DamageSource? Source => source;

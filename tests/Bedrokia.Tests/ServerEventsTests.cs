@@ -105,6 +105,20 @@ public sealed class ServerEventsTests
     }
 
     [Fact]
+    public void Items_in_the_crafting_grid_are_not_lost_on_death()
+    {
+        var (server, player) = CreateTestEnvironment();
+        player.Inventory.Ui[28] = ItemStack.Of("diamond", 3); // small crafting grid
+        List<ItemStack> drops = [];
+        server.Events.PlayerDeath += e => drops = [.. e.Drops];
+
+        player.Damage(100, 0, 0, armour: false);
+
+        Assert.Contains(drops, s => s.Type.Name == "minecraft:diamond" && s.Count == 3);
+        Assert.Null(player.Inventory.Ui[28]);
+    }
+
+    [Fact]
     public void PlayerRespawn_CanOverrideRespawnCoordinates()
     {
         var (server, player) = CreateTestEnvironment();
