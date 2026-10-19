@@ -28,7 +28,6 @@ internal sealed class OverworldTerrain
     private const double BaseSize = 8.5, StretchY = 12;
 
     private static readonly double[,] ElevationWeight = BuildElevationWeight();
-    private static readonly Dictionary<int, VanillaBiome> BiomeData = VanillaBiomes.All.ToDictionary(b => b.Id);
 
     private readonly long _seed;
     private readonly PerlinOctaveGenerator _height, _roughness, _roughness2, _detail;
@@ -59,7 +58,7 @@ internal sealed class OverworldTerrain
     /// <summary>Block-resolution legacy biome ids, row-major (x + z * sizeX).</summary>
     public int[] Biomes(int x, int z, int sizeX, int sizeZ) => _layers.Value.Blocks.Generate(x, z, sizeX, sizeZ);
 
-    public static float Temperature(int biome) => BiomeData.TryGetValue(biome, out var b) ? b.Temperature : 0.5f;
+    public static float Temperature(int biome) => VanillaBiomes.ById.TryGetValue(biome, out var b) ? b.Temperature : 0.5f;
 
     /// <summary>Glowstone GlowBiomeClimate.isCold: colder with altitude above y 64.</summary>
     public bool IsCold(int biome, int x, int y, int z)
@@ -190,7 +189,7 @@ internal sealed class OverworldTerrain
 
     // Vanilla biome depth/scale (rootHeight/heightVariation).
     private static (double Height, double Scale) HeightOf(int biome) =>
-        BiomeData.TryGetValue(biome, out var b) ? (b.Depth, b.Scale) : (0.1, 0.2);
+        VanillaBiomes.ById.TryGetValue(biome, out var b) ? (b.Depth, b.Scale) : (0.1, 0.2);
 
     private static double[,] BuildElevationWeight()
     {

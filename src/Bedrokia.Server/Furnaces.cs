@@ -19,27 +19,42 @@ namespace Bedrokia.Server;
 public sealed partial class BedrokiaServer
 {
     // Furnaces that may be cooking; one stays here until it has nothing left to do.
-    private readonly HashSet<(World World, (int X, int Y, int Z) At)> _furnaces = [];
+    private readonly HashSet<(World World, long Pos)> _activeFurnaces = [];
+    private readonly List<(World World, long Pos)> _furnaceScratch = [];
 
-    internal void WatchFurnace((int X, int Y, int Z) at, World world) => _furnaces.Add((world, at));
+    internal void WatchFurnace((int X, int Y, int Z) at, World world) => _activeFurnaces.Add((world, BlockPos.Pack(at.X, at.Y, at.Z)));
+    internal void WatchFurnace(int x, int y, int z, World world) => _activeFurnaces.Add((world, BlockPos.Pack(x, y, z)));
 
     /// <summary>Closes the container at <paramref name="at"/> for everyone looking into it (it was broken).</summary>
     internal void CloseContainerFor((int X, int Y, int Z) at, World world)
     {
-        foreach (var player in _players.Where(p => p.OpenContainerAt == at && p.World == world))
-            player.CloseContainer(notifyClient: true);
-        _furnaces.Remove((world, at));
+        for (var i = 0; i < _players.Count; i++)
+        {
+            var player = _players[i];
+            if (player.OpenContainerAt == at && player.World == world)
+                player.CloseContainer(notifyClient: true);
+        }
+        _activeFurnaces.Remove((world, BlockPos.Pack(at.X, at.Y, at.Z)));
     }
 
     internal void TickFurnaces()
     {
-        foreach (var key in _furnaces.ToList())
+        if (_activeFurnaces.Count == 0)
+            return;
+
+        _furnaceScratch.Clear();
+        foreach (var key in _activeFurnaces)
+            _furnaceScratch.Add(key);
+
+        for (var i = 0; i < _furnaceScratch.Count; i++)
         {
-            var (world, at) = key;
-            var (x, y, z) = at;
+            var key = _furnaceScratch[i];
+            var (world, packedPos) = key;
+            var (x, y, z) = BlockPos.Unpack(packedPos);
+            var at = (x, y, z);
             if (world.GetBlockEntity(x, y, z) is not { Items: { } items } furnace || furnace.Id is not ("Furnace" or "BlastFurnace" or "Smoker"))
             {
-                _furnaces.Remove(key);
+                _activeFurnaces.Remove(key);
                 continue;
             }
             var input = items[0];
@@ -109,21 +124,33 @@ public sealed partial class BedrokiaServer
                 furnace.CookTicks = 0;
                 SetLit(world, x, y, z, false);
                 if (!canCook || fuel is null)
-                    _furnaces.Remove(key); // idle: nothing to burn or nothing to cook
+                    _activeFurnaces.Remove(key); // idle: nothing to burn or nothing to cook
             }
             world.LoadedChunk(x >> 4, z >> 4)!.Dirty = true;
             if (CurrentTick % 4 == 0)
-                foreach (var viewer in _players.Where(p => p.OpenContainerAt == at && p.World == world))
-                    viewer.Send(BedrockConnection.ContainerData(0, furnace.CookTicks), BedrockConnection.ContainerData(1, furnace.BurnTicks),
-                        BedrockConnection.ContainerData(2, furnace.BurnDuration));
+            {
+                for (var pIdx = 0; pIdx < _players.Count; pIdx++)
+                {
+                    var viewer = _players[pIdx];
+                    if (viewer.OpenContainerAt == at && viewer.World == world)
+                    {
+                        viewer.Send(BedrockConnection.ContainerData(0, furnace.CookTicks), BedrockConnection.ContainerData(1, furnace.BurnTicks),
+                            BedrockConnection.ContainerData(2, furnace.BurnDuration));
+                    }
+                }
+            }
         }
     }
 
     private void SendFurnaceContents(World world, (int X, int Y, int Z) at, Inventory items)
     {
         var packet = InventoryPackets.InventoryContent(BedrockConnection.WindowContainer, items);
-        foreach (var viewer in _players.Where(p => p.OpenContainerAt == at && p.World == world))
-            viewer.Send(packet);
+        for (var i = 0; i < _players.Count; i++)
+        {
+            var viewer = _players[i];
+            if (viewer.OpenContainerAt == at && viewer.World == world)
+                viewer.Send(packet);
+        }
     }
 
     // furnace <-> lit_furnace (same facing), and the same for blast furnaces and smokers.

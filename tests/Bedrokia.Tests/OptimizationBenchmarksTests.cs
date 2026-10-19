@@ -358,6 +358,128 @@ public class OptimizationBenchmarksTests(ITestOutputHelper output)
         _ = speedup; // timing thresholds fail at random on shared CI machines: only reported, not asserted
     }
 
+    [Fact]
+    public void Benchmark_PooledBedrockWriter_ZeroAlloc()
+    {
+        const int iterations = 50_000;
+
+        // Baseline: MemoryStream + BinaryWriter
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        var allocBaselineBefore = GC.GetAllocatedBytesForCurrentThread();
+        var swBaseline = Stopwatch.StartNew();
+        for (var i = 0; i < iterations; i++)
+        {
+            using var ms = new MemoryStream(64);
+            using var bw = new BinaryWriter(ms);
+            bw.Write((byte)0x13);
+            bw.Write((float)123.45f);
+            bw.Write((float)67.89f);
+            bw.Write((float)98.76f);
+            var result = ms.ToArray();
+            _ = result.Length;
+        }
+        swBaseline.Stop();
+        var allocBaseline = GC.GetAllocatedBytesForCurrentThread() - allocBaselineBefore;
+
+        // Optimized: PooledBedrockWriter
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        var allocOptimizedBefore = GC.GetAllocatedBytesForCurrentThread();
+        var swOptimized = Stopwatch.StartNew();
+        for (var i = 0; i < iterations; i++)
+        {
+            using var writer = new PooledBedrockWriter(64);
+            writer.Byte(0x13);
+            writer.Float32(123.45f);
+            writer.Float32(67.89f);
+            writer.Float32(98.76f);
+            var span = writer.WrittenSpan;
+            _ = span.Length;
+        }
+        swOptimized.Stop();
+        var allocOptimized = GC.GetAllocatedBytesForCurrentThread() - allocOptimizedBefore;
+
+        var speedup = (double)swBaseline.ElapsedTicks / Math.Max(1, swOptimized.ElapsedTicks);
+
+        output.WriteLine($"=== PooledBedrockWriter vs MemoryStream ({iterations} iterations) ===");
+        output.WriteLine($"Baseline (MemoryStream): {swBaseline.ElapsedMilliseconds} ms, {allocBaseline / 1024} KB allocated");
+        output.WriteLine($"Optimized (PooledBedrockWriter): {swOptimized.ElapsedMilliseconds} ms, {allocOptimized / 1024} KB allocated");
+        output.WriteLine($"Speedup: x{speedup:F2} faster");
+        output.WriteLine($"Allocation Reduction: {100.0 * (allocBaseline - allocOptimized) / Math.Max(1, allocBaseline):F1} %");
+
+        Assert.True(allocOptimized < allocBaseline, "Expected near-zero allocation with PooledBedrockWriter");
+    }
+
+    [Fact]
+    public void Benchmark_Chunk_NetworkPayload_Caching()
+    {
+        var chunk = new Chunk(10, 20);
+        for (var x = 0; x < 16; x++)
+        for (var z = 0; z < 16; z++)
+        {
+            chunk.SetBlock(x, 64, z, Blocks.Stone);
+            chunk.SetBlock(x, 65, z, Blocks.GrassBlock);
+        }
+
+        // Prime cache
+        _ = chunk.NetworkPayload();
+
+        const int iterations = 10_000;
+
+        // Measure cached network payload retrieval (O(1))
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        var allocCachedBefore = GC.GetAllocatedBytesForCurrentThread();
+        var swCached = Stopwatch.StartNew();
+        for (var i = 0; i < iterations; i++)
+        {
+            var res = chunk.NetworkPayload();
+            _ = res.Payload.Length;
+        }
+        swCached.Stop();
+        var allocCached = GC.GetAllocatedBytesForCurrentThread() - allocCachedBefore;
+
+        output.WriteLine($"=== Chunk NetworkPayload Caching ({iterations} calls) ===");
+        output.WriteLine($"Cached Retrieval: {swCached.ElapsedMilliseconds} ms, {allocCached / 1024} KB allocated ({swCached.ElapsedMilliseconds / (double)iterations:F4} ms/call)");
+
+        Assert.True(swCached.ElapsedMilliseconds < 50, $"Expected under 50ms for 10k cached calls, got {swCached.ElapsedMilliseconds}ms");
+    }
+
+    [Fact]
+    public void Benchmark_FrozenCollections_Lookups()
+    {
+        var standardDict = VanillaBiomes.All.ToDictionary(b => b.Id);
+        var frozenDict = VanillaBiomes.ById;
+
+        const int iterations = 200_000;
+
+        // Baseline: Standard Dictionary
+        var swStandard = Stopwatch.StartNew();
+        for (var i = 0; i < iterations; i++)
+        {
+            _ = standardDict.TryGetValue(i % 100, out _);
+        }
+        swStandard.Stop();
+
+        // Optimized: FrozenDictionary
+        var swFrozen = Stopwatch.StartNew();
+        for (var i = 0; i < iterations; i++)
+        {
+            _ = frozenDict.TryGetValue(i % 100, out _);
+        }
+        swFrozen.Stop();
+
+        var speedup = (double)swStandard.ElapsedTicks / Math.Max(1, swFrozen.ElapsedTicks);
+
+        output.WriteLine($"=== FrozenDictionary vs Standard Dictionary ({iterations} lookups) ===");
+        output.WriteLine($"Standard Dictionary: {swStandard.ElapsedMilliseconds} ms");
+        output.WriteLine($"FrozenDictionary: {swFrozen.ElapsedMilliseconds} ms");
+        output.WriteLine($"Speedup: x{speedup:F2} faster");
+
+        Assert.True(swFrozen.ElapsedMilliseconds <= swStandard.ElapsedMilliseconds + 5, "Expected FrozenDictionary to be as fast or faster than standard Dictionary");
+    }
+
     private static byte[] EncodeWithForcedDeflate(byte[] packet)
     {
         var batch = new BedrockWriter();

@@ -9,8 +9,11 @@
 // │  Licensed under the Apache License 2.0 - see LICENSE              │
 // └───────────────────────────────────────────────────────────────────┘
 
+using System.Buffers;
 using System.IO.Compression;
+using System.Numerics;
 using Bedrokia.Protocol;
+using Bedrokia.Server.Network;
 
 namespace Bedrokia.Server.Game;
 
@@ -27,9 +30,13 @@ public sealed class Chunk
     private static readonly byte[] SaveMagic = "NXC1"u8.ToArray();
 
     private readonly ushort[]?[] _sections = new ushort[Sections][];
+    private readonly byte[]?[] _subChunkCache = new byte[Sections][];
     private readonly byte[] _biomes = new byte[256];
     private byte[]? _networkPayload;
     private uint _networkSubChunks;
+
+    /// <summary>Active players having this chunk loaded and watching its block updates.</summary>
+    public HashSet<BedrockConnection> Viewers { get; } = [];
 
     public Chunk(int x, int z)
     {
@@ -43,17 +50,18 @@ public sealed class Chunk
     /// <summary>Changed since the last save.</summary>
     public bool Dirty { get; set; }
 
-    /// <summary>Block entities by (local x, world y, local z).</summary>
-    public Dictionary<(int X, int Y, int Z), BlockEntity> BlockEntities { get; } = [];
+    /// <summary>Block entities by packed local block pos.</summary>
+    public Dictionary<long, BlockEntity> BlockEntities { get; } = [];
 
-    public BlockEntity? GetBlockEntity(int x, int y, int z) => BlockEntities.GetValueOrDefault((x, y, z));
+    public BlockEntity? GetBlockEntity(int x, int y, int z) => BlockEntities.GetValueOrDefault(BlockPos.Pack(x, y, z));
 
     public void SetBlockEntity(int x, int y, int z, BlockEntity? entity)
     {
+        var key = BlockPos.Pack(x, y, z);
         if (entity is null)
-            BlockEntities.Remove((x, y, z));
+            BlockEntities.Remove(key);
         else
-            BlockEntities[(x, y, z)] = entity;
+            BlockEntities[key] = entity;
         _networkPayload = null;
         Dirty = true;
     }
@@ -75,7 +83,8 @@ public sealed class Chunk
     {
         if (y is < MinY or > MaxY)
             return;
-        ref var section = ref _sections[(y - MinY) >> 4];
+        var sectionIdx = (y - MinY) >> 4;
+        ref var section = ref _sections[sectionIdx];
         if (section is null)
         {
             if (block.IsAir)
@@ -83,7 +92,9 @@ public sealed class Chunk
             section = new ushort[4096];
         }
         section[Index(x, y, z)] = block.Id;
+        _subChunkCache[sectionIdx] = null;
         _networkPayload = null;
+        Dirty = true;
     }
 
     public byte GetBiome(int x, int z) => _biomes[(x << 4) | z];
@@ -92,6 +103,7 @@ public sealed class Chunk
     {
         _biomes[(x << 4) | z] = biome;
         _networkPayload = null;
+        Dirty = true;
     }
 
     /// <summary>Highest y with a non-air block in column (x, z), or <see cref="MinY"/> - 1.</summary>
@@ -118,17 +130,30 @@ public sealed class Chunk
         var writer = new BedrockWriter(16 * 1024);
         for (var s = 0; s < count; s++)
         {
-            writer.Byte(9).Byte(1).Byte(unchecked((byte)((nether ? 0 : MinY >> 4) + s))); // version 9, one layer, signed y index
-            var section = _sections[first + s];
+            var secIdx = first + s;
+            var section = _sections[secIdx];
             if (section is null || IsEmpty(section))
             {
                 // Empty section: 0 bits, one value: air. Its network id is a hash, not 0.
+                writer.Byte(9).Byte(1).Byte(unchecked((byte)((nether ? 0 : MinY >> 4) + s)));
                 writer.Byte(1);
                 writer.VarInt32(unchecked((int)Blocks.Air.NetworkId));
             }
             else
             {
-                WriteStorage(writer, section, id => unchecked((int)Blocks.ById(id).NetworkId));
+                if (_subChunkCache[secIdx] is { } cachedSec)
+                {
+                    writer.Bytes(cachedSec);
+                }
+                else
+                {
+                    var secWriter = new BedrockWriter(2048);
+                    secWriter.Byte(9).Byte(1).Byte(unchecked((byte)((nether ? 0 : MinY >> 4) + s)));
+                    WriteStorage(secWriter, section, id => unchecked((int)Blocks.ById(id).NetworkId));
+                    var secBytes = secWriter.ToArray();
+                    _subChunkCache[secIdx] = secBytes;
+                    writer.Bytes(secBytes);
+                }
             }
         }
 
@@ -160,9 +185,11 @@ public sealed class Chunk
         for (var s = 1; s < sections; s++)
             writer.Byte(0xFF); // same biomes as the section below
         writer.Byte(0); // border blocks
-        foreach (var ((bx, by, bz), entity) in BlockEntities)
+        foreach (var (packedKey, entity) in BlockEntities)
+        {
+            var (bx, by, bz) = BlockPos.Unpack(packedKey);
             writer.Bytes(Nbt.Write(entity.NetworkNbt(X * 16 + bx, by, Z * 16 + bz), network: true));
-
+        }
 
         _networkSubChunks = (uint)count;
         _networkPayload = writer.ToArray();
@@ -174,45 +201,78 @@ public sealed class Chunk
     /// <summary>Paletted storage, network form: header (bits &lt;&lt; 1 | 1), packed words, varint palette.</summary>
     private static void WriteStorage(BedrockWriter writer, ushort[] values, Func<ushort, int> toNetwork)
     {
-        var palette = new List<ushort>();
-        var lookup = new Dictionary<ushort, int>();
-        var indices = new int[values.Length];
-        for (var i = 0; i < values.Length; i++)
+        Span<ushort> palette = stackalloc ushort[256];
+        var paletteCount = 0;
+        var indices = ArrayPool<int>.Shared.Rent(values.Length);
+        try
         {
-            if (!lookup.TryGetValue(values[i], out var index))
+            for (var i = 0; i < values.Length; i++)
             {
-                index = palette.Count;
-                lookup[values[i]] = index;
-                palette.Add(values[i]);
+                var val = values[i];
+                var index = -1;
+                for (var p = 0; p < paletteCount; p++)
+                {
+                    if (palette[p] == val)
+                    {
+                        index = p;
+                        break;
+                    }
+                }
+                if (index < 0)
+                {
+                    if (paletteCount < 256)
+                    {
+                        index = paletteCount;
+                        palette[paletteCount++] = val;
+                    }
+                    else
+                    {
+                        index = 0;
+                    }
+                }
+                indices[i] = index;
             }
-            indices[i] = index;
-        }
 
-        if (palette.Count == 1)
-        {
-            writer.Byte(1); // 0 bits: one value, no palette length
-            writer.VarInt32(toNetwork(palette[0]));
-            return;
-        }
-
-        var bits = ValidBits.First(b => (1 << b) >= palette.Count);
-        var perWord = 32 / bits;
-        var words = (values.Length + perWord - 1) / perWord;
-        writer.Byte((byte)((bits << 1) | 1));
-        for (var w = 0; w < words; w++)
-        {
-            uint word = 0;
-            for (var j = 0; j < perWord; j++)
+            if (paletteCount <= 1)
             {
-                var i = w * perWord + j;
-                if (i < values.Length)
-                    word |= (uint)indices[i] << (j * bits);
+                writer.Byte(1); // 0 bits: one value, no palette length
+                writer.VarInt32(toNetwork(paletteCount == 1 ? palette[0] : (ushort)0));
+                return;
             }
-            writer.UInt32(word);
+
+            var bitsNeeded = BitOperations.Log2((uint)(paletteCount - 1)) + 1;
+            var bits = bitsNeeded switch
+            {
+                <= 1 => 1,
+                2 => 2,
+                3 => 3,
+                4 => 4,
+                5 => 5,
+                6 => 6,
+                <= 8 => 8,
+                _ => 16
+            };
+
+            var perWord = 32 / bits;
+            var words = (values.Length + perWord - 1) / perWord;
+            writer.Byte((byte)((bits << 1) | 1));
+            for (var w = 0; w < words; w++)
+            {
+                uint word = 0;
+                var baseIdx = w * perWord;
+                var limit = Math.Min(perWord, values.Length - baseIdx);
+                for (var j = 0; j < limit; j++)
+                    word |= (uint)indices[baseIdx + j] << (j * bits);
+                writer.UInt32(word);
+            }
+            writer.VarInt32(paletteCount);
+            for (var p = 0; p < paletteCount; p++)
+                writer.VarInt32(toNetwork(palette[p]));
         }
-        writer.VarInt32(palette.Count);
-        foreach (var value in palette)
-            writer.VarInt32(toNetwork(value));
+        finally
+        {
+            ArrayPool<int>.Shared.Return(indices);
+        }
     }
 
     /// <summary>Save format: "NXC1", deflate( biomes[256], sectionMask u32, per section: palette (keys) + u16 indices ).</summary>
@@ -242,8 +302,9 @@ public sealed class Chunk
             }
             // Block entities (absent from saves of older versions).
             w.Write(BlockEntities.Count);
-            foreach (var ((bx, by, bz), entity) in BlockEntities)
+            foreach (var (packedKey, entity) in BlockEntities)
             {
+                var (bx, by, bz) = BlockPos.Unpack(packedKey);
                 w.Write((byte)bx);
                 w.Write((short)by);
                 w.Write((byte)bz);
@@ -301,7 +362,7 @@ public sealed class Chunk
             for (var i = 0; i < entities; i++)
             {
                 var (bx, by, bz) = (r.ReadByte(), r.ReadInt16(), r.ReadByte());
-                chunk.BlockEntities[(bx, by, bz)] = BlockEntity.Read(r);
+                chunk.BlockEntities[BlockPos.Pack(bx, by, bz)] = BlockEntity.Read(r);
             }
         }
         catch (EndOfStreamException e)

@@ -33,11 +33,14 @@ public sealed partial class BedrockConnection
     private readonly BedrokiaServer _server;
     private readonly IGameTransport _transport;
     private readonly BatchCodec _codec;
-    private readonly HashSet<(int X, int Z)> _sentChunks = [];
-    private readonly HashSet<(int X, int Z)> _requestedChunks = [];
+    private readonly HashSet<long> _sentChunks = [];
+    private readonly HashSet<long> _requestedChunks = [];
     private Stage _stage = Stage.NetworkSettings;
     private int _viewRadius;
     private (int X, int Z) _centerChunk = (int.MinValue, int.MinValue);
+    private bool _hasPendingMovement;
+    private float _pendingPitch, _pendingYaw, _pendingX, _pendingY, _pendingZ;
+    private readonly List<byte[]> _pendingOutgoing = [];
 
     internal BedrockConnection(BedrokiaServer server, IGameTransport transport, long entityId)
     {
@@ -105,6 +108,26 @@ public sealed partial class BedrockConnection
         _transport.Disconnect(message);
     }
 
+    internal void OnBatchReceived(byte[] batch)
+    {
+        if (_stage == Stage.Closed)
+            return;
+        try
+        {
+            _codec.DecodePackets(batch, (rented, len) => _server.EnqueueInboundPacket(this, rented, len));
+        }
+        catch (InvalidDataException e)
+        {
+            _server.Logger.Warn($"{Name}: protocol error: {e.Message}");
+            Disconnect("Protocol error.", DisconnectReason.Unknown);
+        }
+        catch (LoginException e)
+        {
+            _server.Logger.Info($"{_transport.RemoteEndPoint}: login refused: {e.Message}");
+            Disconnect(e.Message, DisconnectReason.NotAuthenticated);
+        }
+    }
+
     internal void HandleBatch(byte[] batch)
     {
         if (_stage == Stage.Closed)
@@ -115,7 +138,7 @@ public sealed partial class BedrockConnection
             {
                 if (_stage == Stage.Closed)
                     break;
-                Handle(packet);
+                HandlePacket(packet, packet.Length);
             }
         }
         catch (InvalidDataException e)
@@ -133,14 +156,28 @@ public sealed partial class BedrockConnection
     internal void OnClosed()
     {
         _stage = Stage.Closed;
+        foreach (var key in _sentChunks)
+        {
+            var (cx, cz) = World.UnpackChunkKey(key);
+            if (World.LoadedChunk(cx, cz) is { } chunk)
+                chunk.Viewers.Remove(this);
+        }
+        _sentChunks.Clear();
+        _requestedChunks.Clear();
+        _pendingOutgoing.Clear();
         CloseAllForms(FormCancelReason.Disconnected);
         DduiSession.CloseAll();
     }
 
-    private void Handle(byte[] packet)
+    internal void HandlePacket(byte[] packet, int length)
     {
-        var reader = new BedrockReader(packet);
-        var id = reader.VarUInt32() & 0x3FF; // low 10 bits; the rest are sub-client ids
+        if (_stage == Stage.Closed)
+            return;
+        try
+        {
+            var span = packet.AsSpan(0, length);
+            var reader = new BedrockReader(span);
+            var id = reader.VarUInt32() & 0x3FF; // low 10 bits; the rest are sub-client ids
         switch (_stage, id)
         {
             case (Stage.NetworkSettings, PacketId.RequestNetworkSettings):
@@ -184,7 +221,20 @@ public sealed partial class BedrockConnection
                     _server.Logger.Debug($"{Name}: ignored packet id {id}");
                 break;
         }
+        }
+        catch (InvalidDataException e)
+        {
+            _server.Logger.Warn($"{Name}: protocol error: {e.Message}");
+            Disconnect("Protocol error.", DisconnectReason.Unknown);
+        }
+        catch (LoginException e)
+        {
+            _server.Logger.Info($"{_transport.RemoteEndPoint}: login refused: {e.Message}");
+            Disconnect(e.Message, DisconnectReason.NotAuthenticated);
+        }
     }
+
+    private void Handle(byte[] packet) => HandlePacket(packet, packet.Length);
 
     private delegate void PacketHandler(ref BedrockReader reader);
 
@@ -604,37 +654,21 @@ public sealed partial class BedrockConnection
         var moved = Math.Abs(x - Position.X) + Math.Abs(y - Position.Y) + Math.Abs(z - Position.Z) > 0.001
                     || Math.Abs(pitch - Pitch) + Math.Abs(yaw - Yaw) > 0.1;
         TrackFall(Position.Y, y); // every packet, so that landing is seen even when the player then stands still
-        if (moved)
+
+        if (_server.IsTicking)
         {
-            var from = new System.Numerics.Vector3(Position.X, Position.Y, Position.Z);
-            var to = new System.Numerics.Vector3(x, y, z);
-            var isBlockChange = (int)Math.Floor(from.X) != (int)Math.Floor(to.X)
-                || (int)Math.Floor(from.Y) != (int)Math.Floor(to.Y)
-                || (int)Math.Floor(from.Z) != (int)Math.Floor(to.Z);
-
-            if (_server.Events.HasPlayerMove)
-            {
-                var ev = new PlayerMoveEvent(this, from, to, yaw, pitch, isBlockChange);
-                if (!_server.Events.OnMove(ev))
-                {
-                    Send(Packets.MovePlayer(EntityId, from.X, from.Y, from.Z, Pitch, Yaw, Yaw, teleport: true, onGround: true));
-                    return;
-                }
-                if (ev.To != to)
-                {
-                    x = ev.To.X;
-                    y = ev.To.Y;
-                    z = ev.To.Z;
-                    Send(Packets.MovePlayer(EntityId, x, y, z, pitch, yaw, yaw, teleport: true, onGround: true));
-                }
-            }
-
-            Position = (x, y, z);
-            Pitch = pitch;
-            Yaw = yaw;
-            UpdateChunks(ChunkPosition.X, ChunkPosition.Z);
-            _server.BroadcastInExcept(World, this, Packets.MovePlayer(EntityId, x, y, z, pitch, yaw, yaw, teleport: false, onGround: true));
+            _hasPendingMovement = true;
+            _pendingPitch = pitch;
+            _pendingYaw = yaw;
+            _pendingX = x;
+            _pendingY = y;
+            _pendingZ = z;
         }
+        else
+        {
+            ApplyMovement(pitch, yaw, x, y, z);
+        }
+
         if (reader.Remaining == 0)
             return; // short form (tests)
 
@@ -1057,36 +1091,128 @@ public sealed partial class BedrockConnection
         return (drops, xp);
     }
 
+    internal void FlushTickMovement()
+    {
+        if (!_hasPendingMovement || _stage == Stage.Closed)
+            return;
+        _hasPendingMovement = false;
+        ApplyMovement(_pendingPitch, _pendingYaw, _pendingX, _pendingY, _pendingZ);
+    }
+
+    private void ApplyMovement(float pitch, float yaw, float x, float y, float z)
+    {
+        if (_portalCooldown > 0 && Math.Abs(x - Position.X) + Math.Abs(y - Position.Y) + Math.Abs(z - Position.Z) > 8)
+            return;
+        if (Frozen && Math.Abs(x - Position.X) + Math.Abs(z - Position.Z) + Math.Abs(y - Position.Y) > 0.5)
+        {
+            Teleport(Position.X, Position.Y - EyeHeight, Position.Z);
+            return;
+        }
+        var moved = Math.Abs(x - Position.X) + Math.Abs(y - Position.Y) + Math.Abs(z - Position.Z) > 0.001
+                    || Math.Abs(pitch - Pitch) + Math.Abs(yaw - Yaw) > 0.1;
+        if (moved)
+        {
+            var from = new System.Numerics.Vector3(Position.X, Position.Y, Position.Z);
+            var to = new System.Numerics.Vector3(x, y, z);
+            var isBlockChange = (int)Math.Floor(from.X) != (int)Math.Floor(to.X)
+                || (int)Math.Floor(from.Y) != (int)Math.Floor(to.Y)
+                || (int)Math.Floor(from.Z) != (int)Math.Floor(to.Z);
+
+            if (_server.Events.HasPlayerMove)
+            {
+                var ev = new PlayerMoveEvent(this, from, to, yaw, pitch, isBlockChange);
+                if (!_server.Events.OnMove(ev))
+                {
+                    Send(Packets.MovePlayer(EntityId, from.X, from.Y, from.Z, Pitch, Yaw, Yaw, teleport: true, onGround: true));
+                    return;
+                }
+                if (ev.To != to)
+                {
+                    x = ev.To.X;
+                    y = ev.To.Y;
+                    z = ev.To.Z;
+                    Send(Packets.MovePlayer(EntityId, x, y, z, pitch, yaw, yaw, teleport: true, onGround: true));
+                }
+            }
+
+            Position = (x, y, z);
+            Pitch = pitch;
+            Yaw = yaw;
+            UpdateChunks(ChunkPosition.X, ChunkPosition.Z);
+            _server.BroadcastInExcept(World, this, Packets.MovePlayer(EntityId, x, y, z, pitch, yaw, yaw, teleport: false, onGround: true));
+        }
+    }
+
     internal void UpdateChunks(int centerX, int centerZ)
     {
         if (_viewRadius == 0 || _centerChunk == (centerX, centerZ))
             return;
         _centerChunk = (centerX, centerZ);
         var keep = (_viewRadius + 1) * (_viewRadius + 1);
-        _sentChunks.RemoveWhere(c => Distance2(c.X - centerX, c.Z - centerZ) > keep);
-        _requestedChunks.RemoveWhere(c => Distance2(c.X - centerX, c.Z - centerZ) > keep);
+
+        List<long>? toRemove = null;
+        foreach (var key in _sentChunks)
+        {
+            var (cx, cz) = World.UnpackChunkKey(key);
+            if (Distance2(cx - centerX, cz - centerZ) > keep)
+            {
+                toRemove ??= [];
+                toRemove.Add(key);
+                if (World.LoadedChunk(cx, cz) is { } chunk)
+                    chunk.Viewers.Remove(this);
+            }
+        }
+        if (toRemove is not null)
+        {
+            for (var i = 0; i < toRemove.Count; i++)
+                _sentChunks.Remove(toRemove[i]);
+        }
+
+        List<long>? reqToRemove = null;
+        foreach (var key in _requestedChunks)
+        {
+            var (cx, cz) = World.UnpackChunkKey(key);
+            if (Distance2(cx - centerX, cz - centerZ) > keep)
+            {
+                reqToRemove ??= [];
+                reqToRemove.Add(key);
+            }
+        }
+        if (reqToRemove is not null)
+        {
+            for (var i = 0; i < reqToRemove.Count; i++)
+                _requestedChunks.Remove(reqToRemove[i]);
+        }
 
         Send(Packets.NetworkChunkPublisherUpdate((int)Position.X, (int)Position.Y, (int)Position.Z, (uint)_viewRadius * 16));
-        // Nearest chunks first so the area around the player appears quickly.
-        var wanted = new List<(int X, int Z)>();
+        var wanted = new List<(int X, int Z, int Dist2)>();
         for (var dx = -_viewRadius; dx <= _viewRadius; dx++)
         for (var dz = -_viewRadius; dz <= _viewRadius; dz++)
-            if (Distance2(dx, dz) <= _viewRadius * _viewRadius)
-                wanted.Add((centerX + dx, centerZ + dz));
-        foreach (var chunk in wanted.OrderBy(c => Distance2(c.X - centerX, c.Z - centerZ)))
         {
-            if (_sentChunks.Contains(chunk) || !_requestedChunks.Add(chunk))
+            var d2 = Distance2(dx, dz);
+            if (d2 <= _viewRadius * _viewRadius)
+                wanted.Add((centerX + dx, centerZ + dz, d2));
+        }
+        wanted.Sort((a, b) => a.Dist2.CompareTo(b.Dist2));
+
+        var dispatched = 0;
+        foreach (var item in wanted)
+        {
+            var key = World.ChunkKey(item.X, item.Z);
+            if (_sentChunks.Contains(key) || !_requestedChunks.Add(key))
                 continue;
             var world = World;
-            var task = world.GetChunkAsync(chunk.X, chunk.Z);
+            var task = world.GetChunkAsync(item.X, item.Z);
             task.ContinueWith(t => _server.RunOnMainThread(() => OnChunkReady(t, world)), TaskScheduler.Default);
+            if (++dispatched >= 4 && _stage == Stage.InGame)
+                break;
         }
         TrySpawn();
     }
 
     private void OnChunkReady(Task<Chunk> task, World world)
     {
-        if (_stage == Stage.Closed || world != World) // closed, or a chunk of the dimension the player left
+        if (_stage == Stage.Closed || world != World)
             return;
         if (!task.IsCompletedSuccessfully)
         {
@@ -1094,16 +1220,16 @@ public sealed partial class BedrockConnection
             return;
         }
         var chunk = task.Result;
-        var key = (chunk.X, chunk.Z);
+        var key = World.ChunkKey(chunk.X, chunk.Z);
         if (!_requestedChunks.Remove(key))
-            return; // moved away meanwhile
+            return;
         _sentChunks.Add(key);
+        chunk.Viewers.Add(this);
         var (count, payload) = chunk.NetworkPayload(world.Dimension == 1);
         Send(Packets.LevelChunk(chunk.X, chunk.Z, count, payload, world.Dimension));
         TrySpawn();
     }
 
-    // The client stays on the loading screen until PlayerSpawn; send it once the chunks around it are there.
     private void TrySpawn()
     {
         if (_stage != Stage.ChunkRadius)
@@ -1111,7 +1237,7 @@ public sealed partial class BedrockConnection
         var (cx, cz) = ChunkPosition;
         for (var dx = -1; dx <= 1; dx++)
         for (var dz = -1; dz <= 1; dz++)
-            if (!_sentChunks.Contains((cx + dx, cz + dz)))
+            if (!_sentChunks.Contains(World.ChunkKey(cx + dx, cz + dz)))
                 return;
         _stage = Stage.Spawning;
         Send(Packets.PlayStatus(PlayStatus.PlayerSpawn), Items.CreativeContentPacket, Recipes.CraftingDataPacket, Recipes.TrimDataPacket, Packets.SetTime((int)_server.World.Time),
@@ -1149,21 +1275,52 @@ public sealed partial class BedrockConnection
             _transport.Send(framedBatch, preferUnreliable);
     }
 
+    internal void FlushOutgoing()
+    {
+        if (_pendingOutgoing.Count == 0 || _stage == Stage.Closed)
+            return;
+
+        try
+        {
+            var batch = _codec.EncodeBatch(_pendingOutgoing);
+            if (batch.Length > 0)
+                _transport.Send(batch);
+        }
+        finally
+        {
+            _pendingOutgoing.Clear();
+        }
+    }
+
     internal void Send(byte[] packet)
     {
-        if (_stage != Stage.Closed)
-            _transport.Send(_codec.Encode(packet));
+        if (_stage == Stage.Closed)
+            return;
+
+        if (_stage == Stage.InGame && _server.IsTicking)
+        {
+            _pendingOutgoing.Add(packet);
+            return;
+        }
+
+        _transport.Send(_codec.Encode(packet));
     }
 
     internal void Send(params byte[][] packets)
     {
-        if (_stage != Stage.Closed)
+        if (_stage == Stage.Closed || packets.Length == 0)
+            return;
+
+        if (_stage == Stage.InGame && _server.IsTicking)
         {
-            if (packets.Length == 1)
-                _transport.Send(_codec.Encode(packets[0]));
-            else
-                _transport.Send(_codec.Encode(packets));
+            _pendingOutgoing.AddRange(packets);
+            return;
         }
+
+        if (packets.Length == 1)
+            _transport.Send(_codec.Encode(packets[0]));
+        else
+            _transport.Send(_codec.Encode(packets));
     }
 }
 

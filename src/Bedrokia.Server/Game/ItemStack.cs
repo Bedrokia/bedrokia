@@ -9,6 +9,7 @@
 // │  Licensed under the Apache License 2.0 - see LICENSE              │
 // └───────────────────────────────────────────────────────────────────┘
 
+using System.Collections.Frozen;
 using Bedrokia.Protocol;
 
 namespace Bedrokia.Server.Game;
@@ -20,7 +21,7 @@ namespace Bedrokia.Server.Game;
 public sealed class ItemStack
 {
     private static int _nextNetworkId;
-    private static readonly Dictionary<string, int> MaxStackSizes = LoadStackSizes();
+    private static readonly FrozenDictionary<string, int> MaxStackSizes = LoadStackSizes().ToFrozenDictionary();
 
     public ItemStack(ItemType type, int count, short meta = 0, uint blockRuntimeId = 0, OrderedDictionary<string, object>? nbt = null)
     {

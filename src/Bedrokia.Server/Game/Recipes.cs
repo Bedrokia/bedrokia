@@ -9,6 +9,7 @@
 // │  Licensed under the Apache License 2.0 - see LICENSE              │
 // └───────────────────────────────────────────────────────────────────┘
 
+using System.Collections.Frozen;
 using System.Text.Json;
 using Bedrokia.Protocol;
 
@@ -39,11 +40,14 @@ public static class Recipes
 {
     public const uint CraftingDataId = 52;
 
-    private static readonly Dictionary<uint, Recipe> ById = [];
-    private static readonly Dictionary<string, HashSet<string>> Tags = LoadTags();
+    private static readonly FrozenDictionary<uint, Recipe> ById;
+    private static readonly FrozenDictionary<string, Recipe[]> ByResultItem;
+    private static readonly FrozenDictionary<string, FrozenSet<string>> Tags = LoadTags();
 
     static Recipes()
     {
+        var byIdTemp = new Dictionary<uint, Recipe>();
+        var byResultTemp = new Dictionary<string, List<Recipe>>();
         var root = Nbt.ReadAll(Resource("crafting_data.nbt"), network: true)[0];
         var shaped = new BedrockWriter();
         var shapeless = new BedrockWriter();
@@ -51,11 +55,23 @@ public static class Recipes
         var multi = new BedrockWriter();
         uint shapedCount = 0, shapelessCount = 0, userDataCount = 0, multiCount = 0, next = 1;
 
+        void IndexRecipe(Recipe r)
+        {
+            byIdTemp[r.NetworkId] = r;
+            foreach (var outStack in r.Outputs)
+            {
+                if (!byResultTemp.TryGetValue(outStack.Type.Name, out var list))
+                    byResultTemp[outStack.Type.Name] = list = [];
+                list.Add(r);
+            }
+        }
+
         foreach (OrderedDictionary<string, object> entry in List(root, "shaped"))
         {
             if (Parse(entry, next) is not { } recipe)
                 continue;
-            ById[next++] = recipe;
+            IndexRecipe(recipe);
+            next++;
             shapedCount++;
             shaped.String(RecipeId(next - 1)).VarInt32(Int(entry, "width")).VarInt32(Int(entry, "height"));
             WriteRecipeBody(shaped, recipe, Int(entry, "priority"), shapedSymmetry: true);
@@ -65,7 +81,8 @@ public static class Recipes
         {
             if (Parse(entry, next) is not { } recipe)
                 continue;
-            ById[next++] = recipe;
+            IndexRecipe(recipe);
+            next++;
             if (key == "shapeless") shapelessCount++; else userDataCount++;
             writer.String(RecipeId(next - 1));
             WriteRecipeBody(writer, recipe, Int(entry, "priority"), shapedSymmetry: false);
@@ -78,6 +95,9 @@ public static class Recipes
             multiCount++;
         }
 
+        ById = byIdTemp.ToFrozenDictionary();
+        ByResultItem = byResultTemp.ToFrozenDictionary(k => k.Key, k => k.Value.ToArray());
+
         var packet = new BedrockWriter().VarUInt32(CraftingDataId)
             .VarUInt32(shapedCount).Bytes(shaped.ToArray())
             .VarUInt32(shapelessCount).Bytes(shapeless.ToArray())
@@ -88,6 +108,8 @@ public static class Recipes
         CraftingDataPacket = packet.Bool(true).ToArray(); // clear recipes
         Count = ById.Count;
     }
+
+    public static ReadOnlySpan<Recipe> ByResult(string itemName) => ByResultItem.GetValueOrDefault(itemName) ?? [];
 
     /// <summary>CraftingData packet with every recipe; send once at spawn.</summary>
     public static byte[] CraftingDataPacket { get; }
@@ -200,10 +222,10 @@ public static class Recipes
     private static int Int(OrderedDictionary<string, object> c, string key) =>
         c.TryGetValue(key, out var v) && v is IConvertible ? Convert.ToInt32(v) : 0;
 
-    private static Dictionary<string, HashSet<string>> LoadTags()
+    private static FrozenDictionary<string, FrozenSet<string>> LoadTags()
     {
         var tags = JsonSerializer.Deserialize<Dictionary<string, string[]>>(Resource("item_tags.json")) ?? [];
-        return tags.ToDictionary(t => t.Key, t => t.Value.ToHashSet());
+        return tags.ToFrozenDictionary(t => t.Key, t => t.Value.ToFrozenSet());
     }
 
     private static byte[] Resource(string name)
