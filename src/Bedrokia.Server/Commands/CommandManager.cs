@@ -16,7 +16,7 @@ using Bedrokia.Server.Network;
 namespace Bedrokia.Server.Commands;
 
 /// <summary>Who runs a command: the console (always operator) or an in-game player.</summary>
-public sealed class CommandSender(string name, bool isOp, Action<string> reply, BedrockConnection? player = null)
+public sealed class CommandSender(string name, bool isOp, Action<string> reply, BedrockConnection? player = null, Func<string?, bool>? hasPermission = null)
 {
     public string Name => name;
     public bool IsOp => isOp;
@@ -25,11 +25,37 @@ public sealed class CommandSender(string name, bool isOp, Action<string> reply, 
     public BedrockConnection? Player => player;
 
     public void Reply(string message) => reply(message);
+
+    /// <summary>Checks whether this sender has the requested granular permission node.</summary>
+    public bool HasPermission(string? permission)
+    {
+        if (string.IsNullOrWhiteSpace(permission) ||
+            permission.Equals("everyone", StringComparison.OrdinalIgnoreCase) ||
+            permission.Equals("all", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        if (hasPermission is not null)
+            return hasPermission(permission);
+
+        if (player is not null)
+            return player.HasPermission(permission);
+
+        if (permission.Equals("op", StringComparison.OrdinalIgnoreCase))
+            return isOp;
+
+        return isOp;
+    }
 }
 
 /// <param name="Usage">Parameters, e.g. "&lt;player&gt; &lt;item&gt; [count]"; a name ending in "..." takes the rest of the line.</param>
+/// <param name="Permission">Permission node required (empty or "everyone" for all, "op" for operators, or custom node).</param>
 /// <param name="Execute">Receives the sender and the arguments after the command name.</param>
-public sealed record Command(string Name, string Description, string Usage, bool OpOnly, Action<CommandSender, string[]> Execute);
+public sealed record Command(string Name, string Description, string Usage, string? Permission, Action<CommandSender, string[]> Execute)
+{
+    /// <summary>True if this command is restricted to operators or specific permissions.</summary>
+    public bool OpOnly => Permission is not null && (Permission.Equals("op", StringComparison.OrdinalIgnoreCase) ||
+        (Permission.Length > 0 && !Permission.Equals("everyone", StringComparison.OrdinalIgnoreCase) && !Permission.Equals("all", StringComparison.OrdinalIgnoreCase)));
+}
 
 /// <summary>Central command registry. Commands run on the game thread.</summary>
 public sealed class CommandManager(Logger logger)
@@ -41,15 +67,19 @@ public sealed class CommandManager(Logger logger)
     public IEnumerable<Command> All => _commands.Values;
 
     /// <exception cref="InvalidOperationException">A command with this name already exists.</exception>
-    public void Register(string name, string description, string usage, bool opOnly, Action<CommandSender, string[]> execute)
+    public void Register(string name, string description, string usage, bool opOnly, Action<CommandSender, string[]> execute) =>
+        Register(name, description, usage, opOnly ? "op" : "", execute);
+
+    /// <summary>Registers a command requiring a specific permission node.</summary>
+    public void Register(string name, string description, string usage, string? permission, Action<CommandSender, string[]> execute)
     {
-        if (!_commands.TryAdd(name, new Command(name, description, usage, opOnly, execute)))
+        if (!_commands.TryAdd(name, new Command(name, description, usage, permission ?? "", execute)))
             throw new InvalidOperationException($"Command '{name}' is already registered.");
     }
 
     /// <summary>Operator-only command that ignores who runs it (console style).</summary>
     public void Register(string name, string description, Action<string[]> execute) =>
-        Register(name, description, "[args...]", true, (_, args) => execute(args));
+        Register(name, description, "[args...]", "op", (_, args) => execute(args));
 
     /// <summary>Console sender: operator, replies go to the log.</summary>
     public CommandSender Console => new("Server", true, message => logger.Info(System.Text.RegularExpressions.Regex.Replace(message, "§.", "")));
@@ -69,7 +99,7 @@ public sealed class CommandManager(Logger logger)
             sender.Reply($"§cUnknown command '{parts[0]}'. Type help for the list of commands.");
             return;
         }
-        if (command.OpOnly && !sender.IsOp)
+        if (!sender.HasPermission(command.Permission))
         {
             sender.Reply("§cYou do not have permission to use this command.");
             return;
@@ -98,10 +128,18 @@ public sealed class CommandManager(Logger logger)
     /// AvailableCommands packet (gophertunnel packet/available_commands.go, protocol 2193) with the commands this
     /// sender may run, so the client lists and auto-completes them. Every parameter is sent as a plain string.
     /// </summary>
-    public byte[] AvailableCommandsPacket(bool isOp)
+    public byte[] AvailableCommandsPacket(bool isOp) =>
+        AvailableCommandsPacket(perm => isOp || string.IsNullOrWhiteSpace(perm) || perm.Equals("everyone", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>Sends commands filtered by the sender's permissions.</summary>
+    public byte[] AvailableCommandsPacket(CommandSender sender) =>
+        AvailableCommandsPacket(sender.HasPermission);
+
+    /// <summary>Sends commands filtered by a predicate.</summary>
+    public byte[] AvailableCommandsPacket(Func<string?, bool> canRun)
     {
         const uint valid = 0x100000, typeString = 56, typeRawText = 70;
-        var visible = All.Where(c => isOp || !c.OpOnly).ToList();
+        var visible = All.Where(c => canRun(c.Permission)).ToList();
         var w = new BedrockWriter().VarUInt32(AvailableCommandsId)
             .VarUInt32(0).VarUInt32(0).VarUInt32(0).VarUInt32(0).VarUInt32(0) // enum values, chained values, suffixes, enums, chained
             .VarUInt32((uint)visible.Count);
