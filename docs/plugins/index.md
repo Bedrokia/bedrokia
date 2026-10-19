@@ -241,6 +241,13 @@ autres plugins et le serveur continuent.
 | `Server.Plugins.Get(nom)` | un autre plugin |
 | `Server.Config` | réglages de `server.properties` |
 
+## Projectiles
+
+Les joueurs lancent boules de neige, œufs, perles de l'Ender et potions jetables d'un clic droit. Un plugin en lance avec
+`Server.Projectiles.Launch(joueur, ProjectileManager.EnderPearl, speed: 2)` (depuis les yeux du joueur, là où il regarde ;
+`potion:` donne la potion d'une potion jetable) ou `Server.Projectiles.Spawn(...)` depuis n'importe quelle position.
+Événements : `ProjectileLaunch` (annulable, `Force` modifiable), `ProjectileHit`, `PotionSplash` (`Radius` modifiable).
+
 ## PNJ
 
 `Server.Npcs` affiche des personnages immobiles avec leur propre skin (marchands, caisses...). Les joueurs les voient à

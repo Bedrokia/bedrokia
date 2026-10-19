@@ -63,6 +63,9 @@ public sealed partial class BedrokiaServer
     /// <summary>Non-player characters spawned by plugins.</summary>
     public NpcManager Npcs { get; }
 
+    /// <summary>Thrown snowballs, eggs, ender pearls and splash potions.</summary>
+    public ProjectileManager Projectiles { get; }
+
     /// <summary>Packs from resource_packs/, sent to players at login.</summary>
     public ResourcePacks ResourcePacks { get; private set; } = null!;
 
@@ -112,6 +115,7 @@ public sealed partial class BedrokiaServer
         Commands = new CommandManager(logger);
         Mobs = new MobManager(this);
         Npcs = new NpcManager(this);
+        Projectiles = new ProjectileManager(this);
         Events = new ServerEvents(logger);
         Scheduler = new ServerScheduler(logger);
         Plugins = new PluginManager(this);
@@ -567,6 +571,7 @@ public sealed partial class BedrokiaServer
                 {
                     Mobs.Tick(CurrentTick);
                     Npcs.Tick(CurrentTick);
+                    Projectiles.Tick();
                 }
 
                 using (Timings.Track(Timings.FallingBlocks))

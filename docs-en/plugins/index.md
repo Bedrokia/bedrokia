@@ -241,6 +241,13 @@ server keep running.
 | `Server.Plugins.Get(name)` | another plugin |
 | `Server.Config` | `server.properties` settings |
 
+## Projectiles
+
+Players throw snowballs, eggs, ender pearls and splash potions with a right click. A plugin throws one with
+`Server.Projectiles.Launch(player, ProjectileManager.EnderPearl, speed: 2)` (from the player's eyes, where they look;
+`potion:` sets a splash potion's potion) or `Server.Projectiles.Spawn(...)` from any position.
+Events: `ProjectileLaunch` (cancellable, `Force` can be changed), `ProjectileHit`, `PotionSplash` (`Radius` can be changed).
+
 ## NPCs
 
 `Server.Npcs` shows characters that stand still with their own skin (shop keepers, crates...). Players see them within
