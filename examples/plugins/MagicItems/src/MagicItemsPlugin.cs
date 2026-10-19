@@ -10,6 +10,7 @@
 // └───────────────────────────────────────────────────────────────────┘
 
 using Bedrokia.Server.Commands;
+using Bedrokia.Server.Events;
 using Bedrokia.Server.Game;
 using Bedrokia.Server.Network;
 using Bedrokia.Server.Plugins;

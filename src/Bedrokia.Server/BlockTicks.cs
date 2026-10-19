@@ -256,13 +256,13 @@ public sealed partial class BedrokiaServer
             var dz = player.Position.Z - z;
             var distance = Math.Sqrt(dx * dx + dy * dy + dz * dz);
             if (distance < reach)
-                player.Damage((float)Math.Round(7 * radius * (1 - distance / reach)), x, z);
+                player.Damage((float)Math.Round(7 * radius * (1 - distance / reach)), x, z, source: DamageSource.Explosion());
         }
         foreach (var mob in Mobs.All.ToList())
         {
             var distance = Math.Sqrt((mob.X - x) * (mob.X - x) + (mob.Y - y) * (mob.Y - y) + (mob.Z - z) * (mob.Z - z));
             if (distance < reach)
-                Mobs.Damage(mob, (float)Math.Round(7 * radius * (1 - distance / reach)), (x, z));
+                Mobs.Damage(mob, (float)Math.Round(7 * radius * (1 - distance / reach)), (x, z), source: DamageSource.Explosion());
         }
     }
 }

@@ -126,9 +126,18 @@ l'action (le bloc revient, le message n'est pas envoyé...).
 | `PlayerQuit` | le joueur | non |
 | `PlayerMove` | le joueur (position ou rotation changée) | non |
 | `PlayerChat` | `PlayerChatEvent` : `Player`, `Message` (modifiable) | oui |
+| `PlayerDamage` | `PlayerDamageEvent` : `Player`, `Damage` (modifiable), `Source`, `ApplyKnockback` (modifiable) | oui |
+| `PlayerDeath` | `PlayerDeathEvent` : `Player`, `Source`, `DeathMessage` (modifiable), `KeepInventory` (modifiable), `Drops` (modifiable) | non |
+| `PlayerRespawn` | `PlayerRespawnEvent` : `Player`, `RespawnPosition` (modifiable) | non |
+| `PlayerDropItem` | `PlayerDropItemEvent` : `Player`, `Item` | oui |
+| `InventoryTransaction` | `InventoryTransactionEvent` : `Player`, `Type`, `Item`, `Count`, `Slot` | oui |
+| `InventoryClick` | alias de `InventoryTransaction` | oui |
 | `BlockBreak` | `BlockEvent` : `Player`, `X`, `Y`, `Z`, `Block` | oui |
 | `BlockPlace` | `BlockEvent` | oui |
 | `ItemUse` | `ItemUseEvent` : `Player`, `Item`, position et `Block` cliqués, `Face` | oui |
+| `EntityDamage` | `EntityDamageEvent` : `Entity`, `Damage` (modifiable), `Source` | oui |
+| `EntitySpawn` | `EntitySpawnEvent` : `Kind`, `X`, `Y`, `Z` (modifiables) | oui |
+| `EntityDespawn` | `EntityDespawnEvent` : `Entity`, `Reason` | non |
 | `Tick` | numéro du tick (20 par seconde) | non |
 
 ```csharp

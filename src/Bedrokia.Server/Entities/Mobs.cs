@@ -188,13 +188,22 @@ public sealed class MobManager(BedrokiaServer server)
 
     public Mob? Find(long entityId) => _mobs.FirstOrDefault(m => m.EntityId == entityId && !m.Dead);
 
-    public Mob Spawn(MobKind kind, double x, double y, double z)
+    public Mob? Spawn(MobKind kind, double x, double y, double z)
     {
         var mob = new Mob(server.NextEntityId(), kind, x, y, z) { Yaw = _random.Next(360) };
         if (kind == MobKind.Sheep)
             mob.Colour = _random.Next(100) switch { < 5 => 15, < 10 => 7, < 15 => 8, < 18 => 12, 18 => 6, _ => 0 };
+
+        var spawnEvent = new EntitySpawnEvent(mob, x, y, z);
+        if (!server.Events.OnEntitySpawn(spawnEvent))
+            return null;
+
+        mob.X = spawnEvent.X;
+        mob.Y = spawnEvent.Y;
+        mob.Z = spawnEvent.Z;
+
         _mobs.Add(mob);
-        server.Logger.Debug($"Spawned {kind.Id} #{mob.EntityId} at ({x:0.#}, {y:0.#}, {z:0.#}); {_mobs.Count} mobs.");
+        server.Logger.Debug($"Spawned {kind.Id} #{mob.EntityId} at ({mob.X:0.#}, {mob.Y:0.#}, {mob.Z:0.#}); {_mobs.Count} mobs.");
         return mob;
     }
 
@@ -209,15 +218,19 @@ public sealed class MobManager(BedrokiaServer server)
             if (mob.Dead)
             {
                 if (++mob.DeathTicks >= 20)
-                    Remove(mob);
+                    Remove(mob, EntityDespawnReason.Death);
                 continue;
             }
             var nearest = players.Where(p => !p.Dead).MinBy(p => Distance2(mob, p));
             var distance = nearest is null ? double.MaxValue : Math.Sqrt(Distance2(mob, nearest));
-            if (players.Count > 0 && distance > DespawnDistance && (mob.Kind.Hostile || distance > DespawnDistance * 2)
-                || server.World.LoadedChunk((int)Math.Floor(mob.X) >> 4, (int)Math.Floor(mob.Z) >> 4) is null)
+            if (players.Count > 0 && distance > DespawnDistance && (mob.Kind.Hostile || distance > DespawnDistance * 2))
             {
-                Remove(mob);
+                Remove(mob, EntityDespawnReason.Distance);
+                continue;
+            }
+            if (server.World.LoadedChunk((int)Math.Floor(mob.X) >> 4, (int)Math.Floor(mob.Z) >> 4) is null)
+            {
+                Remove(mob, EntityDespawnReason.ChunkUnload);
                 continue;
             }
             Think(mob, nearest, distance, tick);
@@ -305,7 +318,7 @@ public sealed class MobManager(BedrokiaServer server)
                 Broadcast(mob, EntityPackets.SetData(mob.EntityId, mob.Flags, mob.Kind.Width, mob.Kind.Height));
             }
             if (exposed && tick % 20 == 0)
-                Damage(mob, 1, null);
+                Damage(mob, 1, null, source: DamageSource.Fire());
             if (mob.Dead)
                 return;
         }
@@ -324,7 +337,7 @@ public sealed class MobManager(BedrokiaServer server)
                     mob.AttackCooldown = 40;
                     Broadcast(mob, EntityPackets.Swing(mob.EntityId));
                     if (_random.NextDouble() < 0.7)
-                        player.Damage(Scaled(2 + _random.Next(3)), mob.X, mob.Z);
+                        player.Damage(Scaled(2 + _random.Next(3)), mob.X, mob.Z, source: DamageSource.EntityAttack(mob));
                 }
             }
             else if (mob.Kind == MobKind.Creeper)
@@ -346,7 +359,7 @@ public sealed class MobManager(BedrokiaServer server)
             {
                 mob.AttackCooldown = 20;
                 Broadcast(mob, EntityPackets.Swing(mob.EntityId));
-                player.Damage(Scaled(mob.Kind.Damage), mob.X, mob.Z);
+                player.Damage(Scaled(mob.Kind.Damage), mob.X, mob.Z, source: DamageSource.EntityAttack(mob));
             }
         }
         else if (mob.PanicTicks > 0 && mob.FleeFrom is { } from)
@@ -459,7 +472,7 @@ public sealed class MobManager(BedrokiaServer server)
         mob.Vx *= friction;
         mob.Vz *= friction;
         if (mob.Y < Chunk.MinY - 32)
-            Damage(mob, 1000, null);
+            Damage(mob, 1000, null, source: DamageSource.Void());
     }
 
     private bool Collides(Mob mob, double x, double y, double z)
@@ -476,17 +489,27 @@ public sealed class MobManager(BedrokiaServer server)
     // --- Combat ---
 
     /// <summary>Applies damage (with knockback away from the attacker); returns false if the mob is invulnerable now.</summary>
-    public bool Damage(Mob mob, float amount, (double X, double Z)? from, BedrockConnection? killer = null, int knockback = 0, int looting = 0)
+    public bool Damage(Mob mob, float amount, (double X, double Z)? from, BedrockConnection? killer = null, int knockback = 0, int looting = 0, DamageSource? source = null)
     {
         if (mob.Dead || mob.HurtTicks > 0 && from is not null)
             return false;
+
+        source ??= killer is not null ? DamageSource.PlayerAttack(killer) : DamageSource.Custom();
+        var ev = new EntityDamageEvent(mob, source, amount, from, killer);
+        if (!server.Events.OnEntityDamage(ev))
+            return false;
+
+        amount = ev.Damage;
+        if (amount <= 0)
+            return false;
+
         mob.Health -= amount;
         mob.HurtTicks = 10;
         Broadcast(mob, EntityPackets.Event(mob.EntityId, EntityPackets.EventHurt));
-        if (from is { } source)
+        if (from is { } fromPos)
         {
-            var dx = mob.X - source.X;
-            var dz = mob.Z - source.Z;
+            var dx = mob.X - fromPos.X;
+            var dz = mob.Z - fromPos.Z;
             var length = Math.Max(0.01, Math.Sqrt(dx * dx + dz * dz));
             mob.Vx = dx / length * (0.4 + 0.5 * knockback);
             mob.Vz = dz / length * (0.4 + 0.5 * knockback);
@@ -494,7 +517,7 @@ public sealed class MobManager(BedrokiaServer server)
             if (!mob.Kind.Hostile)
             {
                 mob.PanicTicks = 100;
-                mob.FleeFrom = source;
+                mob.FleeFrom = fromPos;
             }
         }
         if (mob.Dead)
@@ -520,7 +543,7 @@ public sealed class MobManager(BedrokiaServer server)
 
     private void Explode(Mob creeper)
     {
-        Remove(creeper);
+        Remove(creeper, EntityDespawnReason.Death);
         server.Explode(creeper.X, creeper.Y + 0.5, creeper.Z, 3);
     }
 
@@ -559,8 +582,9 @@ public sealed class MobManager(BedrokiaServer server)
             viewer.Send(packet);
     }
 
-    private void Remove(Mob mob)
+    internal void Remove(Mob mob, EntityDespawnReason reason = EntityDespawnReason.Death)
     {
+        server.Events.OnEntityDespawn(new EntityDespawnEvent(mob, reason));
         _mobs.Remove(mob);
         Broadcast(mob, Bedrokia.Protocol.Packets.RemoveActor(mob.EntityId));
         mob.Viewers.Clear();
