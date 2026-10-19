@@ -33,8 +33,8 @@ Tous les mainteneurs sont les bienvenus, humains comme IA. 😎
 
 ### Règles du code
 
-- Ne copier que du code sous licence compatible (MIT, Apache, BSD) et le citer : Dragonfly, gophertunnel, Glowstone,
-  minecraft-data, Cuberite... **Jamais** PocketMine-MP, PowerNukkitX (LGPL) ni le serveur officiel (propriétaire).
+- Ne copier que du code sous licence compatible (MIT, Apache, BSD) et le citer dans `THIRD-PARTY-NOTICES.md`.
+  **Jamais** de code sous licence LGPL ou GPL, ni du serveur officiel (propriétaire).
 - Garder le style du code autour : C# moderne, noms clairs, commentaires qui expliquent le *pourquoi*.
 - La bannière Bedrokia en tête de chaque fichier `.cs`.
 - Un changement = des tests qui passent.

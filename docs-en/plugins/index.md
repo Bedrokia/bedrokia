@@ -4,7 +4,7 @@ title: Create a plugin
 
 # Create a plugin
 
-Bedrokia plugins are written in **C#** and organised like Java (Bukkit / Spigot) or PocketMine-MP plugins.
+Bedrokia plugins are written in **C#** and organised like Java (Bukkit / Spigot) plugins.
 **No build step**: the server compiles the code at startup (with Roslyn). A broken plugin does not stop the server
 from starting: the console says which one, why, and where.
 

@@ -4,7 +4,7 @@ title: Forms & UI
 
 # Forms & UI
 
-Bedrokia features a modern, ultra-optimized (.NET 10, zero reflection) and secure system for **Bedrock Forms** and **Data-Driven UI (DDUI / DataStore)**, built upon the strict server-authoritative security model of Dragonfly (`df-mc/dragonfly`).
+Bedrokia features a modern, ultra-optimized (.NET 10, zero reflection) and secure system for **Bedrock Forms** and **Data-Driven UI (DDUI / DataStore)**, fully validated by the server.
 
 ## 1. SimpleForm (Button Menu)
 
@@ -94,7 +94,7 @@ player.SendForm(custom);
 
 ---
 
-## 4. Dragonfly-Grade Security & Anti-DoS Protection
+## 4. Security and anti-DoS protection
 
 The Bedrokia server enforces **Absolute Server Authority** over all client form interactions:
 

@@ -77,9 +77,9 @@ dotnet test Bedrokia.slnx
 dotnet publish src/Bedrokia.Cli -c Release -r linux-x64 --self-contained -p:PublishSingleFile=true -o out/linux-x64
 ```
 
-## Mettre à jour (comme PocketMine-MP)
+## Mettre à jour
 
-Le serveur tient dans **un seul fichier**, comme le `PocketMine-MP.phar` :
+Le serveur tient dans **un seul fichier** :
 
 1. télécharger `bedrokia` (ou `bedrokia.exe`) depuis la [release voulue](https://github.com/Nexiumpvp2/bedrokia/releases) ;
 2. arrêter le serveur ;

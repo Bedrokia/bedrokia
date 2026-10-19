@@ -4,7 +4,7 @@ title: Formulaires & UI
 
 # Formulaires & UI
 
-Bedrokia intègre un système moderne, ultra-rapide (.NET 10, zéro réflexion) et hautement sécurisé de **Formulaires Bedrock** et de **Data-Driven UI (DDUI / DataStore)**, inspiré des principes de sécurité de Dragonfly (`df-mc/dragonfly`).
+Bedrokia intègre un système moderne, ultra-rapide (.NET 10, zéro réflexion) et hautement sécurisé de **Formulaires Bedrock** et de **Data-Driven UI (DDUI / DataStore)**, entièrement validé côté serveur.
 
 ## 1. SimpleForm (Menu de Boutons)
 
@@ -94,7 +94,7 @@ player.SendForm(custom);
 
 ---
 
-## 4. Sécurité Dragonfly & Protection Anti-DoS
+## 4. Sécurité et protection anti-DoS
 
 Le serveur Bedrokia possède une **Autorité Absolue** sur toutes les réponses des formulaires :
 

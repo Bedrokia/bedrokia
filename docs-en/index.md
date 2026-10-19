@@ -54,7 +54,7 @@ hide:
 
     ---
 
-    Pterodactyl egg, systemd service, Docker, a PocketMine-like `server.properties`.
+    Pterodactyl egg, systemd service, Docker, a simple commented `server.properties`.
 
     [:octicons-arrow-right-24: Pterodactyl](getting-started/pterodactyl.md)
 
