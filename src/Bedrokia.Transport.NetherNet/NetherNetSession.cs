@@ -9,6 +9,7 @@
 // │  Licensed under the Apache License 2.0 - see LICENSE              │
 // └───────────────────────────────────────────────────────────────────┘
 
+using System.Buffers;
 using System.Net;
 using System.Security.Cryptography;
 using SIPSorcery.Net;
@@ -37,7 +38,8 @@ public sealed class NetherNetSession
     private readonly Timer _idleCheck;
     private long _lastReceived = Environment.TickCount64;
     private RTCDataChannel? _reliable, _unreliable;
-    private MemoryStream? _partial;
+    private byte[]? _reassemblyBuffer;
+    private int _reassemblyOffset;
     private int _expectedRemaining = -1;
     private bool _connected, _closed;
 
@@ -204,31 +206,48 @@ public sealed class NetherNetSession
             {
                 if (_expectedRemaining >= 0 && remaining != _expectedRemaining)
                 {
-                    _partial = null;
+                    ResetReassemblyBuffer();
                     _expectedRemaining = -1;
                     CloseLocked($"segment {remaining} received, {_expectedRemaining} expected");
                     return;
                 }
-                if (remaining == 0 && _partial is null)
+                if (remaining == 0 && _reassemblyBuffer is null)
                 {
                     complete = data[1..];
                 }
                 else
                 {
-                    _partial ??= new MemoryStream();
-                    if (_partial.Length + (data.Length - 1) > MaxMessageSize)
+                    var segLen = data.Length - 1;
+                    if (_reassemblyBuffer is null)
                     {
-                        _partial = null;
+                        var estimated = Math.Max(32 * 1024, (remaining + 1) * segLen);
+                        _reassemblyBuffer = ArrayPool<byte>.Shared.Rent(Math.Min(MaxMessageSize, estimated));
+                        _reassemblyOffset = 0;
+                    }
+                    else if (_reassemblyOffset + segLen > _reassemblyBuffer.Length)
+                    {
+                        var newCapacity = Math.Min(MaxMessageSize, Math.Max(_reassemblyBuffer.Length * 2, _reassemblyOffset + segLen));
+                        var newRented = ArrayPool<byte>.Shared.Rent(newCapacity);
+                        _reassemblyBuffer.AsSpan(0, _reassemblyOffset).CopyTo(newRented);
+                        ArrayPool<byte>.Shared.Return(_reassemblyBuffer);
+                        _reassemblyBuffer = newRented;
+                    }
+
+                    if (_reassemblyOffset + segLen > MaxMessageSize)
+                    {
+                        ResetReassemblyBuffer();
                         _expectedRemaining = -1;
                         CloseLocked("message too large");
                         return;
                     }
-                    _partial.Write(data, 1, data.Length - 1);
+
+                    data.AsSpan(1).CopyTo(_reassemblyBuffer.AsSpan(_reassemblyOffset));
+                    _reassemblyOffset += segLen;
                     _expectedRemaining = remaining - 1;
                     if (remaining == 0)
                     {
-                        complete = _partial.ToArray();
-                        _partial = null;
+                        complete = _reassemblyBuffer.AsSpan(0, _reassemblyOffset).ToArray();
+                        ResetReassemblyBuffer();
                     }
                 }
                 if (remaining == 0)
@@ -238,6 +257,16 @@ public sealed class NetherNetSession
         }
         if (complete is not null)
             PacketReceived?.Invoke(this, complete);
+    }
+
+    private void ResetReassemblyBuffer()
+    {
+        if (_reassemblyBuffer is not null)
+        {
+            ArrayPool<byte>.Shared.Return(_reassemblyBuffer);
+            _reassemblyBuffer = null;
+        }
+        _reassemblyOffset = 0;
     }
 
     private void Close(string reason)
@@ -251,7 +280,7 @@ public sealed class NetherNetSession
         if (_closed)
             return;
         _closed = true;
-        _partial = null;
+        ResetReassemblyBuffer();
         _idleCheck.Dispose();
         // Closing re-enters SIPSorcery callbacks; do it off this thread and lock.
         _ = Task.Run(() =>

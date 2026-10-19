@@ -105,12 +105,27 @@ public sealed class CommandManager(Logger logger)
         }
 
         // Piped stdin (hosting panels, PowerShell) may start with a UTF-8 BOM.
-        var parts = line.Trim().Trim((char)0xFEFF).TrimStart('/').Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length == 0)
+        var span = line.AsSpan().Trim().Trim((char)0xFEFF).TrimStart('/');
+        if (span.IsEmpty)
             return;
-        if (!_commands.TryGetValue(parts[0], out var command))
+
+        var firstSpace = span.IndexOf(' ');
+        string cmdName;
+        ReadOnlySpan<char> argsSpan;
+        if (firstSpace < 0)
         {
-            sender.Reply($"§cUnknown command '{parts[0]}'. Type help for the list of commands.");
+            cmdName = span.ToString();
+            argsSpan = ReadOnlySpan<char>.Empty;
+        }
+        else
+        {
+            cmdName = span[..firstSpace].ToString();
+            argsSpan = span[(firstSpace + 1)..].TrimStart();
+        }
+
+        if (!_commands.TryGetValue(cmdName, out var command))
+        {
+            sender.Reply($"§cUnknown command '{cmdName}'. Type help for the list of commands.");
             return;
         }
         if (!sender.HasPermission(command.Permission))
@@ -120,9 +135,36 @@ public sealed class CommandManager(Logger logger)
         }
         if (sender.Player is not null)
             logger.Info($"{sender.Name} issued command: {line.Trim()}");
+
+        string[] args;
+        if (argsSpan.IsEmpty)
+        {
+            args = [];
+        }
+        else
+        {
+            var argList = new List<string>(4);
+            var remaining = argsSpan;
+            while (!remaining.IsEmpty)
+            {
+                remaining = remaining.TrimStart();
+                if (remaining.IsEmpty)
+                    break;
+                var nextSpace = remaining.IndexOf(' ');
+                if (nextSpace < 0)
+                {
+                    argList.Add(remaining.ToString());
+                    break;
+                }
+                argList.Add(remaining[..nextSpace].ToString());
+                remaining = remaining[(nextSpace + 1)..];
+            }
+            args = [.. argList];
+        }
+
         try
         {
-            command.Execute(sender, parts[1..]);
+            command.Execute(sender, args);
         }
         catch (CommandUsageException)
         {

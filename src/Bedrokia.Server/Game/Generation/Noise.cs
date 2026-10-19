@@ -12,6 +12,8 @@
 // Ported from Glowstone (MIT), net/glowstone/util/noise/{PerlinNoise,PerlinOctaveGenerator,SimplexNoise,SimplexOctaveGenerator}.java.
 // The Bukkit base classes Glowstone extends are NOT used: the permutation table, improved Perlin noise (Ken Perlin's
 // reference), simplex noise (Stefan Gustavson's public algorithm) and the octave sum are re-implemented here.
+using System.Runtime.CompilerServices;
+
 namespace Bedrokia.Server.Game.Generation;
 
 /// <summary>Improved Perlin noise with a permutation table shuffled from a <see cref="JavaRandom"/>. Immutable.</summary>
@@ -35,15 +37,20 @@ internal class PerlinNoise
         }
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     protected static int Floor(double x)
     {
         var floored = (int)x;
         return x < floored ? floored - 1 : floored;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     protected static double Fade(double t) => t * t * t * (t * (t * 6 - 15) + 10);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     protected static double Lerp(double t, double a, double b) => a + t * (b - a);
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     protected static double Grad(int hash, double x, double y, double z)
     {
         var h = hash & 15;
@@ -179,6 +186,7 @@ internal sealed class SimplexNoise : PerlinNoise
             _permMod12[i] = Perm[i] % 12;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static int SFloor(double x) => x > 0 ? (int)x : (int)x - 1;
 
     protected override void Get2dNoise(double[] noise, double x, double z, int sizeX, int sizeY, double scaleX,
@@ -215,16 +223,21 @@ internal sealed class SimplexNoise : PerlinNoise
         }
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public double Noise(double xin, double yin) => Simplex2D(xin + OffsetX, yin + OffsetY);
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public override double Noise(double xin, double yin, double zin) =>
         Simplex3D(xin + OffsetX, yin + OffsetY, zin + OffsetZ);
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static double Dot(int g, double x, double y) => Grad3[g * 3] * x + Grad3[g * 3 + 1] * y;
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static double Dot(int g, double x, double y, double z) =>
         Grad3[g * 3] * x + Grad3[g * 3 + 1] * y + Grad3[g * 3 + 2] * z;
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private double Simplex2D(double xin, double yin)
     {
         var s = (xin + yin) * F2;
@@ -274,6 +287,7 @@ internal sealed class SimplexNoise : PerlinNoise
         return 70.0 * (n0 + n1 + n2);
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private double Simplex3D(double xin, double yin, double zin)
     {
         var s = (xin + yin + zin) * F3;

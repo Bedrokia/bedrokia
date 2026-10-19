@@ -8,6 +8,7 @@
 // │  Bedrokia - Minecraft: Bedrock Edition server software            │
 // │  Licensed under the Apache License 2.0 - see LICENSE              │
 // └───────────────────────────────────────────────────────────────────┘
+using System.Collections.Frozen;
 using Bedrokia.Server.Game.Custom.Items;
 
 namespace Bedrokia.Server.Game;
@@ -20,7 +21,7 @@ public static class Smelting
 {
     public const int FurnaceCookTicks = 200, FastCookTicks = 100;
 
-    private static readonly Dictionary<string, string> Results = new()
+    private static readonly FrozenDictionary<string, string> Results = new Dictionary<string, string>
     {
         ["raw_iron"] = "iron_ingot", ["raw_gold"] = "gold_ingot", ["raw_copper"] = "copper_ingot",
         ["iron_ore"] = "iron_ingot", ["deepslate_iron_ore"] = "iron_ingot", ["gold_ore"] = "gold_ingot",
@@ -39,10 +40,12 @@ public static class Smelting
         ["stone_bricks"] = "cracked_stone_bricks", ["basalt"] = "smooth_basalt", ["kelp"] = "dried_kelp",
         ["beef"] = "cooked_beef", ["porkchop"] = "cooked_porkchop", ["chicken"] = "cooked_chicken", ["mutton"] = "cooked_mutton",
         ["rabbit"] = "cooked_rabbit", ["cod"] = "cooked_cod", ["salmon"] = "cooked_salmon", ["potato"] = "baked_potato",
-    };
+    }.ToFrozenDictionary();
 
-    private static readonly HashSet<string> Food =
-        ["beef", "porkchop", "chicken", "mutton", "rabbit", "cod", "salmon", "potato", "kelp"];
+    private static readonly FrozenSet<string> Food = new[]
+    {
+        "beef", "porkchop", "chicken", "mutton", "rabbit", "cod", "salmon", "potato", "kelp"
+    }.ToFrozenSet();
 
     /// <summary>What <paramref name="item"/> becomes in this kind of furnace (Furnace, BlastFurnace, Smoker), or null.</summary>
     public static string? Result(string furnace, ItemStack item)

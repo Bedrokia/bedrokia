@@ -28,7 +28,13 @@ public sealed class World
 
     /// <summary>Folder of this world (level.json, chunks/, players/).</summary>
     public string Folder => _directory;
-    private readonly ConcurrentDictionary<(int X, int Z), Lazy<Task<Chunk>>> _chunks = new();
+    private readonly ConcurrentDictionary<long, Lazy<Task<Chunk>>> _chunks = new();
+
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    public static long ChunkKey(int x, int z) => ((long)x << 32) | (uint)z;
+
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    public static (int X, int Z) UnpackChunkKey(long key) => ((int)(key >> 32), (int)key);
 
     /// <summary>Number of cached chunks currently loaded in memory.</summary>
     public int LoadedChunkCount => _chunks.Count;
@@ -95,11 +101,11 @@ public sealed class World
 
     /// <summary>Returns the chunk, loading it from disk or generating it in the background if needed.</summary>
     public Task<Chunk> GetChunkAsync(int x, int z) =>
-        _chunks.GetOrAdd((x, z), key => new Lazy<Task<Chunk>>(() => Task.Run(() => LoadOrGenerate(key.X, key.Z)))).Value;
+        _chunks.GetOrAdd(ChunkKey(x, z), _ => new Lazy<Task<Chunk>>(() => Task.Run(() => LoadOrGenerate(x, z)))).Value;
 
     /// <summary>The chunk if it is already in memory and ready, otherwise null.</summary>
     public Chunk? LoadedChunk(int x, int z) =>
-        _chunks.TryGetValue((x, z), out var lazy) && lazy.IsValueCreated && lazy.Value.IsCompletedSuccessfully ? lazy.Value.Result : null;
+        _chunks.TryGetValue(ChunkKey(x, z), out var lazy) && lazy.IsValueCreated && lazy.Value.IsCompletedSuccessfully ? lazy.Value.Result : null;
 
     /// <summary>Block at a world position, or null when its chunk is not loaded.</summary>
     public BlockType? GetBlock(int x, int y, int z) => LoadedChunk(x >> 4, z >> 4)?.GetBlock(x & 15, y, z & 15);
@@ -154,7 +160,8 @@ public sealed class World
             var chunk = lazy.Value.Result;
             if (!chunk.Dirty)
                 continue;
-            WriteAtomically(ChunkFile(key.X, key.Z), chunk.Serialize());
+            var (cx, cz) = UnpackChunkKey(key);
+            WriteAtomically(ChunkFile(cx, cz), chunk.Serialize());
             chunk.Dirty = false;
             saved++;
         }
@@ -169,7 +176,8 @@ public sealed class World
             return;
         foreach (var (key, lazy) in _chunks)
         {
-            if (keep(key.X, key.Z) || !lazy.IsValueCreated || !lazy.Value.IsCompletedSuccessfully || lazy.Value.Result.Dirty)
+            var (cx, cz) = UnpackChunkKey(key);
+            if (keep(cx, cz) || !lazy.IsValueCreated || !lazy.Value.IsCompletedSuccessfully || lazy.Value.Result.Dirty)
                 continue;
             _chunks.TryRemove(key, out _);
         }

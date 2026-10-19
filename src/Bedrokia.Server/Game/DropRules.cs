@@ -9,6 +9,8 @@
 // │  Licensed under the Apache License 2.0 - see LICENSE              │
 // └───────────────────────────────────────────────────────────────────┘
 
+using System.Collections.Frozen;
+
 namespace Bedrokia.Server.Game;
 
 /// <summary>
@@ -19,7 +21,7 @@ namespace Bedrokia.Server.Game;
 public static class DropRules
 {
     /// <summary>Tool tier: 0 = any pickaxe (wood), 1 = stone, 2 = iron, 3 = diamond.</summary>
-    private static readonly Dictionary<string, int> PickaxeTier = new()
+    private static readonly FrozenDictionary<string, int> PickaxeTier = new Dictionary<string, int>
     {
         ["stone"] = 0, ["cobblestone"] = 0, ["deepslate"] = 0, ["cobbled_deepslate"] = 0, ["granite"] = 0, ["diorite"] = 0,
         ["andesite"] = 0, ["sandstone"] = 0, ["red_sandstone"] = 0, ["tuff"] = 0, ["calcite"] = 0, ["netherrack"] = 0,
@@ -30,10 +32,10 @@ public static class DropRules
         ["emerald_ore"] = 2, ["deepslate_emerald_ore"] = 2, ["redstone_ore"] = 2, ["deepslate_redstone_ore"] = 2,
         ["lit_redstone_ore"] = 2, ["lit_deepslate_redstone_ore"] = 2, ["gold_block"] = 2, ["diamond_block"] = 2,
         ["emerald_block"] = 2, ["obsidian"] = 3, ["crying_obsidian"] = 3, ["ancient_debris"] = 3, ["netherite_block"] = 3,
-    };
+    }.ToFrozenDictionary();
 
     /// <summary>Block name → (item, min count, max count); an empty item means "drops nothing".</summary>
-    private static readonly Dictionary<string, (string Item, int Min, int Max)> Special = new()
+    private static readonly FrozenDictionary<string, (string Item, int Min, int Max)> Special = new Dictionary<string, (string Item, int Min, int Max)>
     {
         ["stone"] = ("cobblestone", 1, 1), ["deepslate"] = ("cobbled_deepslate", 1, 1),
         ["grass_block"] = ("dirt", 1, 1), ["mycelium"] = ("dirt", 1, 1), ["podzol"] = ("dirt", 1, 1), ["dirt_path"] = ("dirt", 1, 1),
@@ -56,16 +58,16 @@ public static class DropRules
         ["large_fern"] = ("", 0, 0), ["deadbush"] = ("stick", 0, 2), ["vine"] = ("", 0, 0), ["fire"] = ("", 0, 0),
         ["water"] = ("", 0, 0), ["lava"] = ("", 0, 0), ["flowing_water"] = ("", 0, 0), ["flowing_lava"] = ("", 0, 0),
         ["budding_amethyst"] = ("", 0, 0), ["spawner"] = ("", 0, 0), ["infested_stone"] = ("", 0, 0),
-    };
+    }.ToFrozenDictionary();
 
     /// <summary>Leaves: sapling (5 %) and, for oak and dark oak, apple (0.5 %).</summary>
-    private static readonly Dictionary<string, string> LeafSaplings = new()
+    private static readonly FrozenDictionary<string, string> LeafSaplings = new Dictionary<string, string>
     {
         ["oak_leaves"] = "oak_sapling", ["birch_leaves"] = "birch_sapling", ["spruce_leaves"] = "spruce_sapling",
         ["jungle_leaves"] = "jungle_sapling", ["acacia_leaves"] = "acacia_sapling", ["dark_oak_leaves"] = "dark_oak_sapling",
         ["cherry_leaves"] = "cherry_sapling", ["mangrove_leaves"] = "", ["azalea_leaves"] = "azalea",
         ["azalea_leaves_flowered"] = "flowering_azalea", ["pale_oak_leaves"] = "pale_oak_sapling",
-    };
+    }.ToFrozenDictionary();
 
     /// <summary>Items dropped when <paramref name="block"/> is broken in survival with <paramref name="tool"/> held.</summary>
     public static List<ItemStack> Drops(BlockType block, ItemStack? tool, Random random)
@@ -123,7 +125,7 @@ public static class DropRules
             drops.Add(stack);
     }
 
-    private static readonly Dictionary<string, float> Hardness = LoadHardness();
+    private static readonly FrozenDictionary<string, float> Hardness = LoadHardness().ToFrozenDictionary();
 
     /// <summary>
     /// Ticks needed to break <paramref name="block"/> with <paramref name="tool"/> (0 = instant).

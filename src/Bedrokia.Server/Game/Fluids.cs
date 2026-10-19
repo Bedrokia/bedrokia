@@ -23,8 +23,8 @@ public sealed class Fluids(BedrokiaServer server, World world)
 {
     private const int MaxUpdatesPerTick = 2000;
 
-    private readonly SortedDictionary<long, HashSet<(int X, int Y, int Z)>> _due = [];
-    private readonly HashSet<(int X, int Y, int Z)> _queued = [];
+    private readonly SortedDictionary<long, HashSet<long>> _due = [];
+    private readonly HashSet<long> _queued = [];
 
     public static bool IsLiquid(BlockType? block) => block is not null && block.Name is "minecraft:water" or "minecraft:flowing_water"
         or "minecraft:lava" or "minecraft:flowing_lava";
@@ -57,13 +57,14 @@ public sealed class Fluids(BedrokiaServer server, World world)
 
     private void Schedule(int x, int y, int z)
     {
-        if (!_queued.Add((x, y, z)) || world.GetBlock(x, y, z) is not { } block)
+        var key = BlockPos.Pack(x, y, z);
+        if (!_queued.Add(key) || world.GetBlock(x, y, z) is not { } block)
             return;
         // Lava is faster and flows further in the Nether (vanilla: every 10 ticks, 7 blocks).
         var due = server.CurrentTick + (IsWater(block) || !IsLiquid(block) ? 5 : world.Dimension == 1 ? 10 : 30);
         if (!_due.TryGetValue(due, out var set))
             _due[due] = set = [];
-        set.Add((x, y, z));
+        set.Add(key);
     }
 
     public void Tick()
@@ -73,10 +74,11 @@ public sealed class Fluids(BedrokiaServer server, World world)
         {
             var (tick, positions) = _due.First();
             _due.Remove(tick);
-            foreach (var at in positions)
+            foreach (var packed in positions)
             {
-                _queued.Remove(at);
-                Update(at.X, at.Y, at.Z);
+                _queued.Remove(packed);
+                var (x, y, z) = BlockPos.Unpack(packed);
+                Update(x, y, z);
                 budget--;
             }
         }
