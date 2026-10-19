@@ -10,6 +10,7 @@
 // └───────────────────────────────────────────────────────────────────┘
 
 using Bedrokia.Server.Core;
+using Bedrokia.Server.Events;
 using Bedrokia.Server.Game;
 using Bedrokia.Server.Network;
 
@@ -339,6 +340,21 @@ public sealed class MobManager(BedrokiaServer server)
                     player = targetEv.Target;
                 }
             }
+            if (player is not null && server.Events.HasMobTarget)
+            {
+                var mobTargetEv = new MobTargetEvent((ulong)mob.EntityId, mob.Kind.Id, (ulong)player.EntityId);
+                if (!server.Events.OnMobTarget(mobTargetEv))
+                {
+                    survivalTarget = false;
+                    player = null;
+                }
+                else if (mobTargetEv.TargetEntityId != (ulong)player.EntityId)
+                {
+                    player = server.Players.FirstOrDefault(p => (ulong)p.EntityId == mobTargetEv.TargetEntityId);
+                    if (player is null)
+                        survivalTarget = false;
+                }
+            }
         }
         if (mob.Kind.Hostile && survivalTarget && player is not null && distance < 16 && (!day || mob.Kind != MobKind.Spider || distance < 4))
         {
@@ -353,7 +369,19 @@ public sealed class MobManager(BedrokiaServer server)
                     mob.AttackCooldown = 40;
                     Broadcast(mob, EntityPackets.Swing(mob.EntityId));
                     if (_random.NextDouble() < 0.7)
-                        player.Damage(Scaled(2 + _random.Next(3)), mob.X, mob.Z, source: DamageSource.EntityAttack(mob));
+                    {
+                        var dmg = Scaled(2 + _random.Next(3));
+                        if (server.Events.HasMobAttack)
+                        {
+                            var attackEv = new MobAttackEvent((ulong)mob.EntityId, mob.Kind.Id, (ulong)player.EntityId, dmg);
+                            if (server.Events.OnMobAttack(attackEv))
+                                player.Damage(attackEv.Damage, mob.X, mob.Z, source: DamageSource.EntityAttack(mob));
+                        }
+                        else
+                        {
+                            player.Damage(dmg, mob.X, mob.Z, source: DamageSource.EntityAttack(mob));
+                        }
+                    }
                 }
             }
             else if (mob.Kind == MobKind.Creeper)
@@ -375,7 +403,17 @@ public sealed class MobManager(BedrokiaServer server)
             {
                 mob.AttackCooldown = 20;
                 Broadcast(mob, EntityPackets.Swing(mob.EntityId));
-                player.Damage(Scaled(mob.Kind.Damage), mob.X, mob.Z, source: DamageSource.EntityAttack(mob));
+                var dmg = Scaled(mob.Kind.Damage);
+                if (server.Events.HasMobAttack)
+                {
+                    var attackEv = new MobAttackEvent((ulong)mob.EntityId, mob.Kind.Id, (ulong)player.EntityId, dmg);
+                    if (server.Events.OnMobAttack(attackEv))
+                        player.Damage(attackEv.Damage, mob.X, mob.Z, source: DamageSource.EntityAttack(mob));
+                }
+                else
+                {
+                    player.Damage(dmg, mob.X, mob.Z, source: DamageSource.EntityAttack(mob));
+                }
             }
         }
         else if (mob.PanicTicks > 0 && mob.FleeFrom is { } from)
@@ -538,7 +576,6 @@ public sealed class MobManager(BedrokiaServer server)
         }
         if (mob.Dead)
         {
-            Broadcast(mob, EntityPackets.Event(mob.EntityId, EntityPackets.EventDeath));
             var drops = new List<ItemStack>();
             if (from is not null) // killed by a player: loot
             {
@@ -551,6 +588,22 @@ public sealed class MobManager(BedrokiaServer server)
                 }
             }
             var droppedXp = mob.Kind.Hostile ? 5 : 1 + _random.Next(3);
+            var dropItems = true;
+
+            if (server.Events.HasEntityKilled)
+            {
+                var killerId = killer is not null ? (ulong)killer.EntityId : 0UL;
+                var killedEv = new EntityKilledEvent((ulong)mob.EntityId, mob.Kind.Id, killerId, drops, droppedXp, dropItems);
+                if (!server.Events.OnEntityKilled(killedEv))
+                {
+                    mob.Health = 1; // survives with 1 HP
+                    return true;
+                }
+                droppedXp = killedEv.Experience;
+                dropItems = killedEv.DropItems;
+            }
+
+            Broadcast(mob, EntityPackets.Event(mob.EntityId, EntityPackets.EventDeath));
             if (server.Events.HasEntityDeath)
             {
                 var deathEv = new EntityDeathEvent(mob, killer, drops, droppedXp);
@@ -558,8 +611,11 @@ public sealed class MobManager(BedrokiaServer server)
                 droppedXp = deathEv.DroppedXp;
             }
             killer?.AddExperience(droppedXp);
-            foreach (var stack in drops)
-                server.DropItem(stack, (float)mob.X, (float)mob.Y + 0.5f, (float)mob.Z);
+            if (dropItems)
+            {
+                foreach (var stack in drops)
+                    server.DropItem(stack, (float)mob.X, (float)mob.Y + 0.5f, (float)mob.Z);
+            }
         }
         return true;
     }

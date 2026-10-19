@@ -19,14 +19,31 @@ namespace Bedrokia.Server.Events;
 /// </summary>
 public sealed class BlockGrowEvent : CancellableEvent
 {
+    public BlockPos Pos => Position;
     public BlockPos Position { get; }
     public BlockType OldBlock { get; }
     public BlockType NewBlock { get; set; }
+    public uint OldBlockId => (uint)OldBlock.NetworkId;
+    public uint NewBlockId
+    {
+        get => (uint)NewBlock.NetworkId;
+        set => NewBlock = Blocks.ById(unchecked((ushort)value)) ?? NewBlock;
+    }
+    public bool BoneMeal { get; }
 
-    public BlockGrowEvent(BlockPos position, BlockType oldBlock, BlockType newBlock)
+    public BlockGrowEvent(BlockPos position, BlockType oldBlock, BlockType newBlock, bool boneMeal = false)
     {
         Position = position;
         OldBlock = oldBlock;
         NewBlock = newBlock;
+        BoneMeal = boneMeal;
+    }
+
+    public BlockGrowEvent(BlockPos pos, uint oldBlockId, bool boneMeal, uint newBlockId)
+    {
+        Position = pos;
+        OldBlock = Blocks.ById(unchecked((ushort)oldBlockId)) ?? Blocks.Air;
+        NewBlock = Blocks.ById(unchecked((ushort)newBlockId)) ?? Blocks.Air;
+        BoneMeal = boneMeal;
     }
 }
