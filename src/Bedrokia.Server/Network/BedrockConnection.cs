@@ -849,6 +849,16 @@ public sealed partial class BedrockConnection
                 Send(InventoryPackets.InventorySlot(InventoryPackets.WindowInventory, Inventory.SelectedSlot, Inventory.Held));
                 return;
             }
+            if (Entities.ProjectileManager.IsThrowable(Inventory.Held))
+            {
+                var held = Inventory.Held!;
+                if (_server.Projectiles.Launch(this, held.Type.Name, potion: held.Type.Name == Entities.ProjectileManager.SplashPotion ? held.Meta : (short)0) is not null
+                    && GameMode != GameMode.Creative)
+                    Send(Inventory.ConsumeHeld());
+                else
+                    Send(InventoryPackets.InventorySlot(InventoryPackets.WindowInventory, Inventory.SelectedSlot, Inventory.Held));
+                return;
+            }
             if (!TryEquipHeld()) // right click with armour in hand: the client already shows it worn
                 StartEating();
             return;
