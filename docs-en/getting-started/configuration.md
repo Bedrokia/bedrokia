@@ -44,6 +44,7 @@ server.log            log
 | `force-resources` | `off` | players must accept the resource packs |
 | `autosave-interval` | `60` | seconds between automatic saves |
 | `webrtc-ports` | `auto` | players' UDP ports: `auto` (server port + `max-players` + 5) or `first-last` |
+| `public-ip` | *(empty)* | IPv4 players connect to, needed when the server runs in Docker or behind NAT (the Pterodactyl egg fills it in) |
 | `check-updates` | `on` | checks every 6 h for a new version and announces it in the console with its link |
 | `log-level` | `info` | `debug`, `info`, `warn`, `error` |
 

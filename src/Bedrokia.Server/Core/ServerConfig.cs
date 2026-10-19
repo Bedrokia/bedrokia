@@ -74,6 +74,9 @@ public sealed class ServerConfig
     /// <remarks>WebRTC gives each connected player its own UDP port, so a single port cannot serve several players.</remarks>
     public string WebRtcPorts { get; set; } = "auto";
 
+    /// <summary>IPv4 address players reach the server at, given to WebRTC; empty = the machine's own (set it behind Docker/NAT).</summary>
+    public string PublicIp { get; set; } = "";
+
     public (int First, int Last) WebRtcPortRange() =>
         WebRtcPorts.Equals("auto", StringComparison.OrdinalIgnoreCase)
             ? Port == 0 ? (0, 0) : (Port, Math.Min(65535, Port + MaxPlayers + 4))
@@ -148,6 +151,7 @@ public sealed class ServerConfig
         ("force-resources", "on/off: players must accept the server's resource packs to join", c => OnOff(c.ForceResourcePacks), (c, v) => c.ForceResourcePacks = ParseBool(v)),
         ("autosave-interval", "Seconds between automatic saves", c => c.AutosaveInterval.ToString(), (c, v) => c.AutosaveInterval = int.Parse(v)),
         ("webrtc-ports", "UDP ports for players: auto = server-port and the next ones (one per slot), or first-last", c => c.WebRtcPorts, (c, v) => c.WebRtcPorts = v),
+        ("public-ip", "IPv4 players connect to, for a server in Docker or behind NAT (Pterodactyl); empty = this machine's addresses", c => c.PublicIp, (c, v) => c.PublicIp = v),
         ("check-updates", "on/off: tell in the console when a new Bedrokia version is released", c => OnOff(c.CheckUpdates), (c, v) => c.CheckUpdates = ParseBool(v)),
         ("log-level", "debug, info, warn or error", c => c.LogLevel.ToString().ToLowerInvariant(), (c, v) => c.LogLevel = Enum.Parse<LogLevel>(v, ignoreCase: true)),
     ];
