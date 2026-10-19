@@ -46,6 +46,8 @@ public sealed partial class BedrokiaServer
         BroadcastIn(world, Packets.UpdateBlock(x, y, z, block.NetworkId));
         world.Fluids.Wake(x, y, z);
         UpdateShapes(x, y, z, world);
+        if (block.Name == "minecraft:fire")
+            ScheduleFire(world, x, y, z);
     }
 
     /// <summary>A block changed at (x, y, z): walls there and around reshape their connections.</summary>
@@ -102,7 +104,7 @@ public sealed partial class BedrokiaServer
                 var r = _blockRandom.Next(4096);
                 int x = r & 15, y = Chunk.MinY + section * 16 + (r >> 8), z = r >> 4 & 15;
                 var block = chunk.GetBlock(x, y, z);
-                if (!block.IsAir)
+                if (!block.IsAir && !RandomTickBlock(world, cx * 16 + x, y, cz * 16 + z, block))
                     Grow(cx * 16 + x, y, cz * 16 + z, boneMeal: false, world);
             }
         }

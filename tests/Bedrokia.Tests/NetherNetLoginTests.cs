@@ -79,6 +79,18 @@ public sealed class NetherNetLoginTests : IAsyncDisposable
                     return packet;
             }
         }
+
+        /// <summary>The block sent for (x, y, z), skipping the updates of other blocks (grass spreading, leaves...).</summary>
+        public async Task<uint> ExpectBlockAt(int x, int y, int z)
+        {
+            while (true)
+            {
+                var reader = new BedrockReader(await Expect(PacketId.UpdateBlock));
+                reader.VarUInt32();
+                if ((reader.VarInt32(), reader.VarInt32(), reader.VarInt32()) == (x, y, z))
+                    return reader.VarUInt32();
+            }
+        }
     }
 
     private async Task<Client> ConnectAsync(ECDsa identityKey)
@@ -164,10 +176,7 @@ public sealed class NetherNetLoginTests : IAsyncDisposable
         alice.Send(PacketId.InventoryTransaction, w => w.VarInt32(0).Bool(false).VarUInt32(2).VarUInt32(0)
             .VarInt32(2).Byte(0).BlockPos(spawn.X + 2, spawn.Y - 1, spawn.Z)
             .Byte(1).VarInt32(0).Byte(0).Int16(0).UInt16(0).VarUInt32(0).Bool(false).VarUInt32(0).VarUInt32(0)); // face, slot, hand, empty hand
-        var update = new BedrockReader(await bob.Expect(PacketId.UpdateBlock));
-        update.VarUInt32();
-        Assert.Equal((spawn.X + 2, spawn.Y - 1, spawn.Z), (update.VarInt32(), update.VarInt32(), update.VarInt32()));
-        Assert.Equal(Bedrokia.Server.Game.Blocks.Air.NetworkId, update.VarUInt32());
+        Assert.Equal(Bedrokia.Server.Game.Blocks.Air.NetworkId, await bob.ExpectBlockAt(spawn.X + 2, spawn.Y - 1, spawn.Z));
         await bob.Expect(Bedrokia.Server.Network.InventoryPackets.AddItemActorId);
 
         // Alice stands on it: she picks it up into hotbar slot 0.
@@ -191,10 +200,7 @@ public sealed class NetherNetLoginTests : IAsyncDisposable
             .VarInt32(0).Byte(0).BlockPos(spawn.X + 2, spawn.Y - 1, spawn.Z)
             .Byte(1).VarInt32(0).Byte(0) // face up, hotbar slot, hand
             .Int16(dirtItem.RuntimeId).UInt16(1).VarUInt32(0).Bool(false).VarUInt32(dirt.NetworkId).VarUInt32(0));
-        var placed = new BedrockReader(await bob.Expect(PacketId.UpdateBlock));
-        placed.VarUInt32();
-        Assert.Equal((spawn.X + 2, spawn.Y - 1, spawn.Z), (placed.VarInt32(), placed.VarInt32(), placed.VarInt32()));
-        Assert.Equal(dirt.NetworkId, placed.VarUInt32());
+        Assert.Equal(dirt.NetworkId, await bob.ExpectBlockAt(spawn.X + 2, spawn.Y - 1, spawn.Z));
         var emptied = new BedrockReader(await alice.Expect(Bedrokia.Server.Network.InventoryPackets.InventorySlotId));
         emptied.VarUInt32();
         emptied.VarUInt32();
@@ -210,10 +216,7 @@ public sealed class NetherNetLoginTests : IAsyncDisposable
             .VarInt32(0).Byte(0).BlockPos(spawn.X + 2, spawn.Y - 1, spawn.Z)
             .Byte(1).VarInt32(0).Byte(0)
             .Int16(dirtItem.RuntimeId).UInt16(1).VarUInt32(0).Bool(false).VarUInt32(dirt.NetworkId).VarUInt32(0));
-        var refused = new BedrockReader(await alice.Expect(PacketId.UpdateBlock));
-        refused.VarUInt32();
-        Assert.Equal((spawn.X + 2, spawn.Y, spawn.Z), (refused.VarInt32(), refused.VarInt32(), refused.VarInt32()));
-        Assert.NotEqual(dirt.NetworkId, refused.VarUInt32()); // the block that really is there (air or grass)
+        Assert.NotEqual(dirt.NetworkId, await alice.ExpectBlockAt(spawn.X + 2, spawn.Y, spawn.Z)); // the block that really is there (air or grass)
 
         // Alice is kicked: Bob removes her.
         _server.EnqueueCommand("kick Alice");

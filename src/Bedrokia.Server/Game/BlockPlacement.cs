@@ -67,6 +67,7 @@ public static class BlockPlacement
                 "attachment" => face switch { 0 => "hanging", 1 => "standing", _ => "side" },
                 "hanging" => (byte)(face == 0 ? 1 : 0),
                 "attached_bit" => (byte)0,
+                "persistent_bit" => (byte)1, // leaves placed by a player never decay
                 "upper_block_bit" or "head_piece_bit" => (byte)0,
                 _ => null,
             };
