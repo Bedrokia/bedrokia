@@ -87,7 +87,28 @@ These `using` directives are automatic: `System`, `System.Collections.Generic`, 
 All plugin code runs on the **game thread** (20 ticks per second): no locks needed, but never block (no
 `Thread.Sleep`, no synchronous network request).
 
-## What `Plugin` gives you
+Source generators (`[GeneratedRegex]`, `[LibraryImport]`...) do not run: write `new Regex(...)`.
+
+### Usage and auto-completion (Tab)
+
+The usage of a command tells the game what to propose when the player presses Tab. Each parameter is `<name>`
+(required) or `[name]` (optional), with a type after `:`:
+
+| Written | The game proposes |
+|---|---|
+| `<player:player>` | the online players (and `@a`, `@p`...) |
+| `<amount:int>` / `<amount:float>` | a number |
+| `<mode:survival\|creative>` | these choices |
+| `<enabled:bool>` | `true` / `false` |
+| `<position:pos>` | x y z coordinates |
+| `[reason...]` or `<message:text>` | the rest of the line |
+| `create` (word without brackets) | a subcommand |
+
+Several forms are separated by `||`:
+`"create <name> || invite <player:player> || kick <player:player> [reason...]"`. Types are not shown in usage
+messages (`/f create <name> | invite <player> | ...`).
+
+## What `Plugin` provides
 
 | Member | Role |
 |---|---|

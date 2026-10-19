@@ -87,6 +87,27 @@ Ces `using` sont automatiques : `System`, `System.Collections.Generic`, `System.
 Tout le code des plugins s'exécute sur le **thread du jeu** (20 ticks par seconde) : pas besoin de verrous, mais il ne
 faut pas bloquer (pas de `Thread.Sleep`, pas de requête réseau synchrone).
 
+Les générateurs de source (`[GeneratedRegex]`, `[LibraryImport]`...) ne tournent pas : écrire `new Regex(...)`.
+
+### Usage et auto-complétion (Tab)
+
+L'usage d'une commande dit au jeu quoi proposer quand le joueur appuie sur Tab. Chaque paramètre est `<nom>`
+(obligatoire) ou `[nom]` (facultatif), avec un type après `:` :
+
+| Écriture | Le jeu propose |
+|---|---|
+| `<joueur:player>` | les joueurs connectés (et `@a`, `@p`...) |
+| `<montant:int>` / `<montant:float>` | un nombre |
+| `<mode:survival\|creative>` | ces choix |
+| `<actif:bool>` | `true` / `false` |
+| `<position:pos>` | des coordonnées x y z |
+| `[raison...]` ou `<message:text>` | le reste de la ligne |
+| `create` (mot sans crochets) | une sous-commande |
+
+Plusieurs formes se séparent par `||` :
+`"create <nom> || invite <joueur:player> || kick <joueur:player> [raison...]"`. Les types ne s'affichent pas dans
+les messages d'usage (`/f create <nom> | invite <joueur> | ...`).
+
 ## Ce que fournit `Plugin`
 
 | Membre | Rôle |

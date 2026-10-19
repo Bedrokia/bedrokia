@@ -694,7 +694,7 @@ public sealed partial class BedrokiaServer
         Add("help", "Lists the available commands.", "", "bedrokia.command.help", (sender, _) =>
         {
             foreach (var command in Commands.All.Where(c => sender.HasPermission(c.Permission)))
-                sender.Reply($"§6/{command.Name} {command.Usage}§r - {command.Description}");
+                sender.Reply($"§6/{command.Name} {CommandManager.DisplayUsage(command.Usage)}§r - {command.Description}");
         });
         Add("version", "Shows the server and Bedrock versions.", "", "bedrokia.command.version", (sender, _) =>
             sender.Reply($"{Product.Name} {Version} - Bedrock {ProtocolInfo.GameVersion} (protocol {ProtocolInfo.Version})"));
@@ -731,7 +731,7 @@ public sealed partial class BedrokiaServer
                 throw new CommandUsageException();
             BroadcastMessage($"* {sender.Name} {string.Join(' ', args)}");
         });
-        Add("tell", "Sends a private message.", "<player> <message...>", "bedrokia.command.tell", (sender, args) =>
+        Add("tell", "Sends a private message.", "<player:player> <message...>", "bedrokia.command.tell", (sender, args) =>
         {
             if (args.Length < 2)
                 throw new CommandUsageException();
@@ -742,8 +742,8 @@ public sealed partial class BedrokiaServer
                 sender.Reply($"§7You whisper to {target.Name}: {message}");
             }
         });
-        Alias("msg", "tell", "<player> <message...>", "bedrokia.command.tell");
-        Alias("w", "tell", "<player> <message...>", "bedrokia.command.tell");
+        Alias("msg", "tell", "<player:player> <message...>", "bedrokia.command.tell");
+        Alias("w", "tell", "<player:player> <message...>", "bedrokia.command.tell");
         Add("spawn", "Teleports you to the world spawn.", "", "bedrokia.command.spawn", (sender, _) =>
         {
             var (x, y, z) = World.Spawn;
@@ -762,7 +762,7 @@ public sealed partial class BedrokiaServer
             sender.Reply($"§7World '{worldName}': §f{chunkCount} §7chunks, §f{TotalEntitiesCount} §7entities, §f{_players.Count}/{Config.MaxPlayers} §7players");
         });
 
-        Add("timings", "Profiles server performance and subsystem timings.", "[on|off|reset|report]", "bedrokia.command.timings", (sender, args) =>
+        Add("timings", "Profiles server performance and subsystem timings.", "[action:on|off|reset|report]", "bedrokia.command.timings", (sender, args) =>
         {
             if (args.Length == 0)
             {
@@ -824,7 +824,7 @@ public sealed partial class BedrokiaServer
                 throw new CommandUsageException();
             BroadcastMessage($"§d[{sender.Name}] {string.Join(' ', args)}");
         });
-        Add("gamemode", "Changes a game mode (survival, creative, adventure).", "<mode> [player]", "bedrokia.command.gamemode", (sender, args) =>
+        Add("gamemode", "Changes a game mode (survival, creative, adventure, spectator).", "<mode:survival|creative|adventure|spectator> [player:player]", "bedrokia.command.gamemode", (sender, args) =>
         {
             if (args.Length is 0 or > 2 || !TryParseGameMode(args[0], out var mode))
                 throw new CommandUsageException();
@@ -835,8 +835,8 @@ public sealed partial class BedrokiaServer
                 sender.Reply($"Set {target.Name}'s game mode to {mode}.");
             }
         });
-        Alias("gm", "gamemode", "<mode> [player]", "bedrokia.command.gamemode");
-        Add("give", "Gives items to a player.", "<player> <item> [amount]", "bedrokia.command.give", (sender, args) =>
+        Alias("gm", "gamemode", "<mode:survival|creative|adventure|spectator> [player:player]", "bedrokia.command.gamemode");
+        Add("give", "Gives items to a player.", "<player:player> <item> [amount:int]", "bedrokia.command.give", (sender, args) =>
         {
             if (args.Length is < 2 or > 3)
                 throw new CommandUsageException();
@@ -855,7 +855,7 @@ public sealed partial class BedrokiaServer
                 sender.Reply($"Gave {amount} {(template.Type.Name.StartsWith("minecraft:") ? template.Type.Name["minecraft:".Length..] : template.Type.Name)} to {target.Name}.");
             }
         });
-        Add("clear", "Empties a player's inventory.", "[player]", "bedrokia.command.clear", (sender, args) =>
+        Add("clear", "Empties a player's inventory.", "[player:player]", "bedrokia.command.clear", (sender, args) =>
         {
             foreach (var target in args.Length > 0 ? Targets(sender, args[0]) : [Self(sender)])
             {
@@ -866,7 +866,7 @@ public sealed partial class BedrokiaServer
                 sender.Reply($"Cleared the inventory of {target.Name}.");
             }
         });
-        Add("tp", "Teleports a player to a player or to coordinates.", "<target> [destination] [x] [y] [z]", "bedrokia.command.tp", (sender, args) =>
+        Add("tp", "Teleports a player to a player or to coordinates.", "<target:player> [destination:player] || <target:player> <position:pos>", "bedrokia.command.tp", (sender, args) =>
         {
             switch (args.Length)
             {
@@ -892,8 +892,8 @@ public sealed partial class BedrokiaServer
                     throw new CommandUsageException();
             }
         });
-        Alias("teleport", "tp", "<target> [destination] [x] [y] [z]", "bedrokia.command.tp");
-        Add("time", "Changes the time of day.", "<set|add> <value>", "bedrokia.command.time", (sender, args) =>
+        Alias("teleport", "tp", "<target:player> [destination:player] || <target:player> <position:pos>", "bedrokia.command.tp");
+        Add("time", "Changes the time of day.", "<action:set|add> <value>", "bedrokia.command.time", (sender, args) =>
         {
             if (args.Length != 2)
                 throw new CommandUsageException();
@@ -923,7 +923,7 @@ public sealed partial class BedrokiaServer
             sender.Reply($"World spawn set to {World.Spawn}.");
         });
 
-        Add("op", "Makes a player a server operator.", "<player>", "bedrokia.command.op", (sender, args) =>
+        Add("op", "Makes a player a server operator.", "<player:player>", "bedrokia.command.op", (sender, args) =>
         {
             if (args.Length != 1)
                 throw new CommandUsageException();
@@ -934,14 +934,14 @@ public sealed partial class BedrokiaServer
                 player.SendMessage("§eYou are now a server operator.");
             }
         });
-        Add("deop", "Removes operator status from a player.", "<player>", "bedrokia.command.deop", (sender, args) =>
+        Add("deop", "Removes operator status from a player.", "<player:player>", "bedrokia.command.deop", (sender, args) =>
         {
             if (args.Length != 1)
                 throw new CommandUsageException();
             sender.Reply(Ops.Remove(args[0]) ? $"{args[0]} is no longer an operator." : $"{args[0]} is not an operator.");
             FindPlayer(args[0])?.SendCommands();
         });
-        Add("whitelist", "Manages the whitelist.", "<on|off|add|remove|list> [player]", "bedrokia.command.whitelist", (sender, args) =>
+        Add("whitelist", "Manages the whitelist.", "<action:on|off|add|remove|list> [player:player]", "bedrokia.command.whitelist", (sender, args) =>
         {
             switch (args.Length > 0 ? args[0].ToLowerInvariant() : "")
             {
@@ -965,7 +965,7 @@ public sealed partial class BedrokiaServer
                     throw new CommandUsageException();
             }
         });
-        Add("kick", "Disconnects a player.", "<player> [reason...]", "bedrokia.command.kick", (sender, args) =>
+        Add("kick", "Disconnects a player.", "<player:player> [reason...]", "bedrokia.command.kick", (sender, args) =>
         {
             if (args.Length == 0)
                 throw new CommandUsageException();
@@ -975,7 +975,7 @@ public sealed partial class BedrokiaServer
                 sender.Reply($"Kicked {target.Name}.");
             }
         });
-        Add("ban", "Bans a player by name.", "<player> [reason...]", "bedrokia.command.ban", (sender, args) =>
+        Add("ban", "Bans a player by name.", "<player:player> [reason...]", "bedrokia.command.ban", (sender, args) =>
         {
             if (args.Length == 0)
                 throw new CommandUsageException();
@@ -1006,7 +1006,7 @@ public sealed partial class BedrokiaServer
             Mobs.Spawn(kind, x, y - BedrockConnection.EyeHeight, z);
             sender.Reply($"Summoned {kind.Id["minecraft:".Length..]}.");
         });
-        Add("enchant", "Enchants the held item.", "<enchantment> [level]", "bedrokia.command.enchant", (sender, args) =>
+        Add("enchant", "Enchants the held item.", "<enchantment> [level:int]", "bedrokia.command.enchant", (sender, args) =>
         {
             if (args.Length is < 1 or > 2)
                 throw new CommandUsageException();
@@ -1048,7 +1048,7 @@ public sealed partial class BedrokiaServer
             
             sender.Reply($"Enchanted {itemName} with {enchant.Name} {level}.");
         });
-        Add("xp", "Gives experience: a number of points, or levels with an L suffix (e.g. 30L).", "<amount> [player]", "bedrokia.command.xp", (sender, args) =>
+        Add("xp", "Gives experience: a number of points, or levels with an L suffix (e.g. 30L).", "<amount> [player:player]", "bedrokia.command.xp", (sender, args) =>
         {
             if (args.Length is 0 or > 2)
                 throw new CommandUsageException();
@@ -1065,7 +1065,7 @@ public sealed partial class BedrokiaServer
         });
         Add("banlist", "Lists banned players.", "", "bedrokia.command.banlist", (sender, _) => sender.Reply($"Banned: {string.Join(", ", Bans.Names)}"));
 
-        Add("perm", "Manages permissions and groups.", "<user|group> ...", "bedrokia.command.permission", (sender, args) =>
+        Add("perm", "Manages permissions and groups.", "<target:user|group> [args...]", "bedrokia.command.permission", (sender, args) =>
         {
             if (args.Length < 2)
                 throw new CommandUsageException();
@@ -1193,6 +1193,6 @@ public sealed partial class BedrokiaServer
                     throw new CommandUsageException();
             }
         });
-        Alias("permission", "perm", "<user|group> ...", "bedrokia.command.permission");
+        Alias("permission", "perm", "<target:user|group> [args...]", "bedrokia.command.permission");
     }
 }
