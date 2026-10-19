@@ -24,9 +24,13 @@ public sealed partial class BedrockConnection
     private const uint ChangeDimensionId = 61, StopSoundId = 87, PlayerActionId = 36;
     private const int PlayerActionDimensionChangeDone = 14;
     private const int PortalWaitTicks = 80; // survival: 4 s standing in a portal
+    // After a dimension change the client keeps sending positions from the old dimension for a while: portals are
+    // ignored meanwhile, otherwise a stale position "leaves" the portal and the player bounces back and forth.
+    private const int PortalCooldownTicks = 100;
 
     private World? _world;
     private int _portalTicks;
+    private int _portalCooldown;
     private bool _leftPortal = true; // after going through a portal, the player must step out before using one again
 
     /// <summary>The world (dimension) this player is in.</summary>
@@ -52,6 +56,9 @@ public sealed partial class BedrockConnection
             Send(Packets.RemoveActor(item.EntityId));
 
         _world = target;
+        _portalCooldown = PortalCooldownTicks;
+        _leftPortal = false;
+        _portalTicks = 0;
         Position = (x, y + EyeHeight, z);
         _sentChunks.Clear();
         _requestedChunks.Clear();
@@ -80,6 +87,11 @@ public sealed partial class BedrockConnection
     /// <summary>Called every tick: standing in a portal for 4 s (at once in creative) takes the player through it.</summary>
     private void TickPortal()
     {
+        if (_portalCooldown > 0)
+        {
+            _portalCooldown--;
+            return;
+        }
         int x = (int)Math.Floor(Position.X), feet = (int)Math.Floor(Position.Y - EyeHeight), z = (int)Math.Floor(Position.Z);
         var inPortal = IsPortal(World.GetBlock(x, feet, z)) || IsPortal(World.GetBlock(x, feet + 1, z));
         if (!inPortal)

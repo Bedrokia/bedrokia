@@ -568,6 +568,9 @@ public sealed partial class BedrockConnection
         if (!float.IsFinite(x) || !float.IsFinite(y) || !float.IsFinite(z) || !float.IsFinite(pitch) || !float.IsFinite(yaw))
             throw new InvalidDataException("Invalid position.");
 
+        // Just after a dimension change the client still reports positions of the old dimension: ignore them.
+        if (_portalCooldown > 0 && Math.Abs(x - Position.X) + Math.Abs(y - Position.Y) + Math.Abs(z - Position.Z) > 8)
+            return;
         var moved = Math.Abs(x - Position.X) + Math.Abs(y - Position.Y) + Math.Abs(z - Position.Z) > 0.001
                     || Math.Abs(pitch - Pitch) + Math.Abs(yaw - Yaw) > 0.1;
         TrackFall(Position.Y, y); // every packet, so that landing is seen even when the player then stands still
