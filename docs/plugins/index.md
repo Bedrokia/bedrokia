@@ -203,6 +203,7 @@ autres plugins et le serveur continuent.
 | `SendMessage(texte)` | message dans le chat (codes couleur `§`) |
 | `SendTitle(titre, sousTitre, fadeIn, stay, fadeOut)` | grand titre à l'écran |
 | `SendActionBar(texte)` | texte au-dessus de la barre d'objets |
+| `SendTip(texte)` / `SendPopup(texte)` | petit texte au-dessus de la barre d'objets (tip / popup) |
 | `SetSidebar(titre, lignes)` / `ClearSidebar()` | scoreboard sur le côté (15 lignes max) |
 | `AddEffect(effet, niveau, secondes, particules)` / `RemoveEffect(effet)` | effets (`BedrockConnection.Effects.Speed`, `JumpBoost`, `NightVision`...) |
 | `SetSpeed(vitesse)` | vitesse de marche (vanilla 0.1) |

@@ -203,6 +203,7 @@ server keep running.
 | `SendMessage(text)` | chat message (`§` colour codes) |
 | `SendTitle(title, subtitle, fadeIn, stay, fadeOut)` | big title on screen |
 | `SendActionBar(text)` | text above the hotbar |
+| `SendTip(text)` / `SendPopup(text)` | small text above the hotbar (tip / popup) |
 | `SetSidebar(title, lines)` / `ClearSidebar()` | sidebar scoreboard (15 lines max) |
 | `AddEffect(effect, level, seconds, particles)` / `RemoveEffect(effect)` | effects (`BedrockConnection.Effects.Speed`, `JumpBoost`, `NightVision`...) |
 | `SetSpeed(speed)` | walk speed (vanilla 0.1) |
