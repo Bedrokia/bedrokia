@@ -147,3 +147,15 @@ public class CustomToolTests
         Assert.True(DropRules.BreakTicks(diamondOre, stick) < hand);
     }
 }
+
+public class ToolInfoTests
+{
+    [Fact]
+    public void Tool_info_tells_kind_and_level()
+    {
+        Assert.Equal(("pickaxe", 2), DropRules.ToolInfo(ItemStack.Of("iron_pickaxe")));
+        Assert.Equal(("axe", 0), DropRules.ToolInfo(ItemStack.Of("golden_axe")));
+        Assert.Equal(("", -1), DropRules.ToolInfo(ItemStack.Of("dirt")));
+        Assert.Equal(("", -1), DropRules.ToolInfo(null));
+    }
+}
