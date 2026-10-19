@@ -1,8 +1,8 @@
 ---
-title: Blocs personnalises
+title: Blocs personnalisés
 ---
 
-# Blocs personnalises (Custom Blocks)
+# Blocs personnalisés
 
 Bedrokia embarque un moteur natif de blocs personnalises base sur le systeme de composants NBT officiel de Minecraft Bedrock (v1.26.x+).
 

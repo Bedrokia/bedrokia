@@ -1,0 +1,88 @@
+# Documentation site: Material for MkDocs, built and deployed to GitHub Pages by .github/workflows/docs.yml.
+site_name: Bedrokia
+site_description: Serveur Minecraft Bedrock en C# / .NET 10, codé par l'IA (et un peu d'humain)
+site_url: https://nexiumpvp2.github.io/bedrokia/
+repo_url: https://github.com/Nexiumpvp2/bedrokia
+repo_name: Nexiumpvp2/bedrokia
+edit_uri: edit/main/docs/
+copyright: Bedrokia · Apache 2.0 · Non affilié à Mojang ni à Microsoft
+
+theme:
+  name: material
+  language: fr
+  logo: assets/logo.svg
+  favicon: assets/logo.svg
+  icon:
+    repo: fontawesome/brands/github
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Mode sombre
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: Mode clair
+  font:
+    text: Inter
+    code: JetBrains Mono
+  features:
+    - navigation.instant
+    - navigation.instant.progress
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - navigation.indexes
+    - search.suggest
+    - search.highlight
+    - toc.follow
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - content.action.edit
+
+extra_css:
+  - assets/extra.css
+
+plugins:
+  - search:
+      lang: fr
+  - awesome-nav # menu from the folders and their .nav.yml: new pages appear by themselves
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/Nexiumpvp2/bedrokia
+      name: Code source
+    - icon: material/download
+      link: https://github.com/Nexiumpvp2/bedrokia/releases/latest
+      name: Dernière version
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.mark
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+

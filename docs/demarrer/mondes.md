@@ -6,7 +6,7 @@ title: Mondes et packs
 
 ## Mondes
 
-Le monde chargé est `worlds/<level-name>/`. Chaque monde a son `world.properties` (voir [Configuration](configuration)) :
+Le monde chargé est `worlds/<level-name>/`. Chaque monde a son `world.properties` (voir [Configuration](configuration.md)) :
 monde vanilla (`normal`), plat (`flat`) ou vide (`void`).
 
 ### Importer un monde Bedrock

@@ -52,7 +52,7 @@ lisible, c'est cool. 😎
 | **Plugins** | Plugins C# organisés comme Bukkit / PocketMine (`plugin.yml`, `src/`, `resources/config.yml`), **compilés automatiquement au démarrage**, événements annulables, commandes, titres, scoreboard, effets, particules |
 
 Ce qui manque encore : coffres doubles, panneaux éditables, enclume, tailleur de pierre, meule, Nether et End,
-redstone, grottes et structures. Voir la [feuille de route](https://nexiumpvp2.github.io/bedrokia/roadmap).
+redstone, grottes et structures. Voir la [feuille de route](https://nexiumpvp2.github.io/bedrokia/projet/roadmap/).
 
 ## 🚀 Démarrage rapide
 
@@ -87,7 +87,7 @@ resource_packs/     packs de ressources (dossiers ou .mcpack)
 Un egg est fourni : [`deploy/pterodactyl/egg-bedrokia.json`](deploy/pterodactyl/egg-bedrokia.json).
 *Admin → Nests → Import Egg*, puis créer un serveur avec. Le serveur a besoin de son port principal **et** d'une plage
 de ports UDP (ajouter des allocations, ou régler la variable `WEBRTC_PORTS`). Détails :
-[doc Pterodactyl](https://nexiumpvp2.github.io/bedrokia/pterodactyl).
+[doc Pterodactyl](https://nexiumpvp2.github.io/bedrokia/demarrer/pterodactyl/).
 
 ## 🧩 Plugins en 30 secondes
 
@@ -128,7 +128,7 @@ public sealed class Main : Plugin
 
 Redémarrer le serveur : le plugin est compilé et chargé, la console l'affiche (ou affiche l'erreur exacte avec le
 fichier et la ligne). Plugins d'exemple complets : [`examples/plugins`](examples/plugins).
-Documentation complète : [plugins](https://nexiumpvp2.github.io/bedrokia/plugins).
+Documentation complète : [plugins](https://nexiumpvp2.github.io/bedrokia/plugins/).
 
 ## 🛠️ Compiler
 

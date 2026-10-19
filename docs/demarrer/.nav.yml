@@ -1,0 +1,7 @@
+nav:
+  - installation.md
+  - pterodactyl.md
+  - configuration.md
+  - commandes.md
+  - mondes.md
+  - "*"
