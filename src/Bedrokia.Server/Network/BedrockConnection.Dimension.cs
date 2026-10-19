@@ -58,6 +58,11 @@ public sealed partial class BedrockConnection
         _portalCooldown = PortalCooldownTicks;
         _portalTicks = 0;
         Position = (x, y + EyeHeight, z);
+        foreach (var key in _sentChunks)
+        {
+            var (cx, cz) = Game.World.UnpackChunkKey(key);
+            old.LoadedChunk(cx, cz)?.Viewers.Remove(this);
+        }
         _sentChunks.Clear();
         _requestedChunks.Clear();
         _centerChunk = (int.MinValue, int.MinValue);

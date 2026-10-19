@@ -133,7 +133,11 @@ public sealed partial class BedrokiaServer
     public Logger Logger { get; }
     public CommandManager Commands { get; }
     public long CurrentTick { get; private set; }
-    public bool IsTicking { get; private set; }
+    private bool _ticking;
+    private int _tickThread;
+
+    /// <summary>True on the game thread while a tick runs (other threads see false: what they send is not buffered).</summary>
+    public bool IsTicking => _ticking && Environment.CurrentManagedThreadId == _tickThread;
 
     /// <summary>The overworld; available once <see cref="Started"/> has completed.</summary>
     public World World { get; private set; } = null!;
@@ -539,8 +543,9 @@ public sealed partial class BedrokiaServer
         var tickStart = Stopwatch.GetTimestamp();
         double intervalMs = _lastTickTimestamp > 0 ? Stopwatch.GetElapsedTime(_lastTickTimestamp, tickStart).TotalMilliseconds : 50.0;
         _lastTickTimestamp = tickStart;
-        var wasTicking = IsTicking;
-        IsTicking = true;
+        var wasTicking = _ticking;
+        _ticking = true;
+        _tickThread = Environment.CurrentManagedThreadId;
 
         try
         {
@@ -638,7 +643,7 @@ public sealed partial class BedrokiaServer
         }
         finally
         {
-            IsTicking = wasTicking;
+            _ticking = wasTicking;
         }
 
         Timings.OnTickEnd();

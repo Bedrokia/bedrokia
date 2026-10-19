@@ -201,7 +201,7 @@ public sealed class Chunk
     /// <summary>Paletted storage, network form: header (bits &lt;&lt; 1 | 1), packed words, varint palette.</summary>
     private static void WriteStorage(BedrockWriter writer, ushort[] values, Func<ushort, int> toNetwork)
     {
-        Span<ushort> palette = stackalloc ushort[256];
+        var palette = ArrayPool<ushort>.Shared.Rent(values.Length); // up to one entry per block
         var paletteCount = 0;
         var indices = ArrayPool<int>.Shared.Rent(values.Length);
         try
@@ -220,15 +220,8 @@ public sealed class Chunk
                 }
                 if (index < 0)
                 {
-                    if (paletteCount < 256)
-                    {
-                        index = paletteCount;
-                        palette[paletteCount++] = val;
-                    }
-                    else
-                    {
-                        index = 0;
-                    }
+                    index = paletteCount;
+                    palette[paletteCount++] = val;
                 }
                 indices[i] = index;
             }
@@ -272,6 +265,7 @@ public sealed class Chunk
         finally
         {
             ArrayPool<int>.Shared.Return(indices);
+            ArrayPool<ushort>.Shared.Return(palette);
         }
     }
 
