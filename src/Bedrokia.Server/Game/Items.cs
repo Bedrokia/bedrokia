@@ -24,6 +24,7 @@ public static class Items
 {
     private static readonly Dictionary<string, ItemType> ByNameMap = [];
     private static readonly Dictionary<short, ItemType> ByRuntimeIdMap = [];
+    private static ItemType?[] _denseItems = new ItemType?[16384];
 
     static Items()
     {
@@ -35,6 +36,8 @@ public static class Items
                 (int)entry["version"], entry.TryGetValue("data", out var data) ? (OrderedDictionary<string, object>)data : []);
             ByNameMap[name] = item;
             ByRuntimeIdMap[item.RuntimeId] = item;
+            if (item.RuntimeId >= 0 && item.RuntimeId < _denseItems.Length)
+                _denseItems[item.RuntimeId] = item;
         }
         ShieldRuntimeId = ByNameMap.TryGetValue("minecraft:shield", out var shield) ? shield.RuntimeId : (short)-1;
         RegistryPacket = BuildRegistry();
@@ -61,13 +64,17 @@ public static class Items
 
     public static ItemType? ByName(string name) => ByNameMap.GetValueOrDefault(name.Contains(':') ? name : "minecraft:" + name);
 
-    public static ItemType? ByRuntimeId(short runtimeId) => ByRuntimeIdMap.GetValueOrDefault(runtimeId);
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    public static ItemType? ByRuntimeId(short runtimeId) =>
+        (uint)runtimeId < (uint)_denseItems.Length ? _denseItems[runtimeId] : ByRuntimeIdMap.GetValueOrDefault(runtimeId);
 
     /// <param name="creativeCategory">Creative tab: 1 construction, 2 nature, 3 equipment, 4 items.</param>
     public static void RegisterCustomItem(ItemType item, bool isCreative = true, int creativeCategory = 4)
     {
         ByNameMap[item.Name] = item;
         ByRuntimeIdMap[item.RuntimeId] = item;
+        if (item.RuntimeId >= 0 && item.RuntimeId < _denseItems.Length)
+            _denseItems[item.RuntimeId] = item;
         RegistryPacket = BuildRegistry();
         if (isCreative)
         {

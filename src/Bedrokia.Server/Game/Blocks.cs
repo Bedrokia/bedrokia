@@ -9,6 +9,7 @@
 // │  Licensed under the Apache License 2.0 - see LICENSE              │
 // └───────────────────────────────────────────────────────────────────┘
 
+using System.Collections.Frozen;
 using Bedrokia.Protocol;
 
 namespace Bedrokia.Server.Game;
@@ -57,13 +58,13 @@ public sealed class BlockType
 /// </summary>
 public static class Blocks
 {
-    internal static readonly HashSet<string> UnbreakableNames =
-    [
+    internal static readonly FrozenSet<string> UnbreakableNames = new[]
+    {
         "minecraft:bedrock", "minecraft:barrier", "minecraft:command_block", "minecraft:chain_command_block",
         "minecraft:repeating_command_block", "minecraft:structure_block", "minecraft:jigsaw", "minecraft:end_portal",
         "minecraft:end_portal_frame", "minecraft:portal", "minecraft:end_gateway", "minecraft:border_block",
         "minecraft:allow", "minecraft:deny", "minecraft:invisible_bedrock", "minecraft:light_block",
-    ];
+    }.ToFrozenSet();
 
     private static readonly List<BlockType> All = [];
     private static readonly Dictionary<string, BlockType> ByKeyMap = [];

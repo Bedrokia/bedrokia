@@ -9,6 +9,7 @@
 // │  Licensed under the Apache License 2.0 - see LICENSE              │
 // └───────────────────────────────────────────────────────────────────┘
 
+using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -45,9 +46,12 @@ public sealed class PermissionManager
 {
     private readonly string _path;
     private readonly object _lock = new();
+    private readonly ConcurrentDictionary<string, bool> _permCache = new(StringComparer.OrdinalIgnoreCase);
     private PermissionStorage _storage = new();
 
     public const string DefaultGroupName = "default";
+
+    public void InvalidateCache() => _permCache.Clear();
 
     public PermissionManager(string path)
     {
@@ -76,6 +80,7 @@ public sealed class PermissionManager
     {
         lock (_lock)
         {
+            _permCache.Clear();
             if (File.Exists(_path))
             {
                 try
@@ -143,6 +148,7 @@ public sealed class PermissionManager
             var json = JsonSerializer.Serialize(_storage, new JsonSerializerOptions { WriteIndented = true });
             File.WriteAllText(tmpPath, json);
             File.Move(tmpPath, _path, overwrite: true);
+            _permCache.Clear();
         }
     }
 
@@ -151,8 +157,14 @@ public sealed class PermissionManager
         if (string.IsNullOrWhiteSpace(permission))
             return true;
 
+        var key = $"{playerName}|{permission}|{isOp}";
+        if (_permCache.TryGetValue(key, out var cached))
+            return cached;
+
         var effective = GetEffectivePermissions(playerName);
-        return PermissionEvaluator.Evaluate(permission, effective, isOp);
+        var result = PermissionEvaluator.Evaluate(permission, effective, isOp);
+        _permCache[key] = result;
+        return result;
     }
 
     public List<string> GetEffectivePermissions(string playerName)

@@ -197,11 +197,12 @@ public static class Nbt
 
     private static void WriteString(BedrockWriter w, string value, bool network)
     {
-        var bytes = Encoding.UTF8.GetBytes(value);
+        var byteCount = Encoding.UTF8.GetByteCount(value);
         if (network)
-            w.VarUInt32((uint)bytes.Length);
+            w.VarUInt32((uint)byteCount);
         else
-            w.UInt16((ushort)bytes.Length);
-        w.Bytes(bytes);
+            w.UInt16((ushort)byteCount);
+        var span = w.GrowSpan(byteCount);
+        Encoding.UTF8.GetBytes(value, span);
     }
 }
