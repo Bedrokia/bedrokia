@@ -56,8 +56,9 @@ public sealed class FallingBlocks(BedrokiaServer server, World world)
 
     public void Tick()
     {
-        foreach (var falling in _falling.ToList())
+        for (var i = _falling.Count - 1; i >= 0; i--)
         {
+            var falling = _falling[i];
             falling.Ticks++;
             falling.Vy = falling.Vy * 0.98 - 0.04; // drag before gravity, as Dragonfly
             var next = falling.Y + falling.Vy;
@@ -70,7 +71,7 @@ public sealed class FallingBlocks(BedrokiaServer server, World world)
                 server.BroadcastIn(world, EntityPackets.Motion(falling.EntityId, 0, falling.Vy, 0));
                 continue;
             }
-            _falling.Remove(falling);
+            _falling.RemoveAt(i);
             server.BroadcastIn(world, Bedrokia.Protocol.Packets.RemoveActor(falling.EntityId));
             var landY = floor + 1;
             var target = world.GetBlock(falling.X, landY, falling.Z);

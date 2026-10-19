@@ -9,6 +9,7 @@
 // │  Licensed under the Apache License 2.0 - see LICENSE              │
 // └───────────────────────────────────────────────────────────────────┘
 
+using System.Collections.Frozen;
 using Bedrokia.Server.Core;
 using Bedrokia.Server.Events;
 using Bedrokia.Server.Game;
@@ -183,6 +184,8 @@ public sealed class MobManager(BedrokiaServer server)
     public const int ViewDistance = 80, DespawnDistance = 128, PassiveCap = 12, HostileCap = 18;
 
     private readonly List<Mob> _mobs = [];
+    private readonly List<Mob> _mobScratch = [];
+    private readonly List<BedrockConnection> _playerScratch = [];
     private readonly Random _random = new();
 
     public IReadOnlyList<Mob> All => _mobs;
@@ -210,31 +213,68 @@ public sealed class MobManager(BedrokiaServer server)
 
     public void Tick(long tick)
     {
-        var players = server.Players.Where(p => p.IsInGame && p.World == server.World).ToList(); // ponytail: mobs only live in the overworld
-        if (tick % 20 == 0)
-            SpawnAround(players);
-
-        foreach (var mob in _mobs.ToList())
+        _playerScratch.Clear();
+        var allPlayers = server.Players;
+        for (var i = 0; i < allPlayers.Count; i++)
         {
+            var p = allPlayers[i];
+            if (p.IsInGame && p.World == server.World)
+                _playerScratch.Add(p);
+        }
+
+        if (tick % 20 == 0)
+            SpawnAround(_playerScratch);
+
+        _mobScratch.Clear();
+        _mobScratch.AddRange(_mobs);
+
+        for (var mIdx = 0; mIdx < _mobScratch.Count; mIdx++)
+        {
+            var mob = _mobScratch[mIdx];
             if (mob.Dead)
             {
                 if (++mob.DeathTicks >= 20)
                     Remove(mob, EntityDespawnReason.Death);
                 continue;
             }
-            var nearest = players.Where(p => !p.Dead).MinBy(p => Distance2(mob, p));
-            var distance = nearest is null ? double.MaxValue : Math.Sqrt(Distance2(mob, nearest));
-            if (players.Count > 0 && distance > DespawnDistance && (mob.Kind.Hostile || distance > DespawnDistance * 2))
+
+            BedrockConnection? nearest = null;
+            double nearestDist2 = double.MaxValue;
+            for (var pIdx = 0; pIdx < _playerScratch.Count; pIdx++)
+            {
+                var p = _playerScratch[pIdx];
+                if (p.Dead) continue;
+                var d2 = Distance2(mob, p);
+                if (d2 < nearestDist2)
+                {
+                    nearestDist2 = d2;
+                    nearest = p;
+                }
+            }
+
+            var maxDist = mob.Kind.Hostile ? DespawnDistance : DespawnDistance * 2;
+            if (_playerScratch.Count > 0 && nearestDist2 > maxDist * maxDist)
             {
                 Remove(mob, EntityDespawnReason.Distance);
                 continue;
             }
+
             if (server.World.LoadedChunk((int)Math.Floor(mob.X) >> 4, (int)Math.Floor(mob.Z) >> 4) is null)
             {
                 Remove(mob, EntityDespawnReason.ChunkUnload);
                 continue;
             }
-            Think(mob, nearest, distance, tick);
+
+            // Entity Activation Range: sleep beyond 64 blocks, throttle to 1/4 between 32 and 64 blocks
+            if (nearestDist2 <= 64 * 64)
+            {
+                if (nearestDist2 <= 32 * 32 || ((tick + mob.EntityId) & 3) == 0)
+                {
+                    var distance = Math.Sqrt(nearestDist2);
+                    Think(mob, nearest, distance, tick);
+                }
+            }
+
             Physics(mob);
             if (mob.HurtTicks > 0)
                 mob.HurtTicks--;
@@ -243,8 +283,10 @@ public sealed class MobManager(BedrokiaServer server)
         }
 
         if (tick % 2 == 0)
-            foreach (var mob in _mobs)
-                Sync(mob, players);
+        {
+            for (var i = 0; i < _mobs.Count; i++)
+                Sync(_mobs[i], _playerScratch);
+        }
     }
 
     // --- Spawning ---
@@ -654,7 +696,7 @@ public sealed class MobManager(BedrokiaServer server)
         }
         mob.Viewers.RemoveWhere(v => !v.IsInGame || v.World != server.World);
         var (lx, ly, lz, lyaw) = mob.LastSent;
-        if (Math.Abs(mob.X - lx) + Math.Abs(mob.Y - ly) + Math.Abs(mob.Z - lz) < 0.01 && Math.Abs(mob.Yaw - lyaw) < 1)
+        if (Math.Abs(mob.X - lx) + Math.Abs(mob.Y - ly) + Math.Abs(mob.Z - lz) < 0.001 && Math.Abs(mob.Yaw - lyaw) < 0.5)
             return;
         mob.LastSent = (mob.X, mob.Y, mob.Z, mob.Yaw);
         Broadcast(mob, EntityPackets.MoveAbsolute(mob.EntityId, mob.X, mob.Y, mob.Z, 0, mob.Yaw, mob.OnGround));
@@ -690,8 +732,8 @@ public sealed class MobManager(BedrokiaServer server)
 /// <summary>Which blocks entities collide with.</summary>
 public static class BlockPhysics
 {
-    private static readonly HashSet<string> Passable =
-    [
+    private static readonly FrozenSet<string> Passable = new[]
+    {
         "minecraft:air", "minecraft:water", "minecraft:flowing_water", "minecraft:lava", "minecraft:flowing_lava",
         "minecraft:short_grass", "minecraft:tall_grass", "minecraft:fern", "minecraft:large_fern", "minecraft:deadbush",
         "minecraft:dandelion", "minecraft:poppy", "minecraft:blue_orchid", "minecraft:allium", "minecraft:azure_bluet",
@@ -699,7 +741,7 @@ public static class BlockPhysics
         "minecraft:cornflower", "minecraft:lily_of_the_valley", "minecraft:sunflower", "minecraft:lilac", "minecraft:rose_bush",
         "minecraft:peony", "minecraft:reeds", "minecraft:snow_layer", "minecraft:brown_mushroom", "minecraft:red_mushroom",
         "minecraft:vine", "minecraft:torch", "minecraft:wheat", "minecraft:waterlily",
-    ];
+    }.ToFrozenSet();
 
     public static bool IsSolid(BlockType? block) =>
         block is not null && !block.IsAir && !Passable.Contains(block.Name) && !block.Name.EndsWith("_sapling");

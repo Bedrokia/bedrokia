@@ -9,6 +9,7 @@
 // │  Licensed under the Apache License 2.0 - see LICENSE              │
 // └───────────────────────────────────────────────────────────────────┘
 
+using System.Buffers;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net;
@@ -41,7 +42,7 @@ public sealed partial class BedrokiaServer
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(15) };
     private static readonly TimeSpan AuthKeysRefresh = TimeSpan.FromMinutes(30);
 
-    private readonly Channel<Action> _mainThread = Channel.CreateUnbounded<Action>(new UnboundedChannelOptions
+    private readonly Channel<InboundWorkItem> _mainThread = Channel.CreateUnbounded<InboundWorkItem>(new UnboundedChannelOptions
     {
         SingleReader = true,
         SingleWriter = false
@@ -132,6 +133,7 @@ public sealed partial class BedrokiaServer
     public Logger Logger { get; }
     public CommandManager Commands { get; }
     public long CurrentTick { get; private set; }
+    public bool IsTicking { get; private set; }
 
     /// <summary>The overworld; available once <see cref="Started"/> has completed.</summary>
     public World World { get; private set; } = null!;
@@ -259,7 +261,10 @@ public sealed partial class BedrokiaServer
     }
 
     /// <summary>Runs <paramref name="action"/> on the game thread during the next tick. Safe to call from any thread.</summary>
-    public void RunOnMainThread(Action action) => _mainThread.Writer.TryWrite(action);
+    public void RunOnMainThread(Action action) => _mainThread.Writer.TryWrite(new InboundWorkItem(null, null, 0, action));
+
+    internal void EnqueueInboundPacket(BedrockConnection connection, byte[] pooledPacket, int length) =>
+        _mainThread.Writer.TryWrite(new InboundWorkItem(connection, pooledPacket, length, null));
 
     /// <summary>Queues a console line; it runs on the next tick. Safe to call from any thread.</summary>
     public void EnqueueCommand(string line) => RunOnMainThread(() => Commands.Dispatch(line));
@@ -340,6 +345,30 @@ public sealed partial class BedrokiaServer
         var preEncoded = targets[0].Codec.Encode(packet);
         foreach (var player in targets)
             player.SendRawBatch(preEncoded);
+    }
+
+    /// <summary>Sends <paramref name="packet"/> to viewers of chunk (chunkX, chunkZ), or world-wide if chunk not cached.</summary>
+    public void BroadcastInChunk(World world, int chunkX, int chunkZ, byte[] packet)
+    {
+        var chunk = world.LoadedChunk(chunkX, chunkZ);
+        if (chunk is not null)
+        {
+            if (chunk.Viewers.Count == 0)
+                return;
+            if (chunk.Viewers.Count == 1)
+            {
+                var single = chunk.Viewers.First();
+                if (single.IsInGame)
+                    single.Send(packet);
+                return;
+            }
+            var preEncoded = chunk.Viewers.First().Codec.Encode(packet);
+            foreach (var viewer in chunk.Viewers)
+                if (viewer.IsInGame)
+                    viewer.SendRawBatch(preEncoded);
+            return;
+        }
+        BroadcastIn(world, packet);
     }
 
 
@@ -510,83 +539,121 @@ public sealed partial class BedrokiaServer
         var tickStart = Stopwatch.GetTimestamp();
         double intervalMs = _lastTickTimestamp > 0 ? Stopwatch.GetElapsedTime(_lastTickTimestamp, tickStart).TotalMilliseconds : 50.0;
         _lastTickTimestamp = tickStart;
+        var wasTicking = IsTicking;
+        IsTicking = true;
 
-        using (Timings.Track(Timings.FullTick))
+        try
         {
-            CurrentTick++;
-            if (World is not null && World.Settings.DaylightCycle)
-                World.Time++;
-
-            using (Timings.Track(Timings.DroppedItems))
-                foreach (var world in Worlds)
-                    TickDroppedItems(world);
-
-            using (Timings.Track(Timings.Mobs))
-                Mobs.Tick(CurrentTick);
-
-            using (Timings.Track(Timings.FallingBlocks))
-                foreach (var world in Worlds)
-                    world.FallingBlocks.Tick();
-
-            using (Timings.Track(Timings.Furnaces))
-                TickFurnaces();
-
-            using (Timings.Track(Timings.Blocks))
-                TickBlocks();
-
-            using (Timings.Track(Timings.Events))
+            using (Timings.Track(Timings.FullTick))
             {
-                Scheduler.Tick(CurrentTick);
-                Events.OnTick(CurrentTick);
-            }
+                CurrentTick++;
+                if (World is not null && World.Settings.DaylightCycle)
+                    World.Time++;
 
-            using (Timings.Track(Timings.Players))
-            {
-                foreach (var player in _players.Where(p => p.IsInGame))
-                    player.TickHealth();
-            }
-
-            if (World is not null && CurrentTick % (TicksPerSecond * 30) == 0)
-                Broadcast(Packets.SetTime((int)(World.Time % int.MaxValue)));
-
-            if (World is not null && CurrentTick % (TicksPerSecond * Config.AutosaveInterval) == 0)
-            {
-                using (Timings.Track(Timings.World))
-                {
-                    SaveWorld();
+                using (Timings.Track(Timings.DroppedItems))
                     foreach (var world in Worlds)
-                        world.Unload((x, z) => _players.Any(p =>
-                    {
-                        if (p.World != world)
-                            return false;
-                        var (px, pz) = p.ChunkPosition;
-                        var r = p.ViewRadius + 2;
-                        return Math.Abs(px - x) <= r && Math.Abs(pz - z) <= r;
-                    }));
-                }
-            }
+                        TickDroppedItems(world);
 
-            using (Timings.Track(Timings.MainThread))
-            {
-                var reader = _mainThread.Reader;
-                while (reader.TryRead(out var action))
+                using (Timings.Track(Timings.Mobs))
+                    Mobs.Tick(CurrentTick);
+
+                using (Timings.Track(Timings.FallingBlocks))
+                    foreach (var world in Worlds)
+                        world.FallingBlocks.Tick();
+
+                using (Timings.Track(Timings.Furnaces))
+                    TickFurnaces();
+
+                using (Timings.Track(Timings.Blocks))
+                    TickBlocks();
+
+                using (Timings.Track(Timings.Events))
                 {
+                    Scheduler.Tick(CurrentTick);
+                    Events.OnTick(CurrentTick);
+                }
 
-                    try
+                using (Timings.Track(Timings.Players))
+                {
+                    foreach (var player in _players.Where(p => p.IsInGame))
+                        player.TickHealth();
+                }
+
+                if (World is not null && CurrentTick % (TicksPerSecond * 30) == 0)
+                    Broadcast(Packets.SetTime((int)(World.Time % int.MaxValue)));
+
+                if (World is not null && CurrentTick % (TicksPerSecond * Config.AutosaveInterval) == 0)
+                {
+                    using (Timings.Track(Timings.World))
                     {
-                        action();
-                    }
-                    catch (Exception e)
-                    {
-                        Logger.Error($"Unhandled error in tick {CurrentTick}: {e}");
+                        SaveWorld();
+                        foreach (var world in Worlds)
+                            world.Unload((x, z) => _players.Any(p =>
+                        {
+                            if (p.World != world)
+                                return false;
+                            var (px, pz) = p.ChunkPosition;
+                            var r = p.ViewRadius + 2;
+                            return Math.Abs(px - x) <= r && Math.Abs(pz - z) <= r;
+                        }));
                     }
                 }
+
+                using (Timings.Track(Timings.MainThread))
+                {
+                    var reader = _mainThread.Reader;
+                    while (reader.TryRead(out var item))
+                    {
+                        if (item.ControlAction is { } action)
+                        {
+                            try
+                            {
+                                action();
+                            }
+                            catch (Exception e)
+                            {
+                                Logger.Error($"Unhandled error in tick {CurrentTick}: {e}");
+                            }
+                        }
+                        else if (item.Connection is { } conn && item.PooledPacket is { } pooled)
+                        {
+                            try
+                            {
+                                conn.HandlePacket(pooled, item.Length);
+                            }
+                            catch (Exception e)
+                            {
+                                Logger.Error($"Packet handling error in tick {CurrentTick}: {e}");
+                            }
+                            finally
+                            {
+                                ArrayPool<byte>.Shared.Return(pooled);
+                            }
+                        }
+                    }
+                }
+
+                FlushAllConnections();
             }
+        }
+        finally
+        {
+            IsTicking = wasTicking;
         }
 
         Timings.OnTickEnd();
         var elapsedMs = Stopwatch.GetElapsedTime(tickStart).TotalMilliseconds;
         Performance.OnTick(elapsedMs, intervalMs);
+    }
+
+    private void FlushAllConnections()
+    {
+        for (var i = 0; i < _connections.Count; i++)
+        {
+            var conn = _connections[i];
+            conn.FlushTickMovement();
+            conn.FlushOutgoing();
+        }
     }
 
     // Network thread: subscribe right away (no packet may be missed), then hand everything to the game thread.
@@ -596,7 +663,17 @@ public sealed partial class BedrokiaServer
         var connection = new BedrockConnection(this, new NetherNetTransport(session), Interlocked.Increment(ref _nextEntityId));
         RunOnMainThread(() => _connections.Add(connection));
         session.Connected += s => Logger.Debug($"{s.RemoteEndPoint} connected (NetherNet).");
-        session.PacketReceived += (_, batch) => RunOnMainThread(() => connection.HandleBatch(batch));
+        session.PacketReceived += (_, batch) =>
+        {
+            try
+            {
+                connection.OnBatchReceived(batch);
+            }
+            catch (Exception e)
+            {
+                Logger.Warn($"Packet batch decode error: {e.Message}");
+            }
+        };
         session.Closed += (_, reason) => RunOnMainThread(() => OnConnectionClosed(connection, reason));
     }
 

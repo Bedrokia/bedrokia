@@ -9,6 +9,7 @@
 // │  Licensed under the Apache License 2.0 - see LICENSE              │
 // └───────────────────────────────────────────────────────────────────┘
 
+using System.Buffers;
 using System.Buffers.Binary;
 using System.IO.Compression;
 
@@ -76,19 +77,38 @@ public static class LevelDb
         return compression switch
         {
             0 => raw.ToArray(),
-            2 => Inflate(new ZLibStream(new MemoryStream(raw.ToArray()), CompressionMode.Decompress)),
-            4 => Inflate(new DeflateStream(new MemoryStream(raw.ToArray()), CompressionMode.Decompress)),
+            2 => Inflate(new ZLibStream(new MemoryStream(file, (int)offset, (int)size, writable: false), CompressionMode.Decompress), (int)size * 4),
+            4 => Inflate(new DeflateStream(new MemoryStream(file, (int)offset, (int)size, writable: false), CompressionMode.Decompress), (int)size * 4),
             _ => throw new InvalidDataException($"Unsupported LevelDB block compression {compression}."),
         };
     }
 
-    private static byte[] Inflate(Stream stream)
+    private static byte[] Inflate(Stream stream, int estimatedSize = 4096)
     {
         using (stream)
-        using (var output = new MemoryStream())
         {
-            stream.CopyTo(output);
-            return output.ToArray();
+            var rented = ArrayPool<byte>.Shared.Rent(Math.Max(1024, estimatedSize));
+            var total = 0;
+            try
+            {
+                int read;
+                while ((read = stream.Read(rented.AsSpan(total))) > 0)
+                {
+                    total += read;
+                    if (total == rented.Length)
+                    {
+                        var larger = ArrayPool<byte>.Shared.Rent(rented.Length * 2);
+                        rented.AsSpan(0, total).CopyTo(larger);
+                        ArrayPool<byte>.Shared.Return(rented);
+                        rented = larger;
+                    }
+                }
+                return rented.AsSpan(0, total).ToArray();
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(rented);
+            }
         }
     }
 

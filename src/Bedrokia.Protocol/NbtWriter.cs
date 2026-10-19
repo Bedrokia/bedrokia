@@ -78,23 +78,26 @@ public sealed class NbtWriter(bool network)
 
     private NbtWriter Name(string name) => Text(name);
 
+    private static readonly byte[] CachedEmpty = new NbtWriter(network: true).BeginCompound().EndCompound().ToArray();
+
     private NbtWriter Text(string value)
     {
-        var bytes = Encoding.UTF8.GetBytes(value);
+        var byteCount = Encoding.UTF8.GetByteCount(value);
         if (network)
         {
-            _out.VarUInt32((uint)bytes.Length);
+            _out.VarUInt32((uint)byteCount);
         }
         else
         {
             Span<byte> length = stackalloc byte[2];
-            BinaryPrimitives.WriteUInt16LittleEndian(length, (ushort)bytes.Length);
+            BinaryPrimitives.WriteUInt16LittleEndian(length, (ushort)byteCount);
             _out.Bytes(length);
         }
-        _out.Bytes(bytes);
+        var span = _out.GrowSpan(byteCount);
+        Encoding.UTF8.GetBytes(value, span);
         return this;
     }
 
     /// <summary>Network NBT of an empty root compound.</summary>
-    public static byte[] EmptyNetworkCompound() => new NbtWriter(network: true).BeginCompound().EndCompound().ToArray();
+    public static byte[] EmptyNetworkCompound() => CachedEmpty;
 }

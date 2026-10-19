@@ -9,6 +9,7 @@
 // │  Licensed under the Apache License 2.0 - see LICENSE              │
 // └───────────────────────────────────────────────────────────────────┘
 
+using System.Buffers;
 using System.Buffers.Binary;
 using System.IO.Compression;
 using System.Security.Cryptography;
@@ -68,18 +69,36 @@ public sealed class BatchCodec(bool withHeader = true)
 
     public byte[] Encode(IEnumerable<byte[]> packets)
     {
-        if (packets is IList<byte[]> list && list.Count == 1)
-            return Encode(list[0]);
+        if (packets is IReadOnlyList<byte[]> list)
+            return EncodeBatch(list);
 
         var batch = new BedrockWriter();
         foreach (var packet in packets)
             batch.ByteArray(packet);
-        return EncodePayload(batch.ToArray());
+        return EncodePayload(batch.WrittenSpan);
     }
 
-    private byte[] EncodePayload(byte[] payload)
+    public byte[] EncodeBatch(IReadOnlyList<byte[]> packets)
     {
-        var output = new BedrockWriter(payload.Length + 16);
+        if (packets.Count == 0)
+            return [];
+        if (packets.Count == 1)
+            return Encode(packets[0]);
+
+        var totalLen = 0;
+        for (var i = 0; i < packets.Count; i++)
+            totalLen += BedrockWriter.VarUInt32Length((uint)packets[i].Length) + packets[i].Length;
+
+        using var batch = new PooledBedrockWriter(totalLen);
+        for (var i = 0; i < packets.Count; i++)
+            batch.ByteArray(packets[i]);
+
+        return EncodePayload(batch.WrittenSpan);
+    }
+
+    private byte[] EncodePayload(ReadOnlySpan<byte> payload)
+    {
+        using var output = new PooledBedrockWriter(payload.Length + 16);
         if (withHeader)
             output.Byte(Header);
         if (CompressionEnabled)
@@ -87,7 +106,10 @@ public sealed class BatchCodec(bool withHeader = true)
             if (payload.Length >= _compressionThreshold)
             {
                 output.Byte(CompressionFlate);
-                payload = Deflate(payload);
+                var compressed = Deflate(payload);
+                output.Bytes(compressed);
+                var data = output.ToArray();
+                return _send is null ? data : _send.Encrypt(data);
             }
             else
             {
@@ -95,10 +117,9 @@ public sealed class BatchCodec(bool withHeader = true)
             }
         }
         output.Bytes(payload);
-        var data = output.ToArray();
-        return _send is null ? data : _send.Encrypt(data);
+        var res = output.ToArray();
+        return _send is null ? res : _send.Encrypt(res);
     }
-
 
     /// <summary>Splits one batch into packets (each starting with its varuint header).</summary>
     /// <exception cref="InvalidDataException">Bad header, checksum, compression or framing.</exception>
@@ -133,35 +154,89 @@ public sealed class BatchCodec(bool withHeader = true)
         return packets;
     }
 
-    private static byte[] Deflate(byte[] data)
+    /// <summary>Decodes packets into pooled buffers, calling <paramref name="onPooledPacket"/> with rented buffer and length.</summary>
+    public void DecodePackets(ReadOnlySpan<byte> data, Action<byte[], int> onPooledPacket)
     {
-        using var output = new MemoryStream();
-        using (var deflate = new DeflateStream(output, CompressionLevel.Fastest))
+        if (withHeader && (data.IsEmpty || data[0] != Header))
+            throw new InvalidDataException("Not a game packet batch.");
+        var body = (withHeader ? data[1..] : data).ToArray();
+        if (_receive is not null)
+            body = _receive.Decrypt(body);
+
+        if (CompressionEnabled)
+        {
+            if (body.Length == 0)
+                throw new InvalidDataException("Missing compression id.");
+            body = body[0] switch
+            {
+                CompressionNone => body[1..],
+                CompressionFlate => Inflate(body.AsSpan(1)),
+                _ => throw new InvalidDataException($"Unsupported compression {body[0]}."),
+            };
+        }
+
+        var reader = new BedrockReader(body);
+        var packetCount = 0;
+        while (reader.Remaining > 0)
+        {
+            if (++packetCount > MaxPacketsPerBatch)
+                throw new InvalidDataException("Too many packets in one batch.");
+            var len = (int)reader.VarUInt32();
+            var span = reader.Bytes(len);
+            var rented = ArrayPool<byte>.Shared.Rent(len);
+            span.CopyTo(rented);
+            onPooledPacket(rented, len);
+        }
+    }
+
+    private static byte[] Deflate(ReadOnlySpan<byte> data)
+    {
+        using var ms = new MemoryStream(Math.Max(512, data.Length));
+        using (var deflate = new DeflateStream(ms, CompressionLevel.Fastest, leaveOpen: true))
             deflate.Write(data);
-        return output.ToArray();
+        return ms.ToArray();
     }
 
     private static byte[] Inflate(ReadOnlySpan<byte> data)
     {
-        using var input = new MemoryStream(data.ToArray());
-        using var inflate = new DeflateStream(input, CompressionMode.Decompress);
-        using var output = new MemoryStream();
-        var buffer = new byte[16 * 1024];
-        int read;
+        var inputRented = ArrayPool<byte>.Shared.Rent(data.Length);
+        var readBuffer = ArrayPool<byte>.Shared.Rent(16 * 1024);
+        var outputRented = ArrayPool<byte>.Shared.Rent(Math.Max(64 * 1024, data.Length * 4));
+        var totalRead = 0;
         try
         {
-            while ((read = inflate.Read(buffer)) > 0)
+            data.CopyTo(inputRented);
+            using var input = new MemoryStream(inputRented, 0, data.Length, writable: false);
+            using var inflate = new DeflateStream(input, CompressionMode.Decompress);
+            int read;
+            while ((read = inflate.Read(readBuffer, 0, readBuffer.Length)) > 0)
             {
-                if (output.Length + read > MaxDecompressedSize)
+                if (totalRead + read > MaxDecompressedSize)
                     throw new InvalidDataException("Decompressed batch is too large.");
-                output.Write(buffer, 0, read);
+
+                if (totalRead + read > outputRented.Length)
+                {
+                    var larger = ArrayPool<byte>.Shared.Rent(Math.Max(outputRented.Length * 2, totalRead + read));
+                    outputRented.AsSpan(0, totalRead).CopyTo(larger);
+                    ArrayPool<byte>.Shared.Return(outputRented);
+                    outputRented = larger;
+                }
+
+                readBuffer.AsSpan(0, read).CopyTo(outputRented.AsSpan(totalRead));
+                totalRead += read;
             }
+            return outputRented.AsSpan(0, totalRead).ToArray();
         }
         catch (IOException e)
         {
             throw new InvalidDataException("Corrupt compressed batch.", e);
         }
-        return output.ToArray();
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(inputRented);
+            ArrayPool<byte>.Shared.Return(readBuffer);
+            ArrayPool<byte>.Shared.Return(outputRented);
+        }
     }
 
     /// <summary>
