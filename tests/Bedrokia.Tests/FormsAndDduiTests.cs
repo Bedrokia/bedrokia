@@ -379,3 +379,16 @@ public class FormsAndDduiTests
         Assert.Equal(0, store.Remaining);
     }
 }
+
+public class FormContentTests
+{
+    [Fact]
+    public void Simple_and_modal_forms_always_send_content()
+    {
+        // Without it the client shows "impossible de trouver la propriété 'content'" and refuses the form.
+        var simple = System.Text.Encoding.UTF8.GetString(new Bedrokia.Server.Game.Ui.Forms.SimpleForm("Shop").Button("A").SerializeJson());
+        var modal = System.Text.Encoding.UTF8.GetString(new Bedrokia.Server.Game.Ui.Forms.ModalForm("Sure?").SerializeJson());
+        Assert.Contains("\"content\":\"\"", simple);
+        Assert.Contains("\"content\":\"\"", modal);
+    }
+}

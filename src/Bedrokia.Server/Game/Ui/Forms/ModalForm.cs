@@ -57,8 +57,7 @@ public sealed class ModalForm(string title, string content = "") : IForm
             writer.WriteStartObject();
             writer.WriteString("type", "modal");
             writer.WriteString("title", Title);
-            if (!string.IsNullOrEmpty(ContentText))
-                writer.WriteString("content", ContentText);
+            writer.WriteString("content", ContentText ?? ""); // the client refuses a form without "content"
             writer.WriteString("button1", Button1Text);
             writer.WriteString("button2", Button2Text);
             writer.WriteEndObject();
