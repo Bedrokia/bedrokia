@@ -153,6 +153,8 @@ public sealed partial class BedrokiaServer
         {
             var signaling = _netherNet.RunAsync(_networkStop.Token);
             var auth = Config.OnlineMode ? RefreshAuthKeysAsync(_stop.Token) : Task.CompletedTask;
+            // Port 0 is the tests' in-memory server: no network calls there.
+            var updates = Config.CheckUpdates && Config.Port != 0 ? UpdateChecker.RunAsync(Version, Logger, _stop.Token) : Task.CompletedTask;
             if (!Config.OnlineMode)
                 Logger.Warn("OnlineMode is off: player identities are NOT verified. Anyone can join under any name.");
             var (firstUdp, lastUdp) = Config.WebRtcPortRange();
@@ -177,6 +179,7 @@ public sealed partial class BedrokiaServer
             _networkStop.Cancel();
             await signaling;
             await auth;
+            await updates;
         }
         Logger.Info("Server stopped.");
     }

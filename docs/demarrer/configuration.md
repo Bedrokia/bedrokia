@@ -44,6 +44,7 @@ server.log            journal
 | `force-resources` | `off` | obliger les joueurs à accepter les packs de ressources |
 | `autosave-interval` | `60` | secondes entre deux sauvegardes automatiques |
 | `webrtc-ports` | `auto` | ports UDP des joueurs : `auto` (port du serveur + `max-players` + 5) ou `premier-dernier` |
+| `check-updates` | `on` | vérifie toutes les 6 h s'il existe une nouvelle version, et l'annonce dans la console avec son lien |
 | `log-level` | `info` | `debug`, `info`, `warn`, `error` |
 
 Redémarrer le serveur après une modification. Une valeur invalide est signalée au démarrage.

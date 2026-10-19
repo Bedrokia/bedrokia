@@ -77,4 +77,14 @@ public sealed class ServerConfigTests : IDisposable
     private void Write(string content) => File.WriteAllText(ConfigPath, content);
 
     public void Dispose() => Directory.Delete(_dir, recursive: true);
+
+    [Fact]
+    public void Update_checker_compares_release_tags_with_the_running_version()
+    {
+        Assert.True(UpdateChecker.IsNewer("v0.3.8", "0.3.7+71cf0f8"));
+        Assert.True(UpdateChecker.IsNewer("v0.10.0", "0.9.9"));
+        Assert.False(UpdateChecker.IsNewer("v0.3.7", "0.3.7+71cf0f8")); // same version, other build
+        Assert.False(UpdateChecker.IsNewer("v0.3.6", "0.3.7"));
+        Assert.False(UpdateChecker.IsNewer("nightly", "0.3.7"));
+    }
 }

@@ -101,6 +101,9 @@ public sealed class ServerConfig
 
     public bool KeepInventory { get; set; }
 
+    /// <summary>Looks for a newer Bedrokia release on GitHub and says so in the console.</summary>
+    public bool CheckUpdates { get; set; } = true;
+
     /// <summary>Players must accept the resource packs to join.</summary>
     public bool ForceResourcePacks { get; set; }
 
@@ -144,6 +147,7 @@ public sealed class ServerConfig
         ("force-resources", "on/off: players must accept the server's resource packs to join", c => OnOff(c.ForceResourcePacks), (c, v) => c.ForceResourcePacks = ParseBool(v)),
         ("autosave-interval", "Seconds between automatic saves", c => c.AutosaveInterval.ToString(), (c, v) => c.AutosaveInterval = int.Parse(v)),
         ("webrtc-ports", "UDP ports for players: auto = server-port and the next ones (one per slot), or first-last", c => c.WebRtcPorts, (c, v) => c.WebRtcPorts = v),
+        ("check-updates", "on/off: tell in the console when a new Bedrokia version is released", c => OnOff(c.CheckUpdates), (c, v) => c.CheckUpdates = ParseBool(v)),
         ("log-level", "debug, info, warn or error", c => c.LogLevel.ToString().ToLowerInvariant(), (c, v) => c.LogLevel = Enum.Parse<LogLevel>(v, ignoreCase: true)),
     ];
 
