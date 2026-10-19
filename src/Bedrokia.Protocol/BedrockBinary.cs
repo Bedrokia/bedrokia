@@ -66,7 +66,10 @@ public sealed class BedrockWriter(int capacity = 256)
     }
 
     public BedrockWriter VarUInt32(uint value) => VarUInt64(value);
+    public static int VarUInt32Length(uint value) =>
+        value < 0x80 ? 1 : value < 0x4000 ? 2 : value < 0x200000 ? 3 : value < 0x10000000 ? 4 : 5;
     public BedrockWriter VarInt32(int value) => VarUInt64((uint)((value << 1) ^ (value >> 31)));
+
     public BedrockWriter VarInt64(long value) => VarUInt64((ulong)((value << 1) ^ (value >> 63)));
 
     public BedrockWriter String(string value)

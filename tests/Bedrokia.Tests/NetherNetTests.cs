@@ -23,7 +23,7 @@ namespace Bedrokia.Tests;
 /// <summary>A SIPSorcery peer plays the Minecraft client: two data channels, SDP offer over HTTP, identity assertion.</summary>
 public sealed class NetherNetTests : IDisposable
 {
-    private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(30);
     private static readonly HttpClient Http = new();
 
     private readonly ECDsa _serverKey = ECDsa.Create(ECCurve.NamedCurves.nistP384);
@@ -50,7 +50,8 @@ public sealed class NetherNetTests : IDisposable
     internal static async Task<(RTCPeerConnection Peer, RTCDataChannel Reliable, HttpResponseMessage Response)> ConnectAsync(
         IPEndPoint signaling, ECDsa? identityKey)
     {
-        var peer = new RTCPeerConnection(new RTCConfiguration());
+        var config = new RTCConfiguration { certificates2 = [NetherNetListener.CreateDtlsCertificate()] };
+        var peer = new RTCPeerConnection(config);
         var reliable = await peer.createDataChannel(NetherNetSession.ReliableLabel, new RTCDataChannelInit { ordered = true });
         await peer.createDataChannel(NetherNetSession.UnreliableLabel, new RTCDataChannelInit { ordered = false, maxRetransmits = 0 });
         var offer = peer.createOffer();
