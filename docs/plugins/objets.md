@@ -85,7 +85,8 @@ public sealed class MonPlugin : Plugin
 
 ### Outils et Minage
 
-- `WithDigger(IReadOnlyList<DestroySpeed> speeds, bool useEfficiency = true)` : Configure l'item pour accelerer la destruction de blocs ou de categories de blocs specifiques.
+- `WithDigger(IReadOnlyList<DestroySpeed> speeds, bool useEfficiency = true)` : Configure l'item pour accelerer la destruction de blocs ou de categories de blocs specifiques. Un nom qui commence par `query.` est une requete de tags, par exemple `"query.any_tag('stone', 'metal')"`.
+- `WithTool(string kind, int level, double speed)` : l'item mine comme un outil vanilla cote serveur : `kind` = `pickaxe`, `axe`, `shovel`, `hoe` ou `sword` ; `level` = 0 bois/or, 1 pierre, 2 fer, 3 diamant, 4 netherite (minerais recoltes) ; `speed` = vitesse (diamant 8).
 
 Exemple :
 ```csharp
