@@ -8,108 +8,107 @@
 |____/|_____|____/|_| \_\\___/|_|\_\|___/_/   \_\
 ```
 
-**Serveur Minecraft: Bedrock Edition écrit en C# / .NET 10**
+**A Minecraft: Bedrock Edition server written in C# / .NET 10**
 
-Bedrock 26.50 (protocole 2193) · NetherNet / WebRTC · Plugins en C# sans compilation · Apache-2.0
+Bedrock 26.50 (protocol 2193) · NetherNet / WebRTC · C# plugins without a build step · Apache-2.0
 
-🇫🇷 **Français** · 🇬🇧 [English](README.en.md)
+🇬🇧 **English** · 🇫🇷 [Français](README.fr.md)
 
-[📖 Documentation](https://nexiumpvp2.github.io/bedrokia/) · [📝 Changelog](https://nexiumpvp2.github.io/bedrokia/projet/changelog/) · [⬇️ Téléchargements](https://github.com/Nexiumpvp2/bedrokia/releases/latest) · [🦖 Egg Pterodactyl](deploy/pterodactyl/egg-bedrokia.json)
+[📖 Documentation](https://nexiumpvp2.github.io/bedrokia/en/) · [📝 Changelog](https://nexiumpvp2.github.io/bedrokia/en/project/changelog/) · [⬇️ Downloads](https://github.com/Nexiumpvp2/bedrokia/releases/latest) · [🦖 Pterodactyl egg](deploy/pterodactyl/egg-bedrokia.json)
 
 </div>
 
 ---
 
 > [!WARNING]
-> **Ce projet est codé avec l'IA, et un peu d'humain.**
-> La quasi-totalité du code de Bedrokia a été écrite par une intelligence artificielle (Claude, d'Anthropic, via
-> Claude Code), guidée, testée en jeu et corrigée par un humain. Le code peut contenir des erreurs que personne n'a
-> encore vues : testez avant de l'utiliser pour un vrai serveur, et signalez les bugs dans les *issues*.
+> **This project is coded with AI, and a bit of human.**
+> Almost all of Bedrokia's code was written by an artificial intelligence (Claude, by Anthropic, through Claude Code),
+> guided, tested in game and corrected by a human. The code may contain bugs nobody has seen yet: test it before
+> running a real server, and report bugs in the *issues*.
 
 ## 📖 Documentation
 
-Toute la doc est sur **[nexiumpvp2.github.io/bedrokia](https://nexiumpvp2.github.io/bedrokia/)**, mise à jour
-automatiquement à chaque version :
+All the docs are on **[nexiumpvp2.github.io/bedrokia/en](https://nexiumpvp2.github.io/bedrokia/en/)**, updated
+automatically with every version:
 
-| Page | Contenu |
+| Page | Content |
 |---|---|
-| 🚀 [Installation](https://nexiumpvp2.github.io/bedrokia/demarrer/installation/) | Linux, Windows, Docker, systemd, ports à ouvrir |
-| 🦖 [Pterodactyl](https://nexiumpvp2.github.io/bedrokia/demarrer/pterodactyl/) | Installer l'egg et régler les ports |
-| ⚙️ [Configuration](https://nexiumpvp2.github.io/bedrokia/demarrer/configuration/) | `server.properties`, `world.properties`, fichiers du serveur |
-| 💬 [Commandes](https://nexiumpvp2.github.io/bedrokia/demarrer/commandes/) | Toutes les commandes et les permissions |
-| 🌍 [Mondes et packs](https://nexiumpvp2.github.io/bedrokia/demarrer/mondes/) | Mondes plats ou vides, import de mondes Bedrock, packs de ressources |
-| 🧩 [Créer un plugin](https://nexiumpvp2.github.io/bedrokia/plugins/) | `plugin.yml`, événements, commandes, config, API |
-| 🗡️ [Objets](https://nexiumpvp2.github.io/bedrokia/plugins/objets/) et 🧱 [blocs](https://nexiumpvp2.github.io/bedrokia/plugins/blocs/) personnalisés | Contenu moddé depuis un plugin |
-| 📝 [Changelog](https://nexiumpvp2.github.io/bedrokia/projet/changelog/) | Toutes les versions et leurs changements |
-| 🗺️ [Feuille de route](https://nexiumpvp2.github.io/bedrokia/projet/roadmap/) | Ce qui marche, ce qui manque |
-| 🤖 [Le projet et l'IA](https://nexiumpvp2.github.io/bedrokia/projet/ia/) | Pourquoi, comment, contribuer |
+| 🚀 [Installation](https://nexiumpvp2.github.io/bedrokia/en/getting-started/installation/) | Linux, Windows, Docker, systemd, ports to open |
+| 🦖 [Pterodactyl](https://nexiumpvp2.github.io/bedrokia/en/getting-started/pterodactyl/) | Install the egg and set the ports |
+| ⚙️ [Configuration](https://nexiumpvp2.github.io/bedrokia/en/getting-started/configuration/) | `server.properties`, `world.properties`, server files |
+| 💬 [Commands](https://nexiumpvp2.github.io/bedrokia/en/getting-started/commands/) | Every command and the permissions |
+| 🌍 [Worlds and packs](https://nexiumpvp2.github.io/bedrokia/en/getting-started/worlds/) | Flat or void worlds, Bedrock world import, resource packs |
+| 🧩 [Create a plugin](https://nexiumpvp2.github.io/bedrokia/en/plugins/) | `plugin.yml`, events, commands, config, API |
+| 🗡️ [Custom items](https://nexiumpvp2.github.io/bedrokia/en/plugins/items/) and 🧱 [blocks](https://nexiumpvp2.github.io/bedrokia/en/plugins/blocks/) | Modded content from a plugin |
+| 📝 [Changelog](https://nexiumpvp2.github.io/bedrokia/en/project/changelog/) | Every version and its changes |
+| 🗺️ [Roadmap](https://nexiumpvp2.github.io/bedrokia/en/project/roadmap/) | What works, what is missing |
+| 🤖 [The project and AI](https://nexiumpvp2.github.io/bedrokia/en/project/ai/) | Why, how, contributing |
 
-## 🤖 Pourquoi ce projet ?
+## 🤖 Why this project?
 
-Bedrokia est une **expérience** :
+Bedrokia is an **experiment**:
 
-- **tester l'IA** sur un vrai logiciel complexe : un protocole réseau binaire, un moteur de jeu, la génération de
-  mondes, un système de plugins… pas un petit script ;
-- montrer qu'**une IA peut aussi maintenir le projet** dans le temps : corriger les bugs, ajouter des fonctions, écrire
-  les tests et la doc, avec des développeurs qui relisent et décident ;
-- montrer que **l'IA est l'avenir du développement** : un humain qui sait ce qu'il veut, et une IA qui écrit le code,
-  peuvent construire en quelques jours ce qui demandait des mois.
+- **test AI** on real, complex software: a binary network protocol, a game engine, world generation, a plugin
+  system… not a small script;
+- show that **an AI can also maintain the project** over time: fix bugs, add features, write the tests and the docs,
+  with developers who review and decide;
+- show that **AI is the future of software development**: a human who knows what they want and an AI that writes
+  the code can build in days what used to take months.
 
-**Tous les mainteneurs sont les bienvenus**, humains ou IA, débutants ou experts. Ouvrez une *issue*, proposez une
-*pull request*, ou demandez à votre IA préférée de corriger un bug : tant que les tests passent et que le code reste
-lisible, c'est cool. 😎
+**Every maintainer is welcome**, human or AI, beginner or expert. Open an *issue*, send a *pull request*, or ask your
+favourite AI to fix a bug: as long as the tests pass and the code stays readable, it's cool. 😎
 
-## ✨ Ce que fait Bedrokia
+## ✨ What Bedrokia does
 
-| Domaine | Détails |
+| Area | Details |
 |---|---|
-| **Connexion** | Bedrock 26.50, NetherNet (WebRTC) sur un seul port TCP + une plage UDP, authentification Xbox Live, chiffrement |
-| **Monde** | Génération vanilla (biomes, relief, arbres, minerais), monde plat ou vide, sauvegarde, import de mondes Bedrock (`.mcworld` / LevelDB) |
-| **Blocs** | Pose orientée (escaliers, bûches, portes, lits…), coffres, coffre de l'Ender, tonneaux, fours / hauts fourneaux / fumoirs, portes, trappes, leviers, boutons, lits (réapparition, nuit sautée), murets connectés, gravité (sable, gravier), eau et lave qui coulent, cultures, arbres, TNT et explosions |
-| **Joueurs** | Inventaire complet, artisanat (toutes les recettes vanilla), enchantements, expérience, faim, dégâts, chute, mort, armure, objets lâchés et ramassés |
-| **Mobs** | Animaux et monstres qui apparaissent, se déplacent, attaquent, lâchent des objets ; creepers qui explosent |
-| **Serveur** | `server.properties` comme PocketMine-MP, ops, liste blanche, bannissements, permissions et groupes, ~35 commandes, packs de ressources, annonce des nouvelles versions dans la console |
-| **Plugins** | Plugins C# organisés comme Bukkit / PocketMine (`plugin.yml`, `src/`, `resources/config.yml`), **compilés automatiquement au démarrage**, événements annulables, commandes, titres, scoreboard, effets, particules |
+| **Connection** | Bedrock 26.50, NetherNet (WebRTC) on one TCP port + a UDP range, Xbox Live authentication, encryption |
+| **World** | Vanilla generation (biomes, terrain, trees, ores), flat or void worlds, saving, Bedrock world import (`.mcworld` / LevelDB) |
+| **Blocks** | Oriented placement (stairs, logs, doors, beds…), chests, ender chests, barrels, furnaces / blast furnaces / smokers, doors, trapdoors, levers, buttons, beds (respawn, skip the night), connected walls, gravity (sand, gravel), flowing water and lava, crops, trees, TNT and explosions |
+| **Players** | Full inventory, crafting (every vanilla recipe), enchanting, experience, hunger, damage, falls, death, armour, dropped and picked-up items |
+| **Mobs** | Animals and monsters that spawn, move, attack and drop items; creepers that explode |
+| **Server** | PocketMine-like `server.properties`, ops, whitelist, bans, permissions and groups, ~35 commands, resource packs, new versions announced in the console |
+| **Plugins** | C# plugins organised like Bukkit / PocketMine (`plugin.yml`, `src/`, `resources/config.yml`), **compiled automatically at startup**, cancellable events, commands, titles, scoreboard, effects, particles, custom blocks and items |
 
-Ce qui manque encore : coffres doubles, panneaux éditables, enclume, tailleur de pierre, meule, Nether et End,
-redstone, grottes et structures. Voir la [feuille de route](https://nexiumpvp2.github.io/bedrokia/projet/roadmap/).
+Still missing: double chests, editable signs, anvil, stonecutter, grindstone, Nether and End, redstone, caves and
+structures. See the [roadmap](https://nexiumpvp2.github.io/bedrokia/en/project/roadmap/).
 
-## 🚀 Démarrage rapide
+## 🚀 Quick start
 
-1. Télécharger `bedrokia` (Linux) ou `bedrokia.exe` (Windows) depuis les [releases](https://github.com/Nexiumpvp2/bedrokia/releases).
-   C'est un exécutable unique : **aucun .NET à installer**.
-2. Le lancer dans un dossier vide :
+1. Download `bedrokia` (Linux) or `bedrokia.exe` (Windows) from the [releases](https://github.com/Nexiumpvp2/bedrokia/releases).
+   It is a single executable: **no .NET to install**.
+2. Run it in an empty folder:
 
 ```bash
 chmod +x bedrokia && ./bedrokia
 ```
 
-3. Ouvrir les ports : **TCP 19132** et **UDP 19132 à 19156** (port du serveur + nombre de joueurs + 5).
-4. Dans Minecraft : *Jouer → Serveurs → Ajouter un serveur*, adresse de la machine, port 19132.
+3. Open the ports: **TCP 19132** and **UDP 19132 to 19156** (server port + number of players + 5).
+4. In Minecraft: *Play → Servers → Add Server*, the machine's address, port 19132.
 
-**Mettre à jour = remplacer un seul fichier** (comme le `.phar` de PocketMine-MP) : télécharger le nouveau `bedrokia`,
-remplacer l'ancien, redémarrer. Mondes, joueurs et plugins sont gardés.
+**Updating = replacing one file**: download the new `bedrokia`, replace the old one, restart. Worlds, players and
+plugins are kept. The console tells you when a new version is out.
 
-Au premier lancement, le serveur crée ses fichiers, comme PocketMine-MP :
+On first start, the server creates its files:
 
 ```
-server.properties   réglages (commentés)
+server.properties   settings (with comments)
 ops.txt  white-list.txt  banned-players.txt
-worlds/             mondes (un dossier par monde, avec world.properties)
-players/            sauvegarde des joueurs
+worlds/             worlds (one folder per world, with world.properties)
+players/            player saves
 plugins/            plugins
-plugin_data/        données et config des plugins
-resource_packs/     packs de ressources (dossiers ou .mcpack)
+plugin_data/        plugin data and configs
+resource_packs/     resource packs (folders or .mcpack)
 ```
 
 ## 🦖 Pterodactyl
 
-Un egg est fourni : [`deploy/pterodactyl/egg-bedrokia.json`](deploy/pterodactyl/egg-bedrokia.json).
-*Admin → Nests → Import Egg*, puis créer un serveur avec. Le serveur a besoin de son port principal **et** d'une plage
-de ports UDP (ajouter des allocations, ou régler la variable `WEBRTC_PORTS`). Détails :
-[doc Pterodactyl](https://nexiumpvp2.github.io/bedrokia/demarrer/pterodactyl/).
+An egg is included: [`deploy/pterodactyl/egg-bedrokia.json`](deploy/pterodactyl/egg-bedrokia.json).
+*Admin → Nests → Import Egg*, then create a server with it. The server needs its main port **and** a range of UDP
+ports (add allocations, or set the `WEBRTC_PORTS` variable). Details:
+[Pterodactyl docs](https://nexiumpvp2.github.io/bedrokia/en/getting-started/pterodactyl/).
 
-## 🧩 Plugins en 30 secondes
+## 🧩 Plugins in 30 seconds
 
 ```
 plugins/Hello/
@@ -122,10 +121,10 @@ plugins/Hello/
 name: Hello
 version: 1.0.0
 main: Hello.Main
-author: Moi
+author: Me
 commands:
   hello:
-    description: Dit bonjour.
+    description: Says hello.
     permission: everyone
 ```
 
@@ -136,23 +135,23 @@ namespace Hello;
 public sealed class Main : Plugin
 {
     public override void OnEnable() =>
-        Events.PlayerJoin += player => player.SendTitle("§6Salut", $"§e{player.Name}");
+        Events.PlayerJoin += player => player.SendTitle("§6Hi", $"§e{player.Name}");
 
     public override bool OnCommand(CommandSender sender, string command, string[] args)
     {
-        sender.Reply("§aBonjour !");
+        sender.Reply("§aHello!");
         return true;
     }
 }
 ```
 
-Redémarrer le serveur : le plugin est compilé et chargé, la console l'affiche (ou affiche l'erreur exacte avec le
-fichier et la ligne). Plugins d'exemple complets : [`examples/plugins`](examples/plugins).
-Documentation complète : [plugins](https://nexiumpvp2.github.io/bedrokia/plugins/).
+Restart the server: the plugin is compiled and loaded, and the console says so (or shows the exact error with the
+file and line). Full example plugins: [`examples/plugins`](examples/plugins).
+Complete docs: [plugins](https://nexiumpvp2.github.io/bedrokia/en/plugins/).
 
-## 🛠️ Compiler
+## 🛠️ Build
 
-Prérequis : [SDK .NET 10](https://dotnet.microsoft.com/download/dotnet/10.0).
+Requirement: the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0).
 
 ```bash
 dotnet test Bedrokia.slnx
@@ -162,28 +161,28 @@ dotnet test Bedrokia.slnx
 dotnet publish src/Bedrokia.Cli -c Release -r linux-x64 --self-contained -p:PublishSingleFile=true -o out/linux-x64
 ```
 
-(`win-x64` pour Windows.) **Chaque push sur `main` publie automatiquement une nouvelle release** (v0.3.1, v0.3.2...) avec les deux
-exécutables, l'egg et les plugins d'exemple.
+(`win-x64` for Windows.) **Every push to `main` publishes a new release automatically** (v0.3.1, v0.3.2...) with both
+executables, the egg and the example plugins.
 
-## 📁 Structure
+## 📁 Layout
 
 ```
-src/Bedrokia.Protocol/            encodage Bedrock, paquets, NBT, login
-src/Bedrokia.Transport.NetherNet/ transport NetherNet (WebRTC)
-src/Bedrokia.Server/              moteur : monde, blocs, joueurs, mobs, commandes, plugins
-src/Bedrokia.Cli/                 exécutable `bedrokia`
-tests/Bedrokia.Tests/             tests automatiques
-examples/plugins/                 plugins d'exemple
-deploy/                           service systemd, egg Pterodactyl
-docs/ docs-en/                    documentation en français et en anglais (Material for MkDocs, sur GitHub Pages)
+src/Bedrokia.Protocol/            Bedrock encoding, packets, NBT, login
+src/Bedrokia.Transport.NetherNet/ NetherNet transport (WebRTC)
+src/Bedrokia.Server/              engine: world, blocks, players, mobs, commands, plugins
+src/Bedrokia.Cli/                 the `bedrokia` executable
+tests/Bedrokia.Tests/             automated tests
+examples/plugins/                 example plugins
+deploy/                           systemd service, Pterodactyl egg
+docs/ docs-en/                    documentation in French and English (Material for MkDocs, on GitHub Pages)
 ```
 
-## ⚖️ Licence et sources
+## ⚖️ Licence and sources
 
-Bedrokia est sous **licence Apache 2.0**. Le comportement vanilla est repris de projets open source sous licence
-MIT ou Apache : [Dragonfly](https://github.com/df-mc/dragonfly), [gophertunnel](https://github.com/Sandertv/gophertunnel),
+Bedrokia is under the **Apache 2.0 licence**. Vanilla behaviour is taken from open source projects under the MIT or
+Apache licences: [Dragonfly](https://github.com/df-mc/dragonfly), [gophertunnel](https://github.com/Sandertv/gophertunnel),
 [Glowstone](https://github.com/GlowstoneMC/Glowstone), [minecraft-data](https://github.com/PrismarineJS/minecraft-data),
-[Cuberite](https://github.com/cuberite/cuberite). Voir [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
-Aucun code de PocketMine-MP, PowerNukkitX ou Bedrock Dedicated Server n'est utilisé.
+[Cuberite](https://github.com/cuberite/cuberite). See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+No code from PocketMine-MP, PowerNukkitX or Bedrock Dedicated Server is used.
 
-Bedrokia n'est pas affilié à Mojang ni à Microsoft. Minecraft est une marque de Mojang AB.
+Bedrokia is not affiliated with Mojang or Microsoft. Minecraft is a trademark of Mojang AB.
