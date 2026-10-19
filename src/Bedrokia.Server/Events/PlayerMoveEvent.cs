@@ -22,7 +22,7 @@ public sealed class PlayerMoveEvent : CancellableEvent
 {
     public BedrockConnection Player { get; }
     public Vector3 From { get; }
-    public Vector3 To { get; }
+    public Vector3 To { get; set; }
     public float Yaw { get; }
     public float Pitch { get; }
     public bool IsBlockChange { get; }

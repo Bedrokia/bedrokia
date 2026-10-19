@@ -73,7 +73,14 @@ public abstract class Plugin
     /// <summary>Called when the server stops: save data here.</summary>
     public virtual void OnDisable()
     {
+        Server?.Scheduler?.CancelAll(this);
     }
+
+    /// <summary>Cancels a scheduled task by ID.</summary>
+    public void CancelTask(long taskId) => Server.Scheduler.CancelTask(taskId);
+
+    /// <summary>Cancels all scheduled tasks owned by this plugin.</summary>
+    public void CancelAllTasks() => Server.Scheduler.CancelAll(this);
 
     /// <summary>A command declared in plugin.yml was run. Return false to show its usage.</summary>
     public virtual bool OnCommand(CommandSender sender, string command, string[] args) => false;
