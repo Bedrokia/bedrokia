@@ -40,7 +40,7 @@ commands:
   bonjour:
     description: Dit bonjour.
     usage: "[joueur]"
-    permission: everyone     # everyone ou op (par défaut : op)
+    permission: everyone     # everyone, op, ou un nœud granulaire (ex: monplugin.command.vip)
     aliases: [salut, hello]
 ```
 
@@ -67,6 +67,11 @@ public sealed class Main : Plugin
     {
         if (command == "bonjour")
         {
+            if (!sender.HasPermission("monplugin.command.bonjour"))
+            {
+                sender.Reply("§cVous n'avez pas la permission.");
+                return true;
+            }
             sender.Reply(Config.GetString("message", "Bonjour !"));
             return true;
         }
@@ -77,7 +82,7 @@ public sealed class Main : Plugin
 
 Ces `using` sont automatiques : `System`, `System.Collections.Generic`, `System.IO`, `System.Linq`,
 `System.Threading.Tasks`, `Bedrokia.Server`, `Bedrokia.Server.Commands`, `Bedrokia.Server.Game`,
-`Bedrokia.Server.Network`, `Bedrokia.Server.Plugins`.
+`Bedrokia.Server.Network`, `Bedrokia.Server.Permissions`, `Bedrokia.Server.Plugins`.
 
 Tout le code des plugins s'exécute sur le **thread du jeu** (20 ticks par seconde) : pas besoin de verrous, mais il ne
 faut pas bloquer (pas de `Thread.Sleep`, pas de requête réseau synchrone).

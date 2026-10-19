@@ -181,7 +181,12 @@ public sealed class PluginManager(BedrokiaServer server)
     {
         foreach (var (name, info) in plugin.Info.Commands)
         {
-            var opOnly = info.Permission.ToLowerInvariant() is not ("everyone" or "all" or "true");
+            var perm = info.Permission.ToLowerInvariant() switch
+            {
+                "everyone" or "all" or "true" => "",
+                "op" => "op",
+                _ => info.Permission
+            };
             void Run(CommandSender sender, string[] args)
             {
                 try
@@ -195,9 +200,9 @@ public sealed class PluginManager(BedrokiaServer server)
                     sender.Reply("§cAn internal error occurred while running this command.");
                 }
             }
-            server.Commands.Register(name, info.Description, info.Usage, opOnly, Run);
+            server.Commands.Register(name, info.Description, info.Usage, perm, Run);
             foreach (var alias in info.Aliases)
-                server.Commands.Register(alias, $"Alias of /{name}.", info.Usage, opOnly, Run);
+                server.Commands.Register(alias, $"Alias of /{name}.", info.Usage, perm, Run);
         }
     }
 
@@ -242,6 +247,7 @@ public sealed class PluginManager(BedrokiaServer server)
         global using Bedrokia.Server.Commands;
         global using Bedrokia.Server.Game;
         global using Bedrokia.Server.Network;
+        global using Bedrokia.Server.Permissions;
         global using Bedrokia.Server.Plugins;
         """;
 

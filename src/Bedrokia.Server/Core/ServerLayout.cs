@@ -26,6 +26,7 @@ public static class ServerLayout
         MoveIfMissing(Path.Combine("config", "ops.txt"), "ops.txt");
         MoveIfMissing(Path.Combine("config", "whitelist.txt"), "white-list.txt");
         MoveIfMissing(Path.Combine("config", "banned-players.txt"), "banned-players.txt");
+        MoveIfMissing(Path.Combine("config", "permissions.json"), "permissions.json");
         MoveIfMissing(Path.Combine("config", "nethernet-identity.pem"), Path.Combine("data", "nethernet-identity.pem"));
         if (Directory.Exists(worldsDirectory))
             foreach (var oldPlayers in Directory.GetDirectories(worldsDirectory).Select(w => Path.Combine(w, "players")).Where(Directory.Exists))

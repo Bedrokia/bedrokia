@@ -70,12 +70,16 @@ public sealed partial class BedrockConnection
 
     public bool IsOp => _server.Ops.Contains(Name);
 
+    public string Prefix => _server.Permissions.GetPlayerPrefix(Name);
+
+    public bool HasPermission(string? permission) => _server.Permissions.HasPermission(Name, permission, IsOp);
+
     public CommandSender CommandSender => new(Name, IsOp, SendMessage, this);
 
-    /// <summary>Sends the command list this player may use (call again after op/deop).</summary>
+    /// <summary>Sends the command list this player may use (call again after op/deop or perm change).</summary>
     public void SendCommands() =>
         Send(new BedrockWriter().VarUInt32(CommandManager.SetCommandsEnabledId).Bool(true).ToArray(),
-            _server.Commands.AvailableCommandsPacket(IsOp));
+            _server.Commands.AvailableCommandsPacket(CommandSender));
 
     /// <summary>Moves the player (feet position) and loads the chunks around the destination.</summary>
     public void Teleport(float x, float y, float z)
@@ -1035,7 +1039,10 @@ public sealed partial class BedrockConnection
             return;
         var chat = new Plugins.PlayerChatEvent(this, message);
         if (_server.Events.OnChat(chat))
-            _server.Broadcast(Packets.Text(TextType.Chat, chat.Message, Name), $"<{Name}> {chat.Message}");
+        {
+            var senderName = Prefix.Length > 0 ? $"{Prefix}{Name}§r" : Name;
+            _server.Broadcast(Packets.Text(TextType.Chat, chat.Message, senderName), $"<{senderName}> {chat.Message}");
+        }
     }
 
     internal void Send(params byte[][] packets)

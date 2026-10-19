@@ -21,6 +21,7 @@ using Bedrokia.Server.Core;
 using Bedrokia.Server.Entities;
 using Bedrokia.Server.Game;
 using Bedrokia.Server.Network;
+using Bedrokia.Server.Permissions;
 using Bedrokia.Server.Plugins;
 using Bedrokia.Transport.NetherNet;
 
@@ -65,6 +66,7 @@ public sealed partial class BedrokiaServer
     public PlayerList Ops { get; } = new("ops.txt");
     public PlayerList Whitelist { get; } = new("white-list.txt");
     public PlayerList Bans { get; } = new("banned-players.txt");
+    public PermissionManager Permissions { get; }
 
     /// <summary>Why <paramref name="name"/> may not join (banned, not whitelisted), or null.</summary>
     internal string? AdmissionRefusal(string name) =>
@@ -72,10 +74,11 @@ public sealed partial class BedrokiaServer
         : Config.Whitelist && !Whitelist.Contains(name) && !Ops.Contains(name) ? "You are not white-listed on this server."
         : null;
 
-    public BedrokiaServer(ServerConfig config, Logger logger)
+    public BedrokiaServer(ServerConfig config, Logger logger, PermissionManager? permissions = null)
     {
         Config = config;
         Logger = logger;
+        Permissions = permissions ?? new("permissions.json");
         Commands = new CommandManager(logger);
         Mobs = new MobManager(this);
         FallingBlocks = new FallingBlocks(this);
@@ -541,19 +544,19 @@ public sealed partial class BedrokiaServer
 
     private void RegisterBuiltinCommands()
     {
-        void Add(string name, string description, string usage, bool opOnly, Action<CommandSender, string[]> run) =>
-            Commands.Register(name, description, usage, opOnly, run);
-        void Alias(string alias, string target, string usage, bool opOnly) =>
-            Commands.Register(alias, $"Alias of {target}.", usage, opOnly, (sender, args) => Commands.Dispatch(sender, target + " " + string.Join(' ', args)));
+        void Add(string name, string description, string usage, string permission, Action<CommandSender, string[]> run) =>
+            Commands.Register(name, description, usage, permission, run);
+        void Alias(string alias, string target, string usage, string permission) =>
+            Commands.Register(alias, $"Alias of {target}.", usage, permission, (sender, args) => Commands.Dispatch(sender, target + " " + string.Join(' ', args)));
 
-        Add("help", "Lists the available commands.", "", false, (sender, _) =>
+        Add("help", "Lists the available commands.", "", "bedrokia.command.help", (sender, _) =>
         {
-            foreach (var command in Commands.All.Where(c => sender.IsOp || !c.OpOnly))
+            foreach (var command in Commands.All.Where(c => sender.HasPermission(c.Permission)))
                 sender.Reply($"§6/{command.Name} {command.Usage}§r - {command.Description}");
         });
-        Add("version", "Shows the server and Bedrock versions.", "", false, (sender, _) =>
+        Add("version", "Shows the server and Bedrock versions.", "", "bedrokia.command.version", (sender, _) =>
             sender.Reply($"{Product.Name} {Version} - Bedrock {ProtocolInfo.GameVersion} (protocol {ProtocolInfo.Version})"));
-        Add("plugin", "Lists the plugins, or shows one.", "[name]", false, (sender, args) =>
+        Add("plugin", "Lists the plugins, or shows one.", "[name]", "bedrokia.command.plugin", (sender, args) =>
         {
             if (args.Length > 0)
             {
@@ -576,17 +579,17 @@ public sealed partial class BedrokiaServer
             foreach (var (file, _) in Plugins.Failed)
                 sender.Reply($"§c{Path.GetFileName(file)}: failed to load (see the console).");
         });
-        Alias("plugins", "plugin", "[name]", false);
-        Add("list", "Lists the players online.", "", false, (sender, _) =>
+        Alias("plugins", "plugin", "[name]", "bedrokia.command.plugin");
+        Add("list", "Lists the players online.", "", "bedrokia.command.list", (sender, _) =>
             sender.Reply($"{_players.Count}/{Config.MaxPlayers} players: {string.Join(", ", _players.Select(p => p.Name))}"));
-        Add("seed", "Shows the world seed.", "", false, (sender, _) => sender.Reply($"Seed: {World.Generator.Seed}"));
-        Add("me", "Describes an action in the chat.", "<action...>", false, (sender, args) =>
+        Add("seed", "Shows the world seed.", "", "bedrokia.command.seed", (sender, _) => sender.Reply($"Seed: {World.Generator.Seed}"));
+        Add("me", "Describes an action in the chat.", "<action...>", "bedrokia.command.me", (sender, args) =>
         {
             if (args.Length == 0)
                 throw new CommandUsageException();
             BroadcastMessage($"* {sender.Name} {string.Join(' ', args)}");
         });
-        Add("tell", "Sends a private message.", "<player> <message...>", false, (sender, args) =>
+        Add("tell", "Sends a private message.", "<player> <message...>", "bedrokia.command.tell", (sender, args) =>
         {
             if (args.Length < 2)
                 throw new CommandUsageException();
@@ -597,27 +600,27 @@ public sealed partial class BedrokiaServer
                 sender.Reply($"§7You whisper to {target.Name}: {message}");
             }
         });
-        Alias("msg", "tell", "<player> <message...>", false);
-        Alias("w", "tell", "<player> <message...>", false);
-        Add("spawn", "Teleports you to the world spawn.", "", false, (sender, _) =>
+        Alias("msg", "tell", "<player> <message...>", "bedrokia.command.tell");
+        Alias("w", "tell", "<player> <message...>", "bedrokia.command.tell");
+        Add("spawn", "Teleports you to the world spawn.", "", "bedrokia.command.spawn", (sender, _) =>
         {
             var (x, y, z) = World.Spawn;
             Self(sender).Teleport(x + 0.5f, y, z + 0.5f);
         });
 
-        Add("stop", "Stops the server cleanly.", "", true, (_, _) => Stop());
-        Add("save-all", "Saves the world and the players now.", "", true, (sender, _) =>
+        Add("stop", "Stops the server cleanly.", "", "bedrokia.command.stop", (_, _) => Stop());
+        Add("save-all", "Saves the world and the players now.", "", "bedrokia.command.saveall", (sender, _) =>
         {
             SaveWorld();
             sender.Reply("World saved.");
         });
-        Add("say", "Sends a message to every player.", "<message...>", true, (sender, args) =>
+        Add("say", "Sends a message to every player.", "<message...>", "bedrokia.command.say", (sender, args) =>
         {
             if (args.Length == 0)
                 throw new CommandUsageException();
             BroadcastMessage($"§d[{sender.Name}] {string.Join(' ', args)}");
         });
-        Add("gamemode", "Changes a game mode (survival, creative, adventure).", "<mode> [player]", true, (sender, args) =>
+        Add("gamemode", "Changes a game mode (survival, creative, adventure).", "<mode> [player]", "bedrokia.command.gamemode", (sender, args) =>
         {
             if (args.Length is 0 or > 2 || !TryParseGameMode(args[0], out var mode))
                 throw new CommandUsageException();
@@ -628,8 +631,8 @@ public sealed partial class BedrokiaServer
                 sender.Reply($"Set {target.Name}'s game mode to {mode}.");
             }
         });
-        Alias("gm", "gamemode", "<mode> [player]", true);
-        Add("give", "Gives items to a player.", "<player> <item> [amount]", true, (sender, args) =>
+        Alias("gm", "gamemode", "<mode> [player]", "bedrokia.command.gamemode");
+        Add("give", "Gives items to a player.", "<player> <item> [amount]", "bedrokia.command.give", (sender, args) =>
         {
             if (args.Length is < 2 or > 3)
                 throw new CommandUsageException();
@@ -648,7 +651,7 @@ public sealed partial class BedrokiaServer
                 sender.Reply($"Gave {amount} {(template.Type.Name.StartsWith("minecraft:") ? template.Type.Name["minecraft:".Length..] : template.Type.Name)} to {target.Name}.");
             }
         });
-        Add("clear", "Empties a player's inventory.", "[player]", true, (sender, args) =>
+        Add("clear", "Empties a player's inventory.", "[player]", "bedrokia.command.clear", (sender, args) =>
         {
             foreach (var target in args.Length > 0 ? Targets(sender, args[0]) : [Self(sender)])
             {
@@ -659,7 +662,7 @@ public sealed partial class BedrokiaServer
                 sender.Reply($"Cleared the inventory of {target.Name}.");
             }
         });
-        Add("tp", "Teleports a player to a player or to coordinates.", "<target> [destination] [x] [y] [z]", true, (sender, args) =>
+        Add("tp", "Teleports a player to a player or to coordinates.", "<target> [destination] [x] [y] [z]", "bedrokia.command.tp", (sender, args) =>
         {
             switch (args.Length)
             {
@@ -685,8 +688,8 @@ public sealed partial class BedrokiaServer
                     throw new CommandUsageException();
             }
         });
-        Alias("teleport", "tp", "<target> [destination] [x] [y] [z]", true);
-        Add("time", "Changes the time of day.", "<set|add> <value>", true, (sender, args) =>
+        Alias("teleport", "tp", "<target> [destination] [x] [y] [z]", "bedrokia.command.tp");
+        Add("time", "Changes the time of day.", "<set|add> <value>", "bedrokia.command.time", (sender, args) =>
         {
             if (args.Length != 2)
                 throw new CommandUsageException();
@@ -709,14 +712,14 @@ public sealed partial class BedrokiaServer
             Broadcast(Packets.SetTime((int)(World.Time % int.MaxValue)));
             sender.Reply($"Time is now {World.Time % 24000}.");
         });
-        Add("setworldspawn", "Sets the world spawn to your position.", "", true, (sender, _) =>
+        Add("setworldspawn", "Sets the world spawn to your position.", "", "bedrokia.command.setworldspawn", (sender, _) =>
         {
             var (x, y, z) = Self(sender).Position;
             World.Spawn = ((int)Math.Floor(x), (int)Math.Floor(y - BedrockConnection.EyeHeight), (int)Math.Floor(z));
             sender.Reply($"World spawn set to {World.Spawn}.");
         });
 
-        Add("op", "Makes a player a server operator.", "<player>", true, (sender, args) =>
+        Add("op", "Makes a player a server operator.", "<player>", "bedrokia.command.op", (sender, args) =>
         {
             if (args.Length != 1)
                 throw new CommandUsageException();
@@ -727,14 +730,14 @@ public sealed partial class BedrokiaServer
                 player.SendMessage("§eYou are now a server operator.");
             }
         });
-        Add("deop", "Removes operator status from a player.", "<player>", true, (sender, args) =>
+        Add("deop", "Removes operator status from a player.", "<player>", "bedrokia.command.deop", (sender, args) =>
         {
             if (args.Length != 1)
                 throw new CommandUsageException();
             sender.Reply(Ops.Remove(args[0]) ? $"{args[0]} is no longer an operator." : $"{args[0]} is not an operator.");
             FindPlayer(args[0])?.SendCommands();
         });
-        Add("whitelist", "Manages the whitelist.", "<on|off|add|remove|list> [player]", true, (sender, args) =>
+        Add("whitelist", "Manages the whitelist.", "<on|off|add|remove|list> [player]", "bedrokia.command.whitelist", (sender, args) =>
         {
             switch (args.Length > 0 ? args[0].ToLowerInvariant() : "")
             {
@@ -758,7 +761,7 @@ public sealed partial class BedrokiaServer
                     throw new CommandUsageException();
             }
         });
-        Add("kick", "Disconnects a player.", "<player> [reason...]", true, (sender, args) =>
+        Add("kick", "Disconnects a player.", "<player> [reason...]", "bedrokia.command.kick", (sender, args) =>
         {
             if (args.Length == 0)
                 throw new CommandUsageException();
@@ -768,7 +771,7 @@ public sealed partial class BedrokiaServer
                 sender.Reply($"Kicked {target.Name}.");
             }
         });
-        Add("ban", "Bans a player by name.", "<player> [reason...]", true, (sender, args) =>
+        Add("ban", "Bans a player by name.", "<player> [reason...]", "bedrokia.command.ban", (sender, args) =>
         {
             if (args.Length == 0)
                 throw new CommandUsageException();
@@ -776,14 +779,14 @@ public sealed partial class BedrokiaServer
             FindPlayer(args[0])?.Disconnect(args.Length > 1 ? string.Join(' ', args[1..]) : "You are banned from this server.");
             sender.Reply($"Banned {args[0]}.");
         });
-        Add("pardon", "Unbans a player.", "<player>", true, (sender, args) =>
+        Add("pardon", "Unbans a player.", "<player>", "bedrokia.command.pardon", (sender, args) =>
         {
             if (args.Length != 1)
                 throw new CommandUsageException();
             sender.Reply(Bans.Remove(args[0]) ? $"Unbanned {args[0]}." : $"{args[0]} is not banned.");
         });
-        Alias("unban", "pardon", "<player>", true);
-        Add("summon", "Spawns a mob at your position.", "<mob>", true, (sender, args) =>
+        Alias("unban", "pardon", "<player>", "bedrokia.command.pardon");
+        Add("summon", "Spawns a mob at your position.", "<mob>", "bedrokia.command.summon", (sender, args) =>
         {
             if (args.Length != 1)
                 throw new CommandUsageException();
@@ -799,7 +802,7 @@ public sealed partial class BedrokiaServer
             Mobs.Spawn(kind, x, y - BedrockConnection.EyeHeight, z);
             sender.Reply($"Summoned {kind.Id["minecraft:".Length..]}.");
         });
-        Add("enchant", "Enchants the held item.", "<enchantment> [level]", true, (sender, args) =>
+        Add("enchant", "Enchants the held item.", "<enchantment> [level]", "bedrokia.command.enchant", (sender, args) =>
         {
             if (args.Length is < 1 or > 2)
                 throw new CommandUsageException();
@@ -841,7 +844,7 @@ public sealed partial class BedrokiaServer
             
             sender.Reply($"Enchanted {itemName} with {enchant.Name} {level}.");
         });
-        Add("xp", "Gives experience: a number of points, or levels with an L suffix (e.g. 30L).", "<amount> [player]", true, (sender, args) =>
+        Add("xp", "Gives experience: a number of points, or levels with an L suffix (e.g. 30L).", "<amount> [player]", "bedrokia.command.xp", (sender, args) =>
         {
             if (args.Length is 0 or > 2)
                 throw new CommandUsageException();
@@ -856,6 +859,136 @@ public sealed partial class BedrokiaServer
                 sender.Reply($"Gave {amount}{(levels ? " levels" : " experience")} to {target.Name}.");
             }
         });
-        Add("banlist", "Lists banned players.", "", true, (sender, _) => sender.Reply($"Banned: {string.Join(", ", Bans.Names)}"));
+        Add("banlist", "Lists banned players.", "", "bedrokia.command.banlist", (sender, _) => sender.Reply($"Banned: {string.Join(", ", Bans.Names)}"));
+
+        Add("perm", "Manages permissions and groups.", "<user|group> ...", "bedrokia.command.permission", (sender, args) =>
+        {
+            if (args.Length < 2)
+                throw new CommandUsageException();
+
+            switch (args[0].ToLowerInvariant())
+            {
+                case "user":
+                {
+                    if (args.Length < 3)
+                        throw new CommandUsageException();
+                    var target = args[1];
+                    var action = args[2].ToLowerInvariant();
+                    switch (action)
+                    {
+                        case "info":
+                        {
+                            var group = Permissions.GetPlayerGroup(target);
+                            var prefix = Permissions.GetPlayerPrefix(target);
+                            var effective = Permissions.GetEffectivePermissions(target);
+                            sender.Reply($"§6--- Permissions for {target} ---");
+                            sender.Reply($"§7Group: §e{group}§7 (prefix: '{prefix}')");
+                            sender.Reply($"§7Effective permissions ({effective.Count}): " + (effective.Count == 0 ? "none" : string.Join("§r, §a", effective)));
+                            break;
+                        }
+                        case "setgroup" when args.Length == 4:
+                        {
+                            var group = args[3];
+                            Permissions.SetPlayerGroup(target, group);
+                            sender.Reply($"Set group of {target} to {group}.");
+                            FindPlayer(target)?.SendCommands();
+                            break;
+                        }
+                        case "add" when args.Length == 4:
+                        {
+                            var perm = args[3];
+                            Permissions.AddPlayerPermission(target, perm);
+                            sender.Reply($"Added permission '{perm}' to {target}.");
+                            FindPlayer(target)?.SendCommands();
+                            break;
+                        }
+                        case "remove" when args.Length == 4:
+                        {
+                            var perm = args[3];
+                            Permissions.RemovePlayerPermission(target, perm);
+                            sender.Reply($"Removed permission '{perm}' from {target}.");
+                            FindPlayer(target)?.SendCommands();
+                            break;
+                        }
+                        default:
+                            throw new CommandUsageException();
+                    }
+                    break;
+                }
+                case "group":
+                {
+                    if (args.Length < 3)
+                        throw new CommandUsageException();
+                    var groupName = args[1];
+                    var action = args[2].ToLowerInvariant();
+                    switch (action)
+                    {
+                        case "list":
+                        {
+                            if (Permissions.Groups.TryGetValue(groupName, out var grp))
+                            {
+                                sender.Reply($"§6--- Group: {grp.Name} ---");
+                                sender.Reply($"§7Prefix: '§r{grp.Prefix}§7', Priority: {grp.Priority}, Parent: {(grp.Parent ?? "none")}");
+                                sender.Reply($"§7Permissions ({grp.Permissions.Count}): " + (grp.Permissions.Count == 0 ? "none" : string.Join("§r, §a", grp.Permissions)));
+                            }
+                            else
+                            {
+                                sender.Reply($"§cGroup '{groupName}' does not exist.");
+                            }
+                            break;
+                        }
+                        case "add" when args.Length == 4:
+                        {
+                            var perm = args[3];
+                            Permissions.AddGroupPermission(groupName, perm);
+                            sender.Reply($"Added permission '{perm}' to group {groupName}.");
+                            foreach (var p in _players)
+                            {
+                                if (string.Equals(Permissions.GetPlayerGroup(p.Name), groupName, StringComparison.OrdinalIgnoreCase))
+                                    p.SendCommands();
+                            }
+                            break;
+                        }
+                        case "remove" when args.Length == 4:
+                        {
+                            var perm = args[3];
+                            Permissions.RemoveGroupPermission(groupName, perm);
+                            sender.Reply($"Removed permission '{perm}' from group {groupName}.");
+                            foreach (var p in _players)
+                            {
+                                if (string.Equals(Permissions.GetPlayerGroup(p.Name), groupName, StringComparison.OrdinalIgnoreCase))
+                                    p.SendCommands();
+                            }
+                            break;
+                        }
+                        case "setprefix" when args.Length >= 4:
+                        {
+                            var rawPrefix = string.Join(' ', args[3..]).Trim('"');
+                            var prefix = rawPrefix.Length > 0 && !rawPrefix.EndsWith(' ') ? rawPrefix + " " : rawPrefix;
+                            var existing = Permissions.Groups.TryGetValue(groupName, out var g) ? g : null;
+                            Permissions.CreateGroup(groupName, prefix, existing?.Priority ?? 0, existing?.Parent);
+                            sender.Reply($"Set prefix of group {groupName} to '{prefix}'.");
+                            break;
+                        }
+                        case "setparent" when args.Length == 4:
+                        {
+                            var parent = args[3];
+                            var existing = Permissions.Groups.TryGetValue(groupName, out var g) ? g : null;
+                            Permissions.CreateGroup(groupName, existing?.Prefix ?? "", existing?.Priority ?? 0, parent);
+                            sender.Reply($"Set parent of group {groupName} to '{parent}'.");
+                            foreach (var p in _players)
+                                p.SendCommands();
+                            break;
+                        }
+                        default:
+                            throw new CommandUsageException();
+                    }
+                    break;
+                }
+                default:
+                    throw new CommandUsageException();
+            }
+        });
+        Alias("permission", "perm", "<user|group> ...", "bedrokia.command.permission");
     }
 }
