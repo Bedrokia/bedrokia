@@ -43,37 +43,43 @@ public sealed partial class BedrockConnection
                 Inventory.CraftingTableOpen = true;
                 Send(InventoryPackets.ContainerOpen(InventoryPackets.WindowCraftingTable, InventoryPackets.ContainerTypeWorkbench, x, y, z));
                 return true;
+            case "minecraft:bed" when World.Dimension == 1: // beds explode in the Nether
+                _server.SetBlockAndUpdate(x, y, z, Blocks.Air, World);
+                if (BlockPlacement.OtherHalf(block, x, y, z) is { } head && World.GetBlock(head.X, head.Y, head.Z)?.Name == name)
+                    _server.SetBlockAndUpdate(head.X, head.Y, head.Z, Blocks.Air, World);
+                _server.Explode(x + 0.5, y + 0.5, z + 0.5, 5, World);
+                return true;
             case "minecraft:bed":
                 UseBed(block, x, y, z);
                 return true;
             case "minecraft:lever":
-                _server.SetBlockAndUpdate(x, y, z, Toggle(block, "open_bit"));
-                _server.Broadcast(Packets.LevelEvent(LevelEventClick, x, y, z, 0));
+                _server.SetBlockAndUpdate(x, y, z, Toggle(block, "open_bit"), World);
+                _server.BroadcastIn(World, Packets.LevelEvent(LevelEventClick, x, y, z, 0));
                 return true;
         }
         if (name.EndsWith("_door") && name != "minecraft:iron_door")
         {
             var opened = Toggle(block, "open_bit");
-            _server.SetBlockAndUpdate(x, y, z, opened);
-            if (BlockPlacement.OtherHalf(block, x, y, z) is { } other && _server.World.GetBlock(other.X, other.Y, other.Z) is { } half && half.Name == name)
-                _server.SetBlockAndUpdate(other.X, other.Y, other.Z, With(half, "open_bit", opened.States["open_bit"]));
-            _server.Broadcast(Packets.LevelEvent(LevelEventDoor, x, y, z, 0));
+            _server.SetBlockAndUpdate(x, y, z, opened, World);
+            if (BlockPlacement.OtherHalf(block, x, y, z) is { } other && World.GetBlock(other.X, other.Y, other.Z) is { } half && half.Name == name)
+                _server.SetBlockAndUpdate(other.X, other.Y, other.Z, With(half, "open_bit", opened.States["open_bit"]), World);
+            _server.BroadcastIn(World, Packets.LevelEvent(LevelEventDoor, x, y, z, 0));
             return true;
         }
         if (name.Contains("trapdoor") && name != "minecraft:iron_trapdoor" || name.Contains("fence_gate"))
         {
-            _server.SetBlockAndUpdate(x, y, z, Toggle(block, "open_bit"));
-            _server.Broadcast(Packets.LevelEvent(LevelEventDoor, x, y, z, 0));
+            _server.SetBlockAndUpdate(x, y, z, Toggle(block, "open_bit"), World);
+            _server.BroadcastIn(World, Packets.LevelEvent(LevelEventDoor, x, y, z, 0));
             return true;
         }
         if (name.EndsWith("_button") && block.States.TryGetValue("button_pressed_bit", out var pressed) && Convert.ToInt32(pressed) == 0)
         {
-            _server.SetBlockAndUpdate(x, y, z, With(block, "button_pressed_bit", (byte)1));
-            _server.Broadcast(Packets.LevelEvent(LevelEventClick, x, y, z, 0));
+            _server.SetBlockAndUpdate(x, y, z, With(block, "button_pressed_bit", (byte)1), World);
+            _server.BroadcastIn(World, Packets.LevelEvent(LevelEventClick, x, y, z, 0));
             _server.Schedule(name.Contains("stone") || name.Contains("polished_blackstone") ? 20 : 30, () =>
             {
-                if (_server.World.GetBlock(x, y, z) is { } now && now.Name == name)
-                    _server.SetBlockAndUpdate(x, y, z, With(now, "button_pressed_bit", (byte)0));
+                if (World.GetBlock(x, y, z) is { } now && now.Name == name)
+                    _server.SetBlockAndUpdate(x, y, z, With(now, "button_pressed_bit", (byte)0), World);
             });
             return true;
         }
@@ -85,25 +91,25 @@ public sealed partial class BedrockConnection
     {
         var item = held.Type.Name.StartsWith("minecraft:") ? held.Type.Name["minecraft:".Length..] : held.Type.Name;
         var (fx, fy, fz) = FaceOffset(face);
-        var world = _server.World;
+        var world = World;
         var survival = GameMode != GameMode.Creative;
 
         if (item.EndsWith("_hoe") && clicked.Name is "minecraft:grass_block" or "minecraft:dirt" or "minecraft:dirt_path"
             && face != 0 && world.GetBlock(x, y + 1, z) is { IsAir: true })
         {
-            _server.SetBlockAndUpdate(x, y, z, Blocks.ByName("farmland")!);
+            _server.SetBlockAndUpdate(x, y, z, Blocks.ByName("farmland")!, World);
             return true;
         }
         if (item.EndsWith("_shovel") && clicked.Name == "minecraft:grass_block" && face != 0 && world.GetBlock(x, y + 1, z) is { IsAir: true })
         {
-            _server.SetBlockAndUpdate(x, y, z, Blocks.ByName("grass_path") ?? Blocks.ByName("dirt_path") ?? clicked);
+            _server.SetBlockAndUpdate(x, y, z, Blocks.ByName("grass_path") ?? Blocks.ByName("dirt_path") ?? clicked, World);
             return true;
         }
         if (item == "bone_meal")
         {
-            if (!_server.Grow(x, y, z, boneMeal: true))
+            if (!_server.Grow(x, y, z, boneMeal: true, World))
                 return false;
-            _server.Broadcast(Packets.LevelEvent(LevelEventCropGrowth, x, y, z, 0));
+            _server.BroadcastIn(World, Packets.LevelEvent(LevelEventCropGrowth, x, y, z, 0));
             if (survival)
                 Send(Inventory.ConsumeHeld());
             return true;
@@ -112,14 +118,17 @@ public sealed partial class BedrockConnection
         {
             if (clicked.Name == "minecraft:tnt")
             {
-                _server.SetBlockAndUpdate(x, y, z, Blocks.Air);
-                _server.PrimeTnt(x, y, z);
+                _server.SetBlockAndUpdate(x, y, z, Blocks.Air, World);
+                _server.PrimeTnt(x, y, z, world: World);
+            }
+            else if (clicked.Name == "minecraft:obsidian" && TryLightPortal(x + fx, y + fy, z + fz))
+            {
             }
             else if (world.GetBlock(x + fx, y + fy, z + fz) is { IsAir: true } && Blocks.ByName("fire") is { } fire)
-                _server.SetBlockAndUpdate(x + fx, y + fy, z + fz, fire);
+                _server.SetBlockAndUpdate(x + fx, y + fy, z + fz, fire, World);
             else
                 return false;
-            _server.Broadcast(Packets.LevelEvent(LevelEventFizz, x, y, z, 0));
+            _server.BroadcastIn(World, Packets.LevelEvent(LevelEventFizz, x, y, z, 0));
             return true;
         }
         if (item == "bucket")
@@ -127,7 +136,7 @@ public sealed partial class BedrockConnection
             foreach (var (bx, by, bz) in new[] { (x, y, z), (x + fx, y + fy, z + fz) })
                 if (world.GetBlock(bx, by, bz) is { } liquid && Fluids.IsSource(liquid))
                 {
-                    _server.SetBlockAndUpdate(bx, by, bz, Blocks.Air);
+                    _server.SetBlockAndUpdate(bx, by, bz, Blocks.Air, World);
                     GiveBucket(liquid.Name.Contains("lava") ? "lava_bucket" : "water_bucket");
                     return true;
                 }
@@ -137,14 +146,21 @@ public sealed partial class BedrockConnection
         {
             if (world.GetBlock(x + fx, y + fy, z + fz) is not { } target || BlockPhysics(target) || SpawnProtected(x + fx, z + fz))
                 return false;
-            _server.SetBlockAndUpdate(x + fx, y + fy, z + fz, Fluids.Source(item == "water_bucket" ? "water" : "lava"));
+            if (item == "water_bucket" && World.Dimension == 1) // water evaporates in the Nether
+            {
+                _server.BroadcastIn(World, Packets.LevelEvent(LevelEventFizz, x + fx, y + fy, z + fz, 0));
+                if (survival)
+                    GiveBucket("bucket");
+                return true;
+            }
+            _server.SetBlockAndUpdate(x + fx, y + fy, z + fz, Fluids.Source(item == "water_bucket" ? "water" : "lava"), World);
             if (survival)
                 GiveBucket("bucket");
             return true;
         }
         if (CropFor(item) is { } crop && face == 1 && world.GetBlock(x, y + 1, z) is { IsAir: true } && CanPlant(crop, clicked, x, y, z))
         {
-            _server.SetBlockAndUpdate(x, y + 1, z, crop);
+            _server.SetBlockAndUpdate(x, y + 1, z, crop, World);
             if (survival)
                 Send(Inventory.ConsumeHeld());
             return true;
@@ -225,7 +241,7 @@ public sealed partial class BedrockConnection
         if (crop.Name == "minecraft:reeds")
             return ground.Name is "minecraft:grass_block" or "minecraft:dirt" or "minecraft:sand" or "minecraft:red_sand" or "minecraft:reeds"
                    && (ground.Name == "minecraft:reeds" || new[] { (1, 0), (-1, 0), (0, 1), (0, -1) }
-                       .Any(d => _server.World.GetBlock(x + d.Item1, y, z + d.Item2) is { } b && b.Name.Contains("water")));
+                       .Any(d => World.GetBlock(x + d.Item1, y, z + d.Item2) is { } b && b.Name.Contains("water")));
         if (crop.Name == "minecraft:sweet_berry_bush")
             return ground.Name is "minecraft:grass_block" or "minecraft:dirt" or "minecraft:podzol";
         return ground.Name == "minecraft:farmland";
@@ -257,7 +273,7 @@ public sealed partial class BedrockConnection
             return;
         }
         _sleepingNight = _server.World.Time / 24000;
-        var players = _server.Players.Where(p => p.IsInGame).ToList();
+        var players = _server.Players.Where(p => p.IsInGame && p.World == _server.World).ToList(); // players in the Nether do not count
         if (players.All(p => p._sleepingNight == _sleepingNight))
         {
             _server.World.Time = (_server.World.Time / 24000 + 1) * 24000;

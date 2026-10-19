@@ -209,7 +209,7 @@ public sealed class MobManager(BedrokiaServer server)
 
     public void Tick(long tick)
     {
-        var players = server.Players.Where(p => p.IsInGame).ToList();
+        var players = server.Players.Where(p => p.IsInGame && p.World == server.World).ToList(); // ponytail: mobs only live in the overworld
         if (tick % 20 == 0)
             SpawnAround(players);
 
@@ -568,7 +568,7 @@ public sealed class MobManager(BedrokiaServer server)
             else if (!visible && mob.Viewers.Remove(player))
                 player.Send(Bedrokia.Protocol.Packets.RemoveActor(mob.EntityId));
         }
-        mob.Viewers.RemoveWhere(v => !v.IsInGame);
+        mob.Viewers.RemoveWhere(v => !v.IsInGame || v.World != server.World);
         var (lx, ly, lz, lyaw) = mob.LastSent;
         if (Math.Abs(mob.X - lx) + Math.Abs(mob.Y - ly) + Math.Abs(mob.Z - lz) < 0.01 && Math.Abs(mob.Yaw - lyaw) < 1)
             return;

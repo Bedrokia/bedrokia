@@ -91,7 +91,7 @@ public sealed partial class BedrockConnection
         Position = (x, y + EyeHeight, z);
         var packet = Packets.MovePlayer(EntityId, x, y + EyeHeight, z, 0, 0, 0, teleport: true, onGround: false);
         Send(packet);
-        _server.BroadcastExcept(this, packet);
+        _server.BroadcastInExcept(World, this, packet);
         UpdateChunks(ChunkPosition.X, ChunkPosition.Z);
     }
 
@@ -282,7 +282,7 @@ public sealed partial class BedrockConnection
         _inventoryOpen = false;
         CloseContainer(notifyClient: false);
         foreach (var stack in Inventory.ReturnCraftingItems())
-            _server.DropItem(stack, Position.X, Position.Y - EyeHeight + 0.5f, Position.Z);
+            _server.DropItem(stack, Position.X, Position.Y - EyeHeight + 0.5f, Position.Z, world: World);
         Send(InventoryPackets.ContainerClose(window, window == InventoryPackets.WindowCraftingTable
             ? InventoryPackets.ContainerTypeWorkbench : type));
         Send([.. Inventory.ContentPackets()]);
@@ -299,7 +299,7 @@ public sealed partial class BedrockConnection
         if (emoteId.Length > 64 || _server.CurrentTick - _lastEmoteTick < BedrokiaServer.TicksPerSecond)
             return;
         _lastEmoteTick = _server.CurrentTick;
-        _server.BroadcastExcept(this, Packets.Emote((ulong)EntityId, emoteId, flags));
+        _server.BroadcastInExcept(World, this, Packets.Emote((ulong)EntityId, emoteId, flags));
     }
 
     private long _lastEmoteTick = long.MinValue / 2;
@@ -510,11 +510,14 @@ public sealed partial class BedrockConnection
             case 3: // stack finished
             {
                 _stage = Stage.ChunkRadius;
-                var world = _server.World;
-                var spawn = world.Spawn;
+                var saved = PlayerData.Read(Identity!.Uuid);
+                if (saved is not null)
+                    _world = _server.WorldOf(saved.Dimension);
+                var world = World;
+                var spawn = _server.World.Spawn;
                 Position = (spawn.X + 0.5f, spawn.Y + EyeHeight, spawn.Z + 0.5f);
                 GameMode = _server.Config.GameMode;
-                if (PlayerData.Read(Identity!.Uuid) is { } saved)
+                if (saved is not null)
                 {
                     Position = (saved.X, saved.Y + EyeHeight, saved.Z); // saved at the feet, Position is the eyes
                     if (!_server.Config.ForceGameMode)
@@ -535,7 +538,7 @@ public sealed partial class BedrockConnection
                         EntityId, (int)GameMode,
                         Position.X, Position.Y, Position.Z,
                         spawn.X, spawn.Y, spawn.Z,
-                        _server.Config.LevelName, world.Time, (int)_server.Config.Difficulty, world.Settings.DaylightCycle,
+                        _server.Config.LevelName, _server.World.Time, (int)_server.Config.Difficulty, world.Settings.DaylightCycle, world.Dimension,
                         Game.Custom.Blocks.CustomBlockRegistry.GetDefinitions())),
                     Items.RegistryPacket,
                     Biome.DefinitionListPacket);
@@ -575,7 +578,7 @@ public sealed partial class BedrockConnection
             Pitch = pitch;
             Yaw = yaw;
             UpdateChunks(ChunkPosition.X, ChunkPosition.Z);
-            _server.BroadcastExcept(this, Packets.MovePlayer(EntityId, x, y, z, pitch, yaw, yaw, teleport: false, onGround: true));
+            _server.BroadcastInExcept(World, this, Packets.MovePlayer(EntityId, x, y, z, pitch, yaw, yaw, teleport: false, onGround: true));
             _server.Events.OnMove(this);
         }
         if (reader.Remaining == 0)
@@ -619,7 +622,7 @@ public sealed partial class BedrockConnection
         var yaw = Yaw * MathF.PI / 180;
         var pitch = Pitch * MathF.PI / 180;
         var velocity = (-MathF.Sin(yaw) * MathF.Cos(pitch) * 0.3f, -MathF.Sin(pitch) * 0.3f + 0.1f, MathF.Cos(yaw) * MathF.Cos(pitch) * 0.3f);
-        _server.DropItem(stack, Position.X, Position.Y - 0.3f, Position.Z, velocity, pickupDelay: 40);
+        _server.DropItem(stack, Position.X, Position.Y - 0.3f, Position.Z, velocity, pickupDelay: 40, world: World);
     }
 
     // Player action ids (gophertunnel protocol/player.go).
@@ -642,22 +645,22 @@ public sealed partial class BedrockConnection
             case StartBreak or ContinueDestroyBlock:
             {
                 _breaking = (x, y, z);
-                if (GameMode == GameMode.Creative || _server.World.GetBlock(x, y, z) is not { IsAir: false } block)
+                if (GameMode == GameMode.Creative || World.GetBlock(x, y, z) is not { IsAir: false } block)
                     return;
                 var ticks = DropRules.BreakTicks(block, Inventory.Held);
                 if (ticks > 0)
-                    _server.Broadcast(Packets.LevelEvent(LevelEventStartCracking, x, y, z, 65535 / ticks));
+                    _server.BroadcastIn(World, Packets.LevelEvent(LevelEventStartCracking, x, y, z, 65535 / ticks));
                 break;
             }
             case AbortBreak:
                 _breaking = null;
-                _server.Broadcast(Packets.LevelEvent(LevelEventStopCracking, x, y, z, 0));
+                _server.BroadcastIn(World, Packets.LevelEvent(LevelEventStopCracking, x, y, z, 0));
                 break;
             case PredictDestroyBlock or StopBreak or CreativeDestroyBlock:
             {
                 var target = action == StopBreak && _breaking is { } breaking ? breaking : (x, y, z);
                 _breaking = null;
-                _server.Broadcast(Packets.LevelEvent(LevelEventStopCracking, target.Item1, target.Item2, target.Item3, 0));
+                _server.BroadcastIn(World, Packets.LevelEvent(LevelEventStopCracking, target.Item1, target.Item2, target.Item3, 0));
                 BreakBlock(target.Item1, target.Item2, target.Item3);
                 break;
             }
@@ -757,7 +760,7 @@ public sealed partial class BedrockConnection
             return;
         }
         // Using the clicked block (doors, containers, tables...) unless sneaking, then using the held item on it.
-        if (action == clickBlock && _server.World.GetBlock(bx, by, bz) is { } clicked)
+        if (action == clickBlock && World.GetBlock(bx, by, bz) is { } clicked)
         {
             if (!Sneaking && UseBlock(clicked, bx, by, bz))
                 return;
@@ -779,7 +782,7 @@ public sealed partial class BedrockConnection
             return; // not placing a block: interaction only
         // Clicking a replaceable block (tall grass, a thin snow layer...) puts the new block in its place, as the client
         // predicts it: placing next to it left a second, ghost block on the client.
-        var (px, py, pz) = _server.World.GetBlock(bx, by, bz) is { IsAir: false } target && IsReplaceable(target) ? (bx, by, bz) : face switch
+        var (px, py, pz) = World.GetBlock(bx, by, bz) is { IsAir: false } target && IsReplaceable(target) ? (bx, by, bz) : face switch
         {
             0 => (bx, by - 1, bz),
             1 => (bx, by + 1, bz),
@@ -814,7 +817,7 @@ public sealed partial class BedrockConnection
 
     /// <summary>What to save for this player.</summary>
     public PlayerData Snapshot() => new(Position.X, Position.Y - EyeHeight, Position.Z, GameMode, Inventory.SelectedSlot,
-        PlayerData.Save(Inventory.Main), PlayerData.Save(Inventory.Armour), PlayerData.Save(Inventory.Offhand), ExperienceLevel, ExperienceProgress, PlayerData.Save(Inventory.EnderChest));
+        PlayerData.Save(Inventory.Main), PlayerData.Save(Inventory.Armour), PlayerData.Save(Inventory.Offhand), ExperienceLevel, ExperienceProgress, PlayerData.Save(Inventory.EnderChest), World.Dimension);
 
     // Blocks a placed block replaces (Dragonfly block/*.go ReplaceableBy).
     private static readonly HashSet<string> Replaceable =
@@ -840,7 +843,7 @@ public sealed partial class BedrockConnection
     // ponytail: the block state is the one the client sent (no server-side orientation rules yet).
     private void PlaceBlock(int x, int y, int z, BlockType block, int face = 1, float clickY = 0)
     {
-        var world = _server.World;
+        var world = World;
         var current = world.GetBlock(x, y, z);
         var dx = x + 0.5 - Position.X;
         var dy = y + 0.5 - (Position.Y - EyeHeight / 2);
@@ -871,19 +874,19 @@ public sealed partial class BedrockConnection
         foreach (var (px, py, pz, part) in parts)
         {
             world.SetBlock(px, py, pz, part);
-            _server.Broadcast(Packets.UpdateBlock(px, py, pz, part.NetworkId));
+            _server.BroadcastIn(World, Packets.UpdateBlock(px, py, pz, part.NetworkId));
             if (BlockEntity.For(part) is { } entity)
             {
                 if (entity.Id == "Bed" && held is not null)
                     entity.Colour = (byte)held.Meta;
                 world.SetBlockEntity(px, py, pz, entity);
-                _server.Broadcast(BlockEntity.DataPacket(px, py, pz, entity));
+                _server.BroadcastIn(World, BlockEntity.DataPacket(px, py, pz, entity));
             }
         }
-        _server.ApplyGravity(x, y, z);
-        _server.Fluids.Wake(x, y, z);
+        _server.ApplyGravity(x, y, z, World);
+        World.Fluids.Wake(x, y, z);
         foreach (var (px, py, pz, _) in parts)
-            _server.UpdateShapes(px, py, pz);
+            _server.UpdateShapes(px, py, pz, World);
         if (survival)
             Send(Inventory.ConsumeHeld());
     }
@@ -901,7 +904,7 @@ public sealed partial class BedrockConnection
 
     private void BreakBlock(int x, int y, int z)
     {
-        var world = _server.World;
+        var world = World;
         var current = world.GetBlock(x, y, z);
         var dx = x + 0.5 - Position.X;
         var dy = y + 0.5 - (Position.Y - EyeHeight / 2);
@@ -919,28 +922,30 @@ public sealed partial class BedrockConnection
         // Containers spill their contents (in every game mode, like vanilla) and close for their viewers.
         if (world.GetBlockEntity(x, y, z)?.Items is { } contents)
         {
-            _server.CloseContainerFor((x, y, z));
+            _server.CloseContainerFor((x, y, z), World);
             for (var slot = 0; slot < contents.Size; slot++)
                 if (contents[slot] is { } stack)
                 {
-                    _server.DropItem(stack, x + 0.5f, y + 0.5f, z + 0.5f);
+                    _server.DropItem(stack, x + 0.5f, y + 0.5f, z + 0.5f, world: World);
                     contents[slot] = null;
                 }
         }
         world.SetBlock(x, y, z, Blocks.Air);
         AddExhaustion(0.005f);
-        _server.Fluids.Wake(x, y, z);
-        _server.Broadcast(Packets.UpdateBlock(x, y, z, Blocks.Air.NetworkId));
+        World.Fluids.Wake(x, y, z);
+        _server.BroadcastIn(World, Packets.UpdateBlock(x, y, z, Blocks.Air.NetworkId));
         // Doors, beds and tall plants: the other half goes too (without a second drop).
         if (BlockPlacement.OtherHalf(current!, x, y, z) is { } other && world.GetBlock(other.X, other.Y, other.Z)?.Name == current!.Name)
         {
             world.SetBlock(other.X, other.Y, other.Z, Blocks.Air);
-            _server.Broadcast(Packets.UpdateBlock(other.X, other.Y, other.Z, Blocks.Air.NetworkId));
+            _server.BroadcastIn(World, Packets.UpdateBlock(other.X, other.Y, other.Z, Blocks.Air.NetworkId));
         }
-        _server.ApplyGravity(x, y + 1, z);
-        _server.UpdateShapes(x, y, z);
+        _server.ApplyGravity(x, y + 1, z, World);
+        _server.UpdateShapes(x, y, z, World);
+        if (current!.Name is "minecraft:obsidian" or "minecraft:portal")
+            BreakPortal(x, y, z);
         // The breaker's client shows its own particles; the others need the event.
-        _server.BroadcastExcept(this, Packets.LevelEvent(LevelEventDestroyParticles, x, y, z, unchecked((int)current!.NetworkId)));
+        _server.BroadcastInExcept(World, this, Packets.LevelEvent(LevelEventDestroyParticles, x, y, z, unchecked((int)current!.NetworkId)));
         if (GameMode == GameMode.Creative) // a creative client shows neither particles nor sound for an instant break
             Send(Packets.LevelEvent(LevelEventDestroyParticles, x, y, z, unchecked((int)current.NetworkId)),
                 new BedrockWriter().VarUInt32(123).String("break").Vec3(x + 0.5f, y + 0.5f, z + 0.5f).VarInt32(unchecked((int)current.NetworkId))
@@ -964,7 +969,7 @@ public sealed partial class BedrockConnection
             }
         }
         foreach (var drop in drops)
-            _server.DropItem(drop, x + 0.5f, y + 0.25f, z + 0.5f);
+            _server.DropItem(drop, x + 0.5f, y + 0.25f, z + 0.5f, world: World);
     }
 
     internal void UpdateChunks(int centerX, int centerZ)
@@ -987,15 +992,16 @@ public sealed partial class BedrockConnection
         {
             if (_sentChunks.Contains(chunk) || !_requestedChunks.Add(chunk))
                 continue;
-            var task = _server.World.GetChunkAsync(chunk.X, chunk.Z);
-            task.ContinueWith(t => _server.RunOnMainThread(() => OnChunkReady(t)), TaskScheduler.Default);
+            var world = World;
+            var task = world.GetChunkAsync(chunk.X, chunk.Z);
+            task.ContinueWith(t => _server.RunOnMainThread(() => OnChunkReady(t, world)), TaskScheduler.Default);
         }
         TrySpawn();
     }
 
-    private void OnChunkReady(Task<Chunk> task)
+    private void OnChunkReady(Task<Chunk> task, World world)
     {
-        if (_stage == Stage.Closed)
+        if (_stage == Stage.Closed || world != World) // closed, or a chunk of the dimension the player left
             return;
         if (!task.IsCompletedSuccessfully)
         {
@@ -1007,8 +1013,8 @@ public sealed partial class BedrockConnection
         if (!_requestedChunks.Remove(key))
             return; // moved away meanwhile
         _sentChunks.Add(key);
-        var (count, payload) = chunk.NetworkPayload();
-        Send(Packets.LevelChunk(chunk.X, chunk.Z, count, payload));
+        var (count, payload) = chunk.NetworkPayload(world.Dimension == 1);
+        Send(Packets.LevelChunk(chunk.X, chunk.Z, count, payload, world.Dimension));
         TrySpawn();
     }
 

@@ -8,6 +8,7 @@ title: Feuille de route
 
 - Connexion NetherNet, login Xbox Live, chiffrement (Bedrock 26.50)
 - Monde vanilla (biomes, relief, arbres, minerais), plat, vide ; import de mondes Bedrock ; sauvegarde
+- Nether (relief, minerais, pierre lumineuse, lave) et portails du Nether
 - Inventaire, artisanat, enchantements, XP, faim, dégâts, armure, mort
 - Blocs : orientation, conteneurs, fours, portes, trappes, leviers, boutons, lits, murets, gravité, eau et lave,
   cultures, arbres, TNT
@@ -23,7 +24,7 @@ title: Feuille de route
 - Enclume, tailleur de pierre, meule, métier à tisser, chaudron, feu de camp
 - Propagation du feu, terre labourée qui sèche, feuilles qui disparaissent
 - Grottes, lacs, structures (villages...)
-- Nether et End, portails
+- Mobs et structures du Nether, l'End
 - Redstone
 
 Les idées et contributions sont les bienvenues : voir [Le projet et l'IA](ia.md).

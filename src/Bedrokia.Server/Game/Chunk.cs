@@ -104,28 +104,30 @@ public sealed class Chunk
     }
 
     /// <summary>LevelChunk payload (cached until the chunk changes) and the number of sub-chunks it carries.</summary>
-    public (uint SubChunkCount, byte[] Payload) NetworkPayload()
+    /// <param name="nether">The Nether only sends y 0..127: sections 4..11, with sub-chunk indices from 0.</param>
+    public (uint SubChunkCount, byte[] Payload) NetworkPayload(bool nether = false)
     {
         if (_networkPayload is not null)
             return (_networkSubChunks, _networkPayload);
 
-        var count = Sections;
-        while (count > 1 && IsEmpty(_sections[count - 1]))
+        int first = nether ? -MinY >> 4 : 0, sections = nether ? 8 : Sections;
+        var count = sections;
+        while (count > 1 && IsEmpty(_sections[first + count - 1]))
             count--;
 
         var writer = new BedrockWriter(16 * 1024);
         var air = new ushort[4096];
         for (var s = 0; s < count; s++)
         {
-            writer.Byte(9).Byte(1).Byte(unchecked((byte)((MinY >> 4) + s))); // version 9, one layer, signed y index
-            WriteStorage(writer, _sections[s] ?? air, id => unchecked((int)Blocks.ById(id).NetworkId));
+            writer.Byte(9).Byte(1).Byte(unchecked((byte)((nether ? 0 : MinY >> 4) + s))); // version 9, one layer, signed y index
+            WriteStorage(writer, _sections[first + s] ?? air, id => unchecked((int)Blocks.ById(id).NetworkId));
         }
 
         var biomes = new ushort[4096];
         for (var i = 0; i < 4096; i++)
             biomes[i] = _biomes[i >> 4]; // index (x<<8)|(z<<4)|y → column (x<<4)|z
         WriteStorage(writer, biomes, id => id);
-        for (var s = 1; s < Sections; s++)
+        for (var s = 1; s < sections; s++)
             writer.Byte(0xFF); // same biomes as the section below
         writer.Byte(0); // border blocks
         foreach (var ((bx, by, bz), entity) in BlockEntities)

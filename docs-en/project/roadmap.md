@@ -8,6 +8,7 @@ title: Roadmap
 
 - NetherNet connection, Xbox Live login, encryption (Bedrock 26.50)
 - Vanilla world (biomes, terrain, trees, ores), flat, void; Bedrock world import; saving
+- Nether (terrain, ores, glowstone, lava) and nether portals
 - Inventory, crafting, enchanting, XP, hunger, damage, armour, death
 - Blocks: orientation, containers, furnaces, doors, trapdoors, levers, buttons, beds, walls, gravity, water and lava,
   crops, trees, TNT
@@ -23,7 +24,7 @@ title: Roadmap
 - Anvil, stonecutter, grindstone, loom, cauldron, campfire
 - Fire spread, farmland drying, leaf decay
 - Caves, lakes, structures (villages...)
-- Nether and End, portals
+- Nether mobs and structures, the End
 - Redstone
 
 Ideas and contributions are welcome: see [The project and AI](ai.md).

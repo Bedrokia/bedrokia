@@ -19,23 +19,24 @@ namespace Bedrokia.Server;
 public sealed partial class BedrokiaServer
 {
     /// <summary>Shows a particle effect (e.g. "minecraft:heart_particle", "minecraft:villager_happy",
-    /// "minecraft:basic_flame_particle", "minecraft:endrod") to every player.</summary>
-    public void SpawnParticle(string name, float x, float y, float z) =>
-        Broadcast(new BedrockWriter().VarUInt32(118).Byte(0).VarInt64(-1).Vec3(x, y, z).String(name).Bool(false).ToArray());
+    /// "minecraft:basic_flame_particle", "minecraft:endrod") to every player of <paramref name="world"/> (the overworld by default).</summary>
+    public void SpawnParticle(string name, float x, float y, float z, Game.World? world = null) =>
+        BroadcastIn(world ?? World, new BedrockWriter().VarUInt32(118).Byte((byte)(world ?? World).Dimension).VarInt64(-1).Vec3(x, y, z).String(name).Bool(false).ToArray());
 
     /// <summary>A lightning bolt (visual and thunder, sets nothing on fire) that hurts mobs and players within 3 blocks.</summary>
-    public void StrikeLightning(double x, double y, double z)
+    public void StrikeLightning(double x, double y, double z, Game.World? world = null)
     {
+        world ??= World;
         var id = NextEntityId();
-        Broadcast(EntityPackets.AddActor(id, "minecraft:lightning_bolt", x, y, z, 0, 1, 1, 0, 0, 0, 0));
-        Schedule(20, () => Broadcast(Packets.RemoveActor(id)));
-        foreach (var player in _players.Where(p => p.IsInGame))
+        BroadcastIn(world, EntityPackets.AddActor(id, "minecraft:lightning_bolt", x, y, z, 0, 1, 1, 0, 0, 0, 0));
+        Schedule(20, () => BroadcastIn(world, Packets.RemoveActor(id)));
+        foreach (var player in _players.Where(p => p.IsInGame && p.World == world))
         {
             var (px, py, pz) = player.Position;
             if (Math.Abs(px - x) < 3 && Math.Abs(py - Network.BedrockConnection.EyeHeight - y) < 4 && Math.Abs(pz - z) < 3)
                 player.Damage(5, x, z, source: DamageSource.Custom("lightning"));
         }
-        foreach (var mob in Mobs.All.ToList())
+        foreach (var mob in world == World ? Mobs.All.ToList() : [])
             if (Math.Abs(mob.X - x) < 3 && Math.Abs(mob.Y - y) < 4 && Math.Abs(mob.Z - z) < 3)
                 Mobs.Damage(mob, 5, (x, z), source: DamageSource.Custom("lightning"));
     }

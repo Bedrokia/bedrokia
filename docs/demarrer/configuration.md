@@ -55,7 +55,7 @@ Chaque monde a son fichier `worlds/<nom>/world.properties` :
 
 | Clé | Rôle |
 |---|---|
-| `generator` | `normal` (relief et biomes vanilla), `flat` ou `void` |
+| `generator` | `normal` (relief et biomes vanilla), `flat`, `void` ou `nether` |
 | `flat-layers` | couches d'un monde plat, de bas en haut : `bedrock,3*stone,2*dirt,grass_block` |
 | `flat-biome` | biome des mondes plats ou vides : `plains`, `desert`, `ice_plains`, `mushroom_island`... |
 | `daylight-cycle` | `on`/`off` : le temps passe |

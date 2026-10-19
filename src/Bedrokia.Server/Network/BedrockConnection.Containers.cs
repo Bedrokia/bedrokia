@@ -34,7 +34,7 @@ public sealed partial class BedrockConnection
     {
         if (!ContainerBlocks.Contains(block.Name))
             return false;
-        var world = _server.World;
+        var world = World;
         var entity = world.GetBlockEntity(x, y, z);
         if (entity is null && BlockEntity.For(block) is { } created) // e.g. imported worlds or older saves
         {
@@ -50,7 +50,7 @@ public sealed partial class BedrockConnection
         Send(InventoryPackets.ContainerOpen(WindowContainer, type, x, y, z),
             InventoryPackets.InventoryContent(WindowContainer, contents));
         if (entity.Id is "Furnace" or "BlastFurnace" or "Smoker")
-            _server.WatchFurnace((x, y, z));
+            _server.WatchFurnace((x, y, z), World);
         return true;
     }
 
@@ -60,10 +60,10 @@ public sealed partial class BedrockConnection
         if (OpenContainerAt is not { } at || Inventory.OpenContainer is not { } open || open.Kind == "EnderChest")
             return;
         var packet = InventoryPackets.InventoryContent(WindowContainer, open.Items);
-        foreach (var viewer in _server.Players.Where(p => p != this && p.OpenContainerAt == at))
+        foreach (var viewer in _server.Players.Where(p => p != this && p.OpenContainerAt == at && p.World == World))
             viewer.Send(packet);
         if (open.Kind is "Furnace" or "BlastFurnace" or "Smoker")
-            _server.WatchFurnace(at);
+            _server.WatchFurnace(at, World);
     }
 
     /// <summary>The container was broken or the window was closed.</summary>
