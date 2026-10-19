@@ -404,21 +404,23 @@ public sealed partial class BedrokiaServer
                 && Math.Abs(p.Position.Y - 1.62 - item.Y) < 2);
             if (taker is null)
                 continue;
+            var stack = item.Stack;
             if (Events.HasPlayerPickupItem)
             {
                 var ev = new PlayerPickupItemEvent(taker, item);
                 if (!Events.OnPlayerPickupItem(ev))
                     continue;
+                stack = ev.Item; // a plugin may change what is picked up
             }
-            var (packets, remaining) = taker.Inventory.Add(item.Stack);
-            if (remaining == item.Stack.Count)
+            var (packets, remaining) = taker.Inventory.Add(stack);
+            if (remaining == stack.Count)
                 continue; // inventory full
             taker.Send([.. packets]);
             items.Remove(item);
             BroadcastIn(world, InventoryPackets.TakeItemActor(item.EntityId, taker.EntityId));
             BroadcastIn(world, Packets.RemoveActor(item.EntityId));
             if (remaining > 0)
-                DropItem(item.Stack.Split(remaining), item.X, item.Y, item.Z, world: world); // ponytail: leftover respawns as a new entity
+                DropItem(stack.Split(remaining), item.X, item.Y, item.Z, world: world); // ponytail: leftover respawns as a new entity
         }
     }
 

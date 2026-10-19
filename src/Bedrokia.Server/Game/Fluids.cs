@@ -173,7 +173,7 @@ public sealed class Fluids(BedrokiaServer server, World world)
             var liquidEv = new LiquidFlowEvent(new BlockPos(fromX, fromY, fromZ), new BlockPos(x, y, z), (uint)fluidBlock.NetworkId);
             if (!server.Events.OnLiquidFlow(liquidEv))
                 return;
-            fluidBlock = Blocks.ById(unchecked((ushort)liquidEv.LiquidBlockId)) ?? fluidBlock;
+            fluidBlock = Blocks.ByNetworkId(liquidEv.LiquidBlockId) ?? fluidBlock; // the event carries a network id
         }
         if (target is not null && IsLiquid(target) && IsWater(target) != (kind == "water"))
         {
