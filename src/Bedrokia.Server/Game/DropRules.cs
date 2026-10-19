@@ -157,16 +157,47 @@ public static class DropRules
         _ => "",
     };
 
+    // Custom tools (plugins): kind (pickaxe, axe, shovel, hoe, sword), harvest level (0 wood .. 3 diamond, 4 netherite) and speed.
+    private static readonly Dictionary<string, (string Kind, int Level, double Speed)> CustomTools = [];
+
+    /// <summary>Makes a custom item mine like a vanilla tool: which blocks, which ores it can harvest, how fast.</summary>
+    public static void RegisterTool(string itemName, string kind, int level, double speed) => CustomTools[itemName] = (kind, level, speed);
+
+    /// <summary>
+    /// What a held item is as a tool: kind (pickaxe, axe, shovel, hoe, sword, or "" for none) and harvest level
+    /// (0 wood/gold, 1 stone, 2 iron, 3 diamond, 4 netherite, -1 for none). Custom tools from <see cref="RegisterTool"/>.
+    /// </summary>
+    public static (string Kind, int Level) ToolInfo(ItemStack? tool)
+    {
+        if (tool is not null && CustomTools.TryGetValue(tool.Type.Name, out var custom))
+            return (custom.Kind, custom.Level);
+        var kind = ToolKind(tool);
+        if (kind == "")
+            return ("", -1);
+        return (kind, tool!.Type.Name.Split(':')[1].Split('_')[0] switch
+        {
+            "wooden" or "golden" => 0,
+            "stone" => 1,
+            "iron" => 2,
+            "diamond" => 3,
+            "netherite" => 4,
+            _ => -1,
+        });
+    }
+
     private static string ToolKind(ItemStack? tool)
     {
         var name = tool?.Type.Name ?? "";
+        if (CustomTools.TryGetValue(name, out var custom))
+            return custom.Kind;
         foreach (var kind in new[] { "pickaxe", "axe", "shovel", "hoe", "sword" })
             if (name.EndsWith("_" + kind))
                 return kind;
         return "";
     }
 
-    private static double ToolSpeed(ItemStack? tool) => tool?.Type.Name.Split(':')[1].Split('_')[0] switch
+    private static double ToolSpeed(ItemStack? tool) => tool is not null && CustomTools.TryGetValue(tool.Type.Name, out var custom) ? custom.Speed
+        : tool?.Type.Name.Split(':')[1].Split('_')[0] switch
     {
         "wooden" => 2,
         "stone" => 4,
@@ -192,7 +223,9 @@ public static class DropRules
         return values;
     }
 
-    private static int PickaxeLevel(ItemStack? tool) => tool?.Type.Name switch
+    private static int PickaxeLevel(ItemStack? tool) => tool is not null && CustomTools.TryGetValue(tool.Type.Name, out var custom)
+        ? custom.Kind == "pickaxe" ? custom.Level : -1
+        : tool?.Type.Name switch
     {
         "minecraft:wooden_pickaxe" or "minecraft:golden_pickaxe" => 0,
         "minecraft:stone_pickaxe" => 1,

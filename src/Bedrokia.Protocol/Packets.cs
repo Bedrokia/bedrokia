@@ -123,6 +123,8 @@ public enum TextType : byte
 {
     Raw = 0,
     Chat = 1,
+    Popup = 3,
+    Tip = 5,
     System = 6,
 }
 

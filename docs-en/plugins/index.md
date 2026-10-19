@@ -87,7 +87,28 @@ These `using` directives are automatic: `System`, `System.Collections.Generic`, 
 All plugin code runs on the **game thread** (20 ticks per second): no locks needed, but never block (no
 `Thread.Sleep`, no synchronous network request).
 
-## What `Plugin` gives you
+Source generators (`[GeneratedRegex]`, `[LibraryImport]`...) do not run: write `new Regex(...)`.
+
+### Usage and auto-completion (Tab)
+
+The usage of a command tells the game what to propose when the player presses Tab. Each parameter is `<name>`
+(required) or `[name]` (optional), with a type after `:`:
+
+| Written | The game proposes |
+|---|---|
+| `<player:player>` | the online players (and `@a`, `@p`...) |
+| `<amount:int>` / `<amount:float>` | a number |
+| `<mode:survival\|creative>` | these choices |
+| `<enabled:bool>` | `true` / `false` |
+| `<position:pos>` | x y z coordinates |
+| `[reason...]` or `<message:text>` | the rest of the line |
+| `create` (word without brackets) | a subcommand |
+
+Several forms are separated by `||`:
+`"create <name> || invite <player:player> || kick <player:player> [reason...]"`. Types are not shown in usage
+messages (`/f create <name> | invite <player> | ...`).
+
+## What `Plugin` provides
 
 | Member | Role |
 |---|---|
@@ -149,9 +170,10 @@ action (the block comes back, the message is not sent...).
 | `PlayerDropItem` | `PlayerDropItemEvent`: `Player`, `Item` | yes |
 | `InventoryTransaction` | `InventoryTransactionEvent`: `Player`, `Type`, `Item`, `Count`, `Slot` | yes |
 | `InventoryClick` | alias for `InventoryTransaction` | yes |
-| `BlockBreak` | `BlockEvent`: `Player`, `X`, `Y`, `Z`, `Block` | yes |
+| `BlockBreak` | `BlockEvent`: `Player`, `X`, `Y`, `Z`, `Block`, `Drops` and `Xp` (editable) | yes |
 | `BlockPlace` | `BlockEvent` | yes |
 | `ItemUse` | `ItemUseEvent`: `Player`, `Item`, clicked position and `Block`, `Face` | yes |
+| `PlayerItemUse` | `PlayerItemUseEvent`: `Player`, `Item` (right click in the air) | yes |
 | `EntityDamage` | `EntityDamageEvent`: `Entity`, `Damage` (editable), `Source` | yes |
 | `EntitySpawn` | `EntitySpawnEvent`: `Kind`, `X`, `Y`, `Z` (editable) | yes |
 | `EntityDespawn` | `EntityDespawnEvent`: `Entity`, `Reason` | no |
@@ -182,6 +204,8 @@ server keep running.
 | `SendMessage(text)` | chat message (`§` colour codes) |
 | `SendTitle(title, subtitle, fadeIn, stay, fadeOut)` | big title on screen |
 | `SendActionBar(text)` | text above the hotbar |
+| `SendTip(text)` / `SendPopup(text)` | small text above the hotbar (tip / popup) |
+| `SendMenu(new InventoryMenu("Title", doubleChest))` / `RefreshMenu()` / `CloseWindow()` | chest menu (27 or 54 slots): `menu.Inventory[slot] = ...`, `menu.Listener = click => ...` (`false` refuses the click, `click.Slot`, `click.ItemClicked`, `click.ItemClickedWith`), `menu.OnClose`, `menu.ReadOnly()` |
 | `SetSidebar(title, lines)` / `ClearSidebar()` | sidebar scoreboard (15 lines max) |
 | `AddEffect(effect, level, seconds, particles)` / `RemoveEffect(effect)` | effects (`BedrockConnection.Effects.Speed`, `JumpBoost`, `NightVision`...) |
 | `SetSpeed(speed)` | walk speed (vanilla 0.1) |

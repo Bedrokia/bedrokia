@@ -86,6 +86,7 @@ public sealed partial class BedrockConnection
             Send(InventoryPackets.ContainerClose(WindowContainer, 0));
         OpenContainerAt = null;
         Inventory.OpenContainer = null;
+        CloseMenu();
     }
 
     /// <summary>ContainerSetData (id 51): furnace progress bars for the players looking into it.</summary>

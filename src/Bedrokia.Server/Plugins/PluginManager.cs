@@ -192,7 +192,7 @@ public sealed class PluginManager(BedrokiaServer server)
                 try
                 {
                     if (!plugin.OnCommand(sender, name, args))
-                        sender.Reply($"§cUsage: /{name} {info.Usage}");
+                        sender.Reply($"§cUsage: /{name} {CommandManager.DisplayUsage(info.Usage)}");
                 }
                 catch (Exception e)
                 {

@@ -87,6 +87,27 @@ Ces `using` sont automatiques : `System`, `System.Collections.Generic`, `System.
 Tout le code des plugins s'exécute sur le **thread du jeu** (20 ticks par seconde) : pas besoin de verrous, mais il ne
 faut pas bloquer (pas de `Thread.Sleep`, pas de requête réseau synchrone).
 
+Les générateurs de source (`[GeneratedRegex]`, `[LibraryImport]`...) ne tournent pas : écrire `new Regex(...)`.
+
+### Usage et auto-complétion (Tab)
+
+L'usage d'une commande dit au jeu quoi proposer quand le joueur appuie sur Tab. Chaque paramètre est `<nom>`
+(obligatoire) ou `[nom]` (facultatif), avec un type après `:` :
+
+| Écriture | Le jeu propose |
+|---|---|
+| `<joueur:player>` | les joueurs connectés (et `@a`, `@p`...) |
+| `<montant:int>` / `<montant:float>` | un nombre |
+| `<mode:survival\|creative>` | ces choix |
+| `<actif:bool>` | `true` / `false` |
+| `<position:pos>` | des coordonnées x y z |
+| `[raison...]` ou `<message:text>` | le reste de la ligne |
+| `create` (mot sans crochets) | une sous-commande |
+
+Plusieurs formes se séparent par `||` :
+`"create <nom> || invite <joueur:player> || kick <joueur:player> [raison...]"`. Les types ne s'affichent pas dans
+les messages d'usage (`/f create <nom> | invite <joueur> | ...`).
+
 ## Ce que fournit `Plugin`
 
 | Membre | Rôle |
@@ -149,9 +170,10 @@ l'action (le bloc revient, le message n'est pas envoyé...).
 | `PlayerDropItem` | `PlayerDropItemEvent` : `Player`, `Item` | oui |
 | `InventoryTransaction` | `InventoryTransactionEvent` : `Player`, `Type`, `Item`, `Count`, `Slot` | oui |
 | `InventoryClick` | alias de `InventoryTransaction` | oui |
-| `BlockBreak` | `BlockEvent` : `Player`, `X`, `Y`, `Z`, `Block` | oui |
+| `BlockBreak` | `BlockEvent` : `Player`, `X`, `Y`, `Z`, `Block`, `Drops` et `Xp` (modifiables) | oui |
 | `BlockPlace` | `BlockEvent` | oui |
 | `ItemUse` | `ItemUseEvent` : `Player`, `Item`, position et `Block` cliqués, `Face` | oui |
+| `PlayerItemUse` | `PlayerItemUseEvent` : `Player`, `Item` (clic droit dans le vide) | oui |
 | `EntityDamage` | `EntityDamageEvent` : `Entity`, `Damage` (modifiable), `Source` | oui |
 | `EntitySpawn` | `EntitySpawnEvent` : `Kind`, `X`, `Y`, `Z` (modifiables) | oui |
 | `EntityDespawn` | `EntityDespawnEvent` : `Entity`, `Reason` | non |
@@ -182,6 +204,8 @@ autres plugins et le serveur continuent.
 | `SendMessage(texte)` | message dans le chat (codes couleur `§`) |
 | `SendTitle(titre, sousTitre, fadeIn, stay, fadeOut)` | grand titre à l'écran |
 | `SendActionBar(texte)` | texte au-dessus de la barre d'objets |
+| `SendTip(texte)` / `SendPopup(texte)` | petit texte au-dessus de la barre d'objets (tip / popup) |
+| `SendMenu(new InventoryMenu("Titre", doubleChest))` / `RefreshMenu()` / `CloseWindow()` | menu coffre (27 ou 54 cases) : `menu.Inventory[slot] = ...`, `menu.Listener = clic => ...` (`false` refuse le clic, `clic.Slot`, `clic.ItemClicked`, `clic.ItemClickedWith`), `menu.OnClose`, `menu.ReadOnly()` |
 | `SetSidebar(titre, lignes)` / `ClearSidebar()` | scoreboard sur le côté (15 lignes max) |
 | `AddEffect(effet, niveau, secondes, particules)` / `RemoveEffect(effet)` | effets (`BedrockConnection.Effects.Speed`, `JumpBoost`, `NightVision`...) |
 | `SetSpeed(vitesse)` | vitesse de marche (vanilla 0.1) |

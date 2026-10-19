@@ -96,7 +96,10 @@ public sealed record DiggerItemComponent(IReadOnlyList<DestroySpeed> DestroySpee
         {
             list.Add(new OrderedDictionary<string, object>
             {
-                ["block"] = new OrderedDictionary<string, object> { ["name"] = ds.BlockTagOrName },
+                // "query.any_tag('stone', ...)" selects blocks by tag, anything else is a block name.
+                ["block"] = ds.BlockTagOrName.StartsWith("query.", StringComparison.Ordinal)
+                    ? new OrderedDictionary<string, object> { ["tags"] = ds.BlockTagOrName }
+                    : new OrderedDictionary<string, object> { ["name"] = ds.BlockTagOrName },
                 ["speed"] = ds.Speed
             });
         }

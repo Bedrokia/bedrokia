@@ -43,6 +43,9 @@ public sealed class PlayerInventory
     /// <summary>The container window the player has open (window 3), or null.</summary>
     public (Inventory Items, string Kind)? OpenContainer { get; set; }
 
+    /// <summary>For a menu (<see cref="InventoryMenu"/>): slot, item in it, item put there; false refuses the change.</summary>
+    public Func<int, ItemStack?, ItemStack?, bool>? MenuListener { get; set; }
+
     private const byte ContainerLevelEntity = 7, ContainerFurnaceFuel = 24, ContainerFurnaceIngredient = 25, ContainerFurnaceResult = 26,
         ContainerBlastFurnaceIngredient = 45, ContainerSmokerIngredient = 46, ContainerBarrel = 58;
 
@@ -58,6 +61,8 @@ public sealed class PlayerInventory
         yield return InventoryPackets.InventoryContent(InventoryPackets.WindowArmour, Armour);
         yield return InventoryPackets.InventoryContent(InventoryPackets.WindowOffhand, Offhand);
         yield return InventoryPackets.InventoryContent(InventoryPackets.WindowUi, Ui);
+        if (OpenContainer is { } open)
+            yield return InventoryPackets.InventoryContent(BedrockConnection.WindowContainer, open.Items);
     }
 
     private sealed record SlotRef(byte Container, byte Slot, int ClientStackId);
@@ -311,6 +316,13 @@ public sealed class PlayerInventory
             var current = at.Inventory[at.Slot];
             before.TryAdd(at, (current, current?.Count ?? 0));
         }
+        // A menu's listener sees each of its slots that changes; a refusal cancels the whole request.
+        void CheckMenu((Inventory Inventory, int Slot) at, ItemStack? with)
+        {
+            if (MenuListener is { } listener && OpenContainer is { Kind: "Menu" } menu && at.Inventory == menu.Items
+                && !listener(at.Slot, at.Inventory[at.Slot], with))
+                throw new InvalidOperationException("menu click refused");
+        }
         List<ItemStack?> pending = [];
         void CreateResult(ItemStack? result)
         {
@@ -378,6 +390,8 @@ public sealed class PlayerInventory
                             throw new InvalidOperationException("bad count");
                         if (dest is not null && (!dest.StacksWith(source) || dest.Count + t.Count > dest.MaxCount))
                             throw new InvalidOperationException("cannot merge stacks");
+                        CheckMenu(from, null);
+                        CheckMenu(to, source);
                         if (Player is not null)
                         {
                             var tx = new InventoryTransactionEvent(Player, InventoryTransactionType.Transfer, source, t.Count, (t.From.Container, t.From.Slot), (t.To.Container, t.To.Slot));
@@ -409,6 +423,8 @@ public sealed class PlayerInventory
                         var b = Slot(s.B);
                         var stackA = a.Inventory[a.Slot];
                         var stackB = b.Inventory[b.Slot];
+                        CheckMenu(a, stackB);
+                        CheckMenu(b, stackA);
                         if (Player is not null)
                         {
                             var tx = new InventoryTransactionEvent(Player, InventoryTransactionType.Swap, stackA ?? stackB, (stackA ?? stackB)?.Count ?? 0, (s.A.Container, s.A.Slot), (s.B.Container, s.B.Slot));
@@ -425,6 +441,7 @@ public sealed class PlayerInventory
                         var source = from.Inventory[from.Slot] ?? throw new InvalidOperationException("empty source");
                         if (d.Count <= 0 || d.Count > source.Count)
                             throw new InvalidOperationException("bad count");
+                        CheckMenu(from, null);
                         var droppedStack = source.Split(d.Count);
                         if (Player is not null)
                         {
@@ -447,6 +464,7 @@ public sealed class PlayerInventory
                             throw new InvalidOperationException("destroy outside creative");
                         var from = Slot(x.From);
                         var source = from.Inventory[from.Slot] ?? throw new InvalidOperationException("empty source");
+                        CheckMenu(from, null);
                         if (Player is not null)
                         {
                             var tx = new InventoryTransactionEvent(Player, InventoryTransactionType.Destroy, source, x.Count, (x.From.Container, x.From.Slot));
