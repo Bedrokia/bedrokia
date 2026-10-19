@@ -30,4 +30,9 @@ public sealed class FuelBurnEvent : CancellableEvent
         Fuel = fuel;
         BurnTicks = burnTicks;
     }
+
+    public FuelBurnEvent(BlockPos pos, ItemStack fuel, int burnTicks)
+        : this(pos, "furnace", fuel, burnTicks)
+    {
+    }
 }
