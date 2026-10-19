@@ -14,7 +14,8 @@ title: Feuille de route
 - Mobs (animaux, monstres, creepers)
 - Commandes, ops, liste blanche, bannissements, packs de ressources
 - Système complet de permissions fines (nœuds, jokers, négations), groupes/grades avec héritage et préfixes, commande /perm
-- Plugins C# sans compilation, egg Pterodactyl
+- Plugins C# sans compilation, blocs et objets personnalisés, egg Pterodactyl
+- Annonce des nouvelles versions dans la console
 
 ## À faire
 
@@ -24,6 +25,5 @@ title: Feuille de route
 - Grottes, lacs, structures (villages...)
 - Nether et End, portails
 - Redstone
-- Blocs et objets personnalisés (add-ons) pour les plugins
 
 Les idées et contributions sont les bienvenues : voir [Le projet et l'IA](ia.md).

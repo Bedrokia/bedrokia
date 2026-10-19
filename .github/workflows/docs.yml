@@ -10,7 +10,7 @@ on:
     branches: [main]
   push:
     branches-ignore: [main]
-    paths: ['docs/**', 'mkdocs.yml', '.github/scripts/changelog.mjs', '.github/workflows/docs.yml']
+    paths: ['docs/**', 'docs-en/**', 'mkdocs.yml', 'mkdocs.en.yml', '.github/scripts/changelog.mjs', '.github/workflows/docs.yml']
   workflow_dispatch:
 
 permissions:
@@ -31,11 +31,17 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install "mkdocs-material==9.*" "mkdocs-awesome-nav==3.*"
-      - name: Changelog from the GitHub releases
-        run: node .github/scripts/changelog.mjs page > docs/projet/changelog.md
+      - name: Changelogs from the GitHub releases (French and English)
+        run: |
+          node .github/scripts/changelog.mjs page > docs/projet/changelog.md
+          node .github/scripts/changelog.mjs page en > docs-en/project/changelog.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - run: mkdocs build --strict
+      - name: French site, then the English one in site/en/
+        run: |
+          mkdocs build --strict
+          mkdir -p docs-en/assets && cp -r docs/assets/. docs-en/assets/
+          mkdocs build --strict -f mkdocs.en.yml
       - uses: actions/upload-pages-artifact@v3
         if: github.event_name != 'push'
         with:

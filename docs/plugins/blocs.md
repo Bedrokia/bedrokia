@@ -79,7 +79,7 @@ public sealed class MonPlugin : Plugin
 - `WithHardness(float secondsToDestroy)` : Temps de base requis pour casser le bloc (en secondes).
 - `WithBlastResistance(float resistance)` : Resistance aux explosions (TNT, creepers).
 - `WithFriction(float friction)` : Adherence du bloc pour les entites qui marchent dessus (`0.6f` par defaut, `0.98f` pour un bloc glissant style glace).
-- `WithBreathability(bool solid)` : Indique si le bloc est plein (`true`) ou s'il permet de respirer a l'interieur (`false` comme l'air ou l'eau).
+- `WithBreathability(bool solid)` : conservé pour compatibilité, mais **ignoré** : ce composant n'existe plus dans Bedrock et faisait planter le client.
 - `WithReplaceable()` : Autorise le remplacement direct du bloc par un autre sans devoir le casser au prealable (style hautes herbes ou fleurs).
 - `WithFlammable(int catchOdds = 5, int burnOdds = 20)` : Rend le bloc inflammable et regle sa vitesse de combustion.
 

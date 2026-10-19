@@ -1,5 +1,5 @@
 // Changelog from the commits between releases, sorted by kind (security, fixes, features...).
-//   node changelog.mjs page            -> docs/projet/changelog.md content (every release, Material for MkDocs)
+//   node changelog.mjs page [fr|en]    -> changelog page of the docs (every release, Material for MkDocs)
 //   node changelog.mjs release <tag>   -> notes of a new release (commits since the latest release up to GITHUB_SHA)
 // Env: GITHUB_TOKEN, GITHUB_REPOSITORY (owner/name), GITHUB_SHA for "release".
 
@@ -18,12 +18,12 @@ async function api(path) {
 
 // Kinds, in display order. A commit goes to the first that matches its subject ("fix: ...", "security: ...").
 const kinds = [
-  { key: "security", title: "Sécurité", emoji: "🔒", box: "danger", test: /^(security|sécurité|securite)\b|faille|vulnerab/i },
-  { key: "fix", title: "Corrections", emoji: "🐛", box: "bug", test: /^(fix|bugfix|hotfix|corrig|correction)/i },
-  { key: "feat", title: "Nouveautés", emoji: "✨", box: "success", test: /^(feat|add|ajout|new|nouveau)/i },
-  { key: "perf", title: "Performances", emoji: "⚡", box: "tip", test: /^perf\b/i },
-  { key: "docs", title: "Documentation", emoji: "📖", box: "info", test: /^docs?\b/i },
-  { key: "other", title: "Autres changements", emoji: "🔧", box: "note", test: /./ },
+  { key: "security", title: "Sécurité", titleEn: "Security", emoji: "🔒", box: "danger", test: /^(security|sécurité|securite)\b|faille|vulnerab/i },
+  { key: "fix", title: "Corrections", titleEn: "Fixes", emoji: "🐛", box: "bug", test: /^(fix|bugfix|hotfix|corrig|correction)/i },
+  { key: "feat", title: "Nouveautés", titleEn: "New features", emoji: "✨", box: "success", test: /^(feat|add|ajout|new|nouveau)/i },
+  { key: "perf", title: "Performances", titleEn: "Performance", emoji: "⚡", box: "tip", test: /^perf\b/i },
+  { key: "docs", title: "Documentation", titleEn: "Documentation", emoji: "📖", box: "info", test: /^docs?\b/i },
+  { key: "other", title: "Autres changements", titleEn: "Other changes", emoji: "🔧", box: "note", test: /./ },
 ];
 
 // Subject of a commit; a merged pull request shows its title instead of "Merge pull request #N from ...".
@@ -49,7 +49,7 @@ function group(commits) {
 }
 
 const line = c => `- ${c.subject} ([\`${c.sha.slice(0, 7)}\`](${c.url}))`;
-const date = iso => new Date(iso).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
+const date = iso => new Date(iso).toLocaleDateString(en ? "en-GB" : "fr-FR", { day: "numeric", month: "long", year: "numeric" });
 const downloads = tag => [
   ["Linux / Pterodactyl", "bedrokia", ":material-linux:"],
   ["Windows", "bedrokia.exe", ":material-microsoft-windows:"],
@@ -71,21 +71,24 @@ async function page() {
     "",
     "# Changelog",
     "",
-    "Chaque changement publié sur `main` devient une nouvelle version. Cette page est **générée automatiquement** à",
-    "partir des releases GitHub à chaque mise à jour de la documentation.",
+    ...(en
+      ? ["Every change pushed to `main` becomes a new version. This page is **generated automatically** from the",
+         "GitHub releases each time the documentation is updated."]
+      : ["Chaque changement publié sur `main` devient une nouvelle version. Cette page est **générée automatiquement** à",
+         "partir des releases GitHub à chaque mise à jour de la documentation."]),
     "",
   ];
   for (const [i, release] of releases.entries()) {
     const groups = group(await commitsBetween(releases[i + 1]?.tag_name, release.tag_name));
     const open = i < 3 ? "!!!" : "???"; // the latest versions open, the older ones folded
     out.push(`## ${release.tag_name} { #${release.tag_name.replace(/\./g, "-")} }`, "");
-    out.push(`<span class="bk-date">${date(release.published_at)}</span>${i === 0 ? ' <span class="bk-latest">DERNIÈRE VERSION</span>' : ""}`, "");
+    out.push(`<span class="bk-date">${date(release.published_at)}</span>${i === 0 ? ` <span class="bk-latest">${en ? "LATEST" : "DERNIÈRE VERSION"}</span>` : ""}`, "");
     out.push('<div class="bk-downloads" markdown>', "");
     out.push(downloads(release.tag_name).map(d => `[${d.icon} ${d.label}](${d.url}){ .md-button }`).join("\n"), "", "</div>", "");
     if (groups.length === 0)
-      out.push(i === releases.length - 1 ? "Première version publique." : "Aucun changement de code.", "");
+      out.push(i === releases.length - 1 ? (en ? "First public release." : "Première version publique.") : (en ? "No code changes." : "Aucun changement de code."), "");
     for (const g of groups) {
-      out.push(`${open} ${g.box} "${g.title}"`, "");
+      out.push(`${open} ${g.box} "${en ? g.titleEn : g.title}"`, "");
       out.push(...g.items.map(c => "    " + line(c)), "");
     }
   }
@@ -108,5 +111,6 @@ async function release(tag) {
   return out.join("\n");
 }
 
-const [mode, tag] = process.argv.slice(2);
-process.stdout.write(mode === "release" ? await release(tag) : await page());
+const [mode, arg] = process.argv.slice(2);
+const en = mode === "page" && arg === "en";
+process.stdout.write(mode === "release" ? await release(arg) : await page());
