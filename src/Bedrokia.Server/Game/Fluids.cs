@@ -9,6 +9,8 @@
 // │  Licensed under the Apache License 2.0 - see LICENSE              │
 // └───────────────────────────────────────────────────────────────────┘
 
+using Bedrokia.Server.Events;
+
 namespace Bedrokia.Server.Game;
 
 /// <summary>
@@ -165,6 +167,13 @@ public sealed class Fluids(BedrokiaServer server, World world)
             if (!server.Events.OnFluidFlow(flowEv))
                 return;
             fluidBlock = flowEv.FluidBlock;
+        }
+        if (server.Events.HasLiquidFlow)
+        {
+            var liquidEv = new LiquidFlowEvent(new BlockPos(fromX, fromY, fromZ), new BlockPos(x, y, z), (uint)fluidBlock.NetworkId);
+            if (!server.Events.OnLiquidFlow(liquidEv))
+                return;
+            fluidBlock = Blocks.ById(unchecked((ushort)liquidEv.LiquidBlockId)) ?? fluidBlock;
         }
         if (target is not null && IsLiquid(target) && IsWater(target) != (kind == "water"))
         {
