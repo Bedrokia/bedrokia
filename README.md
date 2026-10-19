@@ -142,7 +142,7 @@ dotnet test Bedrokia.slnx
 dotnet publish src/Bedrokia.Cli -c Release -r linux-x64 --self-contained -p:PublishSingleFile=true -o out/linux-x64
 ```
 
-(`win-x64` pour Windows.) Chaque tag `v*` poussé sur GitHub publie automatiquement une release avec les deux
+(`win-x64` pour Windows.) **Chaque push sur `main` publie automatiquement une nouvelle release** (v0.3.1, v0.3.2...) avec les deux
 exécutables, l'egg et les plugins d'exemple.
 
 ## 📁 Structure

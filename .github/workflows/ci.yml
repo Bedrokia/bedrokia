@@ -7,7 +7,12 @@ on:
   pull_request:
 
 permissions:
-  contents: write # release job: create the GitHub release
+  contents: write # release job: create the GitHub release and its tag
+
+# One run at a time per branch: two quick pushes must not compute the same version.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   test:
@@ -22,8 +27,32 @@ jobs:
           global-json-file: global.json
       - run: dotnet test Bedrokia.slnx -c Release
 
+  version:
+    # Every push to main is a release: last tag + 1 patch (v0.3.0 -> v0.3.1), or the <Version> of
+    # Directory.Build.props when it was raised by hand (0.4.0). A pushed tag v1.2.3 is used as is.
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: v
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            last=$(git tag --list 'v*' --sort=-v:refname | head -1); last="${last#v}"; last="${last:-0.0.0}"
+            IFS=. read -r major minor patch <<< "$last"
+            version="$major.$minor.$((patch + 1))"
+            base=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' Directory.Build.props)
+            if [ "$(printf '%s\n%s\n' "$base" "$version" | sort -V | tail -1)" = "$base" ] && [ "$base" != "$last" ]; then version="$base"; fi
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Version: $version"
+
   publish:
-    needs: test
+    needs: [test, version]
     strategy:
       matrix:
         rid: [linux-x64, win-x64]
@@ -33,7 +62,7 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
-      - run: dotnet publish src/Bedrokia.Cli -c Release -r ${{ matrix.rid }} --self-contained -p:PublishSingleFile=true -o out
+      - run: dotnet publish src/Bedrokia.Cli -c Release -r ${{ matrix.rid }} --self-contained -p:PublishSingleFile=true -p:Version=${{ needs.version.outputs.version }} -o out
       - run: rm -f out/*.pdb # single file: bedrokia (Linux) or bedrokia.exe (Windows), uploaded as is
       - uses: actions/upload-artifact@v4
         with:
@@ -41,10 +70,12 @@ jobs:
           path: out
 
   release:
-    # Pushing a tag such as v0.3.0 publishes the binaries, the Pterodactyl egg and the example plugins.
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: publish
+    # Every push to main (and every v* tag) publishes the binaries, the Pterodactyl egg and the example plugins.
+    if: github.event_name == 'push'
+    needs: [publish, version]
     runs-on: ubuntu-latest
+    env:
+      TAG: v${{ needs.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -55,7 +86,11 @@ jobs:
         run: cd examples && zip -r ../artifacts/example-plugins.zip plugins -x '*.csproj' '*/bin/*' '*/obj/*'
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.TAG }}
+          name: Bedrokia ${{ env.TAG }}
+          target_commitish: ${{ github.sha }}
           generate_release_notes: true
+          make_latest: true
           files: |
             artifacts/bedrokia
             artifacts/bedrokia.exe
@@ -64,12 +99,13 @@ jobs:
       - name: Announce the release on Discord
         run: node .github/discord/notify.mjs release
         env:
+          RELEASE_TAG: ${{ env.TAG }}
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
 
   discord-failure:
     # A broken main branch or tag shows up in Discord right away.
     if: failure() && github.event_name == 'push'
-    needs: [test, publish, release]
+    needs: [test, version, publish, release]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

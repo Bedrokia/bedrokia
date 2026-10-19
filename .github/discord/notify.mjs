@@ -1,5 +1,5 @@
-// Sends a Discord message for a push, a release or a CI failure.
-// Usage: node notify.mjs <push|release|failure>   (env: DISCORD_WEBHOOK, GITHUB_* from Actions)
+// Sends a Discord message for a release (one per push to main) or a CI failure.
+// Usage: node notify.mjs <release|failure>   (env: DISCORD_WEBHOOK, GITHUB_* from Actions)
 import { readFileSync } from "node:fs";
 
 const webhook = process.env.DISCORD_WEBHOOK;
@@ -13,28 +13,15 @@ const avatar = "https://github.com/Nexiumpvp2.png";
 const event = process.env.GITHUB_EVENT_PATH ? JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, "utf8")) : {};
 
 const embeds = {
-  push() {
-    const commits = event.commits ?? [];
-    if (commits.length === 0) return null; // branch deleted, tag only...
-    return {
-      author: { name: event.sender.login, icon_url: event.sender.avatar_url, url: event.sender.html_url },
-      title: commits.length > 1 ? `${commits.length} nouveaux commits` : "1 nouveau commit",
-      url: event.compare,
-      description: commits.slice(-10)
-        .map(c => `[\`${c.id.slice(0, 7)}\`](${c.url}) ${c.message.split("\n")[0].slice(0, 100)}`)
-        .join("\n"),
-      color: 0x5865f2,
-      timestamp: event.head_commit?.timestamp ?? new Date().toISOString(),
-    };
-  },
-
   release() {
-    const tag = process.env.GITHUB_REF_NAME;
+    const tag = process.env.RELEASE_TAG ?? process.env.GITHUB_REF_NAME;
+    const commits = (event.commits ?? []).slice(-10)
+      .map(c => `[\`${c.id.slice(0, 7)}\`](${c.url}) ${c.message.split("\n")[0].slice(0, 100)}`);
     const dl = `${repo}/releases/download/${tag}`;
     return {
       title: `Bedrokia ${tag}`,
       url: `${repo}/releases/tag/${tag}`,
-      description: "Nouvelle version disponible.\n\n"
+      description: (commits.length > 0 ? commits.join("\n") : "Nouvelle version disponible.") + "\n\n"
         + `[Linux](${dl}/bedrokia) · [Windows](${dl}/bedrokia.exe) · [Egg Pterodactyl](${dl}/egg-bedrokia.json) · `
         + `[Nouveautés](${repo}/blob/main/CHANGELOG.md)`,
       color: 0x57f287,
