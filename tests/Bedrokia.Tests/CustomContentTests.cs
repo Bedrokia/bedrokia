@@ -173,17 +173,31 @@ public class CustomContentTests
 
         var nbt = block.ToNbt(1001);
 
-        Assert.True(nbt.ContainsKey("name"));
-        Assert.Equal("custom:ruby_ore", nbt["name"]);
-        Assert.True(nbt.ContainsKey("molangVersion"));
+        // Dragonfly's layout: the name is sent next to the NBT, no empty lists, no unknown keys (they crashed the client).
+        Assert.Equal(["components", "molangVersion", "menu_category", "vanilla_block_data"], nbt.Keys);
+        Assert.Equal(1001, ((OrderedDictionary<string, object>)nbt["vanilla_block_data"])["block_id"]);
 
-        Assert.True(nbt.ContainsKey("components"));
         var comps = (OrderedDictionary<string, object>)nbt["components"];
         Assert.True(comps.ContainsKey("minecraft:destructible_by_mining"));
         Assert.True(comps.ContainsKey("minecraft:geometry"));
-        Assert.True(comps.ContainsKey("minecraft:light_emission"));
-        Assert.True(comps.ContainsKey("minecraft:collision_box"));
-        Assert.True(comps.ContainsKey("minecraft:selection_box"));
+        Assert.Equal(3, ((OrderedDictionary<string, object>)comps["minecraft:light_emission"])["emission"]);
+        Assert.False(comps.ContainsKey("minecraft:breathability"));
+        Assert.True(((OrderedDictionary<string, object>)comps["minecraft:material_instances"]).ContainsKey("mappings"));
+    }
+
+    [Fact]
+    public void Custom_items_are_data_driven_and_block_items_are_plain()
+    {
+        var gem = CustomItemBuilder.Create("custom:entry_gem").WithIcon("entry_gem").Register().ToItemType();
+        Assert.True(gem.ComponentBased);
+        Assert.Equal(1, gem.Version);
+        var properties = (OrderedDictionary<string, object>)((OrderedDictionary<string, object>)gem.Data["components"])["item_properties"];
+        Assert.Equal("entry_gem", ((OrderedDictionary<string, object>)((OrderedDictionary<string, object>)properties["minecraft:icon"])["textures"])["default"]);
+
+        CustomBlockBuilder.Create("custom:entry_block").Register();
+        var blockItem = CustomItemRegistry.Get("custom:entry_block")!.ToItemType();
+        Assert.False(blockItem.ComponentBased);
+        Assert.Equal(2, blockItem.Version);
     }
 
     [Fact]

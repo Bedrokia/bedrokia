@@ -62,6 +62,9 @@ public sealed class CustomItem
         foreach (var (_, comp) in Components)
             componentsDict[comp.Name] = comp.BuildNbt();
 
+        // Dragonfly (MIT) server/internal/iteminternal/builder.go: every custom item tells its creative tab.
+        propertiesDict["creative_category"] = (int)Creative.Category;
+        propertiesDict["creative_group"] = Creative.Group;
         componentsDict["item_properties"] = propertiesDict;
 
         return new OrderedDictionary<string, object>
@@ -70,10 +73,12 @@ public sealed class CustomItem
         };
     }
 
-    public ItemType ToItemType() => new(
-        Identifier,
-        NumericId,
-        ComponentBased: true,
-        Version: Version,
-        Data: ToNbt());
+    /// <summary>The item of a custom block (it places the block of the same name).</summary>
+    public bool IsBlockItem => GetComponent<BlockPlacerItemComponent>()?.Block == Identifier;
+
+    // Dragonfly server.go makeItemComponents: custom items are data-driven (version 1, components); the item of a
+    // custom block is a plain block item (version 2, not component based). Two definitions for one name crashed the client.
+    public ItemType ToItemType() => IsBlockItem
+        ? new ItemType(Identifier, NumericId, ComponentBased: false, Version: 2, Data: [])
+        : new ItemType(Identifier, NumericId, ComponentBased: true, Version: 1, Data: ToNbt());
 }

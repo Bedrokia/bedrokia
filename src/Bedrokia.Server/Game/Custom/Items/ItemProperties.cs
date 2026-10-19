@@ -14,7 +14,10 @@ namespace Bedrokia.Server.Game.Custom.Items;
 public sealed record IconItemProperty(string Texture) : IItemProperty
 {
     public string Name => PropertyComponentIds.Icon;
-    public object BuildValue() => new OrderedDictionary<string, object> { ["texture"] = Texture };
+    public object BuildValue() => new OrderedDictionary<string, object> // Dragonfly (MIT) iteminternal/builder.go
+    {
+        ["textures"] = new OrderedDictionary<string, object> { ["default"] = Texture },
+    };
 }
 
 public sealed record DamageItemProperty(int Damage) : IItemProperty

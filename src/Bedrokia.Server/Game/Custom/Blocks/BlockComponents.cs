@@ -34,10 +34,8 @@ public sealed record CollisionBoxBlockComponent(
         {
             ["enabled"] = (byte)(Enabled ? 1 : 0)
         };
-        if (Origin is { Length: 3 })
-            dict["origin"] = new NbtList(Nbt.Float, Origin.Select(f => (object)f).ToList());
-        if (Size is { Length: 3 })
-            dict["size"] = new NbtList(Nbt.Float, Size.Select(f => (object)f).ToList());
+        if (Origin is { Length: 3 } && Size is { Length: 3 })
+            dict["boxes"] = BoxComponents.Boxes(Origin, Size);
         return dict;
     }
 }
@@ -54,10 +52,8 @@ public sealed record SelectionBoxBlockComponent(
         {
             ["enabled"] = (byte)(Enabled ? 1 : 0)
         };
-        if (Origin is { Length: 3 })
-            dict["origin"] = new NbtList(Nbt.Float, Origin.Select(f => (object)f).ToList());
-        if (Size is { Length: 3 })
-            dict["size"] = new NbtList(Nbt.Float, Size.Select(f => (object)f).ToList());
+        if (Origin is { Length: 3 } && Size is { Length: 3 })
+            dict["boxes"] = BoxComponents.Boxes(Origin, Size);
         return dict;
     }
 }
@@ -98,8 +94,7 @@ public sealed record BlockMaterial(
         ["texture"] = Texture,
         ["render_method"] = RenderMethod,
         ["face_dimming"] = (byte)(FaceDimming ? 1 : 0),
-        ["ambient_occlusion"] = AmbientOcclusion ? 1.0f : 0.0f,
-        ["tint_method"] = TintMethod
+        ["ambient_occlusion"] = AmbientOcclusion ? 1.0f : 0.0f, // ponytail: TintMethod is not sent, like Dragonfly
     };
 }
 
@@ -113,6 +108,7 @@ public sealed record MaterialInstancesBlockComponent(IReadOnlyList<BlockMaterial
             dict[mat.Target] = mat.BuildNbt();
         return new OrderedDictionary<string, object>
         {
+            ["mappings"] = new OrderedDictionary<string, object>(),
             ["materials"] = dict
         };
     }
@@ -132,7 +128,7 @@ public sealed record DestructibleByExplosionBlockComponent(float ExplosionResist
     public string Name => BlockComponentIds.DestructibleByExplosion;
     public OrderedDictionary<string, object> BuildNbt() => new()
     {
-        ["value"] = ExplosionResistance
+        ["explosion_resistance"] = ExplosionResistance
     };
 }
 
@@ -159,7 +155,7 @@ public sealed record LightEmissionBlockComponent(byte LightLevel) : IBlockCompon
     public string Name => BlockComponentIds.LightEmission;
     public OrderedDictionary<string, object> BuildNbt() => new()
     {
-        ["emission"] = LightLevel
+        ["emission"] = (int)LightLevel
     };
 }
 
@@ -168,7 +164,7 @@ public sealed record LightDampeningBlockComponent(byte LightFilter) : IBlockComp
     public string Name => BlockComponentIds.LightDampening;
     public OrderedDictionary<string, object> BuildNbt() => new()
     {
-        ["lightLevel"] = LightFilter
+        ["lightLevel"] = (int)LightFilter
     };
 }
 
@@ -367,4 +363,22 @@ public sealed record CustomComponentsBlockComponent(IReadOnlyList<string> Compon
     {
         ["components"] = new NbtList(Nbt.String, Components.Cast<object>().ToList())
     };
+}
+
+internal static class BoxComponents
+{
+    // Add-on origin/size (pixels, origin x/z from the block centre) to the network "boxes" list of absolute
+    // min/max pixels, as Dragonfly (MIT) server/internal/blockinternal/components.go sends it.
+    public static NbtList Boxes(float[] origin, float[] size)
+    {
+        float minX = origin[0] + 8, minY = origin[1], minZ = origin[2] + 8;
+        return new NbtList(Nbt.Compound,
+        [
+            new OrderedDictionary<string, object>
+            {
+                ["minX"] = minX, ["minY"] = minY, ["minZ"] = minZ,
+                ["maxX"] = minX + size[0], ["maxY"] = minY + size[1], ["maxZ"] = minZ + size[2],
+            },
+        ]);
+    }
 }
