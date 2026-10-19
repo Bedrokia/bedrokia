@@ -34,7 +34,7 @@ public sealed class NetherNetListener : IDisposable
     private const int MaxBodyBytes = 1 << 20;
     private const int MaxConcurrentRequests = 64;
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(15);
-    private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(20);
+    private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(30);
 
     private readonly TcpListener _tcp;
     private readonly ECDsa _serverKey;
@@ -165,17 +165,30 @@ public sealed class NetherNetListener : IDisposable
         return ("404 Not Found", "text/plain", "Not found"u8.ToArray());
     }
 
+    internal static readonly (Org.BouncyCastle.X509.X509Certificate Cert, Org.BouncyCastle.Crypto.AsymmetricKeyParameter Key) DtlsKey = CreateDtlsKey();
+
+    private static (Org.BouncyCastle.X509.X509Certificate, Org.BouncyCastle.Crypto.AsymmetricKeyParameter) CreateDtlsKey()
+    {
+        var (cert, key) = SIPSorcery.Net.SharpSRTP.DTLS.DtlsCertificateUtils.GenerateCertificate("bedrokia", DateTime.UtcNow.AddDays(-1), DateTime.UtcNow.AddYears(1), useRSA: false);
+        var x509 = new Org.BouncyCastle.X509.X509CertificateParser().ReadCertificate(cert.GetCertificateAt(0).GetEncoded());
+        return (x509, key);
+    }
+
+    internal static RTCCertificate2 CreateDtlsCertificate() => new() { Certificate = DtlsKey.Cert, PrivateKey = DtlsKey.Key };
+
     private async Task<string> NegotiateAsync(string offer, IPEndPoint remote)
     {
         var peerKey = SdpIdentity.VerifyOffer(offer, _verifyToken);
         if (peerKey is null && !_allowAnonymous)
             throw new LoginException("An Xbox Live identity is required to join this server.");
 
-        var peer = new RTCPeerConnection(new RTCConfiguration(), 0, _udpPorts);
+        var config = new RTCConfiguration { certificates2 = [CreateDtlsCertificate()] };
+        var peer = new RTCPeerConnection(config, 0, _udpPorts);
         var session = new NetherNetSession(peer, remote, peerKey);
         peer.ondatachannel += session.Attach;
         peer.oniceconnectionstatechange += state => Trace?.Invoke($"nethernet: {remote} ICE {state}");
         peer.onconnectionstatechange += state => Trace?.Invoke($"nethernet: {remote} connection {state}");
+
         string answer;
         try
         {

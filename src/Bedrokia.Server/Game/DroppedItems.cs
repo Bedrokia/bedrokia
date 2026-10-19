@@ -49,8 +49,32 @@ public sealed class DroppedItems(World world)
     private const float Gravity = 0.04f, Drag = 0.02f, GroundFriction = 0.6f, HalfWidth = 0.125f;
 
     private readonly List<DroppedItem> _items = [];
+    private readonly Dictionary<(int X, int Z), List<DroppedItem>> _byChunk = [];
 
     public IReadOnlyList<DroppedItem> All => _items;
+
+    /// <summary>Returns dropped items located in the chunk (cx, cz), or null if empty.</summary>
+    public IReadOnlyList<DroppedItem>? InChunk(int cx, int cz) =>
+        _byChunk.TryGetValue((cx, cz), out var list) ? list : null;
+
+    private void AddToGrid(DroppedItem item)
+    {
+        var key = ((int)MathF.Floor(item.X) >> 4, (int)MathF.Floor(item.Z) >> 4);
+        if (!_byChunk.TryGetValue(key, out var list))
+            _byChunk[key] = list = [];
+        list.Add(item);
+    }
+
+    private void RemoveFromGrid(DroppedItem item)
+    {
+        var key = ((int)MathF.Floor(item.X) >> 4, (int)MathF.Floor(item.Z) >> 4);
+        if (_byChunk.TryGetValue(key, out var list))
+        {
+            list.Remove(item);
+            if (list.Count == 0)
+                _byChunk.Remove(key);
+        }
+    }
 
     /// <summary>A new item with a small random push, like items popping out of a broken block.</summary>
     public DroppedItem Spawn(long entityId, ItemStack stack, float x, float y, float z, long tick)
@@ -62,17 +86,22 @@ public sealed class DroppedItems(World world)
             Vz = (Random.Shared.NextSingle() - 0.5f) * 0.2f,
         };
         _items.Add(item);
+        AddToGrid(item);
         return item;
     }
 
-    public void Remove(DroppedItem item) => _items.Remove(item);
+    public void Remove(DroppedItem item)
+    {
+        _items.Remove(item);
+        RemoveFromGrid(item);
+    }
 
     /// <summary>Items older than the despawn delay, removed from the list.</summary>
     public List<DroppedItem> Expire(long tick)
     {
         var expired = _items.Where(i => tick - i.SpawnTick > DespawnTicks || i.Y < Chunk.MinY - 64).ToList();
         foreach (var item in expired)
-            _items.Remove(item);
+            Remove(item);
         return expired;
     }
 
@@ -80,7 +109,9 @@ public sealed class DroppedItems(World world)
     {
         foreach (var item in _items)
         {
-            if (world.LoadedChunk((int)MathF.Floor(item.X) >> 4, (int)MathF.Floor(item.Z) >> 4) is null)
+            var oldCx = (int)MathF.Floor(item.X) >> 4;
+            var oldCz = (int)MathF.Floor(item.Z) >> 4;
+            if (world.LoadedChunk(oldCx, oldCz) is null)
                 continue; // frozen in unloaded chunks
             item.Vy = item.Vy * (1 - Drag) - Gravity;
             var friction = 1 - Drag;
@@ -117,6 +148,21 @@ public sealed class DroppedItems(World world)
                 item.Vx = 0;
             if (MathF.Abs(item.Vz) < 0.001f)
                 item.Vz = 0;
+
+            var newCx = (int)MathF.Floor(item.X) >> 4;
+            var newCz = (int)MathF.Floor(item.Z) >> 4;
+            if (newCx != oldCx || newCz != oldCz)
+            {
+                if (_byChunk.TryGetValue((oldCx, oldCz), out var oldList))
+                {
+                    oldList.Remove(item);
+                    if (oldList.Count == 0)
+                        _byChunk.Remove((oldCx, oldCz));
+                }
+                if (!_byChunk.TryGetValue((newCx, newCz), out var newList))
+                    _byChunk[(newCx, newCz)] = newList = [];
+                newList.Add(item);
+            }
         }
     }
 

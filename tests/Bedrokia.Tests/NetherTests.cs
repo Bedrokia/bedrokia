@@ -46,3 +46,20 @@ public sealed class NetherTests
         Assert.Equal(new byte[] { 9, 1, 0 }, payload[..3]); // version 9, one layer, sub-chunk index 0 = y 0
     }
 }
+
+public class EmptySectionTests
+{
+    [Fact]
+    public void Empty_sections_are_sent_as_air_with_its_real_network_id()
+    {
+        var chunk = new Chunk(0, 0);
+        chunk.SetBlock(0, 100, 0, Blocks.ByName("stone")!); // the sections below it are empty
+        var (_, payload) = chunk.NetworkPayload();
+        var reader = new Bedrokia.Protocol.BedrockReader(payload);
+        Assert.Equal(9, reader.Byte()); // version
+        reader.Byte(); // layers
+        reader.Byte(); // y index
+        Assert.Equal(1, reader.Byte()); // 0 bits per block: one value
+        Assert.Equal(unchecked((int)Blocks.Air.NetworkId), reader.VarInt32()); // air is a hash, not 0
+    }
+}

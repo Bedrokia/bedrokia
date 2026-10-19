@@ -26,6 +26,7 @@ using Bedrokia.Server.Performance;
 using Bedrokia.Server.Permissions;
 using Bedrokia.Server.Plugins;
 using Bedrokia.Transport.NetherNet;
+using System.Threading.Channels;
 
 namespace Bedrokia.Server;
 
@@ -40,9 +41,14 @@ public sealed partial class BedrokiaServer
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(15) };
     private static readonly TimeSpan AuthKeysRefresh = TimeSpan.FromMinutes(30);
 
-    private readonly ConcurrentQueue<Action> _mainThread = new();
+    private readonly Channel<Action> _mainThread = Channel.CreateUnbounded<Action>(new UnboundedChannelOptions
+    {
+        SingleReader = true,
+        SingleWriter = false
+    });
     private readonly CancellationTokenSource _stop = new();
     private readonly CancellationTokenSource _networkStop = new();
+
     private readonly TaskCompletionSource _started = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly AuthKeys _authKeys = new(Http);
     private readonly List<BedrockConnection> _connections = [];
@@ -212,7 +218,16 @@ public sealed partial class BedrokiaServer
             try
             {
                 while (await timer.WaitForNextTickAsync(_stop.Token))
-                    Tick();
+                {
+                    try
+                    {
+                        Tick();
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Error($"Unhandled tick error: {ex}");
+                    }
+                }
             }
             catch (OperationCanceledException)
             {
@@ -240,46 +255,89 @@ public sealed partial class BedrokiaServer
     }
 
     /// <summary>Runs <paramref name="action"/> on the game thread during the next tick. Safe to call from any thread.</summary>
-    public void RunOnMainThread(Action action) => _mainThread.Enqueue(action);
+    public void RunOnMainThread(Action action) => _mainThread.Writer.TryWrite(action);
 
     /// <summary>Queues a console line; it runs on the next tick. Safe to call from any thread.</summary>
     public void EnqueueCommand(string line) => RunOnMainThread(() => Commands.Dispatch(line));
+
+    /// <summary>Dispatches a pre-encoded batch directly to target connections without redundant re-encoding.</summary>
+    public void BroadcastPreEncoded(byte[] framedData, IEnumerable<BedrockConnection> targets, bool preferUnreliable = false)
+    {
+        foreach (var player in targets)
+            player.SendRawBatch(framedData, preferUnreliable);
+    }
 
     /// <summary>Sends <paramref name="packet"/> to every player in game and logs <paramref name="log"/>.</summary>
     public void Broadcast(byte[] packet, string log)
     {
         Logger.Info(log);
-        foreach (var player in _players.Where(p => p.IsInGame))
-            player.Send(packet);
+        Broadcast(packet);
     }
 
     public void BroadcastMessage(string message) => Broadcast(Packets.Text(TextType.Raw, message), StripFormatting(message));
 
-    /// <summary>Sends <paramref name="packet"/> to every player in game.</summary>
+    /// <summary>Sends <paramref name="packet"/> to every player in game (encoded once for all targets).</summary>
     public void Broadcast(byte[] packet)
     {
-        foreach (var player in _players.Where(p => p.IsInGame))
-            player.Send(packet);
+        var targets = _players.Where(p => p.IsInGame).ToList();
+        if (targets.Count == 0)
+            return;
+        if (targets.Count == 1)
+        {
+            targets[0].Send(packet);
+            return;
+        }
+        var preEncoded = targets[0].Codec.Encode(packet);
+        foreach (var player in targets)
+            player.SendRawBatch(preEncoded);
     }
 
     public void BroadcastExcept(BedrockConnection except, byte[] packet)
     {
-        foreach (var player in _players.Where(p => p.IsInGame && p != except))
-            player.Send(packet);
+        var targets = _players.Where(p => p.IsInGame && p != except).ToList();
+        if (targets.Count == 0)
+            return;
+        if (targets.Count == 1)
+        {
+            targets[0].Send(packet);
+            return;
+        }
+        var preEncoded = targets[0].Codec.Encode(packet);
+        foreach (var player in targets)
+            player.SendRawBatch(preEncoded);
     }
 
     /// <summary>Sends <paramref name="packet"/> to the players in <paramref name="world"/> only (blocks, entities, effects).</summary>
     public void BroadcastIn(World world, byte[] packet)
     {
-        foreach (var player in _players.Where(p => p.IsInGame && p.World == world))
-            player.Send(packet);
+        var targets = _players.Where(p => p.IsInGame && p.World == world).ToList();
+        if (targets.Count == 0)
+            return;
+        if (targets.Count == 1)
+        {
+            targets[0].Send(packet);
+            return;
+        }
+        var preEncoded = targets[0].Codec.Encode(packet);
+        foreach (var player in targets)
+            player.SendRawBatch(preEncoded);
     }
 
     public void BroadcastInExcept(World world, BedrockConnection except, byte[] packet)
     {
-        foreach (var player in _players.Where(p => p.IsInGame && p != except && p.World == world))
-            player.Send(packet);
+        var targets = _players.Where(p => p.IsInGame && p != except && p.World == world).ToList();
+        if (targets.Count == 0)
+            return;
+        if (targets.Count == 1)
+        {
+            targets[0].Send(packet);
+            return;
+        }
+        var preEncoded = targets[0].Codec.Encode(packet);
+        foreach (var player in targets)
+            player.SendRawBatch(preEncoded);
     }
+
 
     // "§e" colour codes are for the game, not for the console.
     private static string StripFormatting(string text) => System.Text.RegularExpressions.Regex.Replace(text, "§.", "");
@@ -395,34 +453,53 @@ public sealed partial class BedrokiaServer
 
         foreach (var item in items.Expire(CurrentTick))
             BroadcastIn(world, Packets.RemoveActor(item.EntityId));
-        foreach (var item in items.All.ToList())
+
+        var worldPlayers = _players.Where(p => p.IsInGame && p.World == world).ToList();
+        if (worldPlayers.Count == 0 || items.All.Count == 0)
+            return;
+
+        var pickedUp = new HashSet<DroppedItem>();
+        foreach (var player in worldPlayers)
         {
-            if (CurrentTick - item.SpawnTick < item.PickupDelay)
-                continue;
-            var taker = _players.FirstOrDefault(p => p.IsInGame && p.World == world
-                && Math.Abs(p.Position.X - item.X) < 1.5 && Math.Abs(p.Position.Z - item.Z) < 1.5
-                && Math.Abs(p.Position.Y - 1.62 - item.Y) < 2);
-            if (taker is null)
-                continue;
-            var stack = item.Stack;
-            if (Events.HasPlayerPickupItem)
+            var (pcx, pcz) = player.ChunkPosition;
+            for (var dx = -1; dx <= 1; dx++)
+            for (var dz = -1; dz <= 1; dz++)
             {
-                var ev = new PlayerPickupItemEvent(taker, item);
-                if (!Events.OnPlayerPickupItem(ev))
+                var candidateItems = items.InChunk(pcx + dx, pcz + dz);
+                if (candidateItems is null || candidateItems.Count == 0)
                     continue;
-                stack = ev.Item; // a plugin may change what is picked up
+
+                foreach (var item in candidateItems.ToList())
+                {
+                    if (pickedUp.Contains(item) || CurrentTick - item.SpawnTick < item.PickupDelay)
+                        continue; // just dropped: not yet (the player who threw it would take it back at once)
+                    if (Math.Abs(player.Position.X - item.X) < 1.5 && Math.Abs(player.Position.Z - item.Z) < 1.5
+                        && Math.Abs(player.Position.Y - 1.62 - item.Y) < 2)
+                    {
+                        var stack = item.Stack;
+                        if (Events.HasPlayerPickupItem)
+                        {
+                            var ev = new PlayerPickupItemEvent(player, item);
+                            if (!Events.OnPlayerPickupItem(ev))
+                                continue;
+                            stack = ev.Item; // a plugin may change what is picked up
+                        }
+                        var (packets, remaining) = player.Inventory.Add(stack);
+                        if (remaining == stack.Count)
+                            continue; // inventory full
+                        player.Send([.. packets]);
+                        items.Remove(item);
+                        pickedUp.Add(item);
+                        BroadcastIn(world, InventoryPackets.TakeItemActor(item.EntityId, player.EntityId));
+                        BroadcastIn(world, Packets.RemoveActor(item.EntityId));
+                        if (remaining > 0)
+                            DropItem(stack.Split(remaining), item.X, item.Y, item.Z, world: world); // ponytail: leftover respawns as a new entity
+                    }
+                }
             }
-            var (packets, remaining) = taker.Inventory.Add(stack);
-            if (remaining == stack.Count)
-                continue; // inventory full
-            taker.Send([.. packets]);
-            items.Remove(item);
-            BroadcastIn(world, InventoryPackets.TakeItemActor(item.EntityId, taker.EntityId));
-            BroadcastIn(world, Packets.RemoveActor(item.EntityId));
-            if (remaining > 0)
-                DropItem(stack.Split(remaining), item.X, item.Y, item.Z, world: world); // ponytail: leftover respawns as a new entity
         }
     }
+
 
     internal void Tick()
     {
@@ -487,8 +564,10 @@ public sealed partial class BedrokiaServer
 
             using (Timings.Track(Timings.MainThread))
             {
-                while (_mainThread.TryDequeue(out var action))
+                var reader = _mainThread.Reader;
+                while (reader.TryRead(out var action))
                 {
+
                     try
                     {
                         action();

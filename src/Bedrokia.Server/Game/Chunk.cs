@@ -116,22 +116,53 @@ public sealed class Chunk
             count--;
 
         var writer = new BedrockWriter(16 * 1024);
-        var air = new ushort[4096];
         for (var s = 0; s < count; s++)
         {
             writer.Byte(9).Byte(1).Byte(unchecked((byte)((nether ? 0 : MinY >> 4) + s))); // version 9, one layer, signed y index
-            WriteStorage(writer, _sections[first + s] ?? air, id => unchecked((int)Blocks.ById(id).NetworkId));
+            var section = _sections[first + s];
+            if (section is null || IsEmpty(section))
+            {
+                // Empty section: 0 bits, one value: air. Its network id is a hash, not 0.
+                writer.Byte(1);
+                writer.VarInt32(unchecked((int)Blocks.Air.NetworkId));
+            }
+            else
+            {
+                WriteStorage(writer, section, id => unchecked((int)Blocks.ById(id).NetworkId));
+            }
         }
 
-        var biomes = new ushort[4096];
-        for (var i = 0; i < 4096; i++)
-            biomes[i] = _biomes[i >> 4]; // index (x<<8)|(z<<4)|y → column (x<<4)|z
-        WriteStorage(writer, biomes, id => id);
+        var uniformBiome = true;
+        var firstBiome = _biomes[0];
+        for (var i = 1; i < 256; i++)
+        {
+            if (_biomes[i] != firstBiome)
+            {
+                uniformBiome = false;
+                break;
+            }
+        }
+
+        if (uniformBiome)
+        {
+            // 0 bits: single biome value, no 4096 array allocation
+            writer.Byte(1);
+            writer.VarInt32(firstBiome);
+        }
+        else
+        {
+            var biomes = new ushort[4096];
+            for (var i = 0; i < 4096; i++)
+                biomes[i] = _biomes[i >> 4]; // index (x<<8)|(z<<4)|y → column (x<<4)|z
+            WriteStorage(writer, biomes, id => id);
+        }
+
         for (var s = 1; s < sections; s++)
             writer.Byte(0xFF); // same biomes as the section below
         writer.Byte(0); // border blocks
         foreach (var ((bx, by, bz), entity) in BlockEntities)
             writer.Bytes(Nbt.Write(entity.NetworkNbt(X * 16 + bx, by, Z * 16 + bz), network: true));
+
 
         _networkSubChunks = (uint)count;
         _networkPayload = writer.ToArray();
