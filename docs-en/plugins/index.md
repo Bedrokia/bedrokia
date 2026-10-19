@@ -170,7 +170,7 @@ action (the block comes back, the message is not sent...).
 | `PlayerDropItem` | `PlayerDropItemEvent`: `Player`, `Item` | yes |
 | `InventoryTransaction` | `InventoryTransactionEvent`: `Player`, `Type`, `Item`, `Count`, `Slot` | yes |
 | `InventoryClick` | alias for `InventoryTransaction` | yes |
-| `BlockBreak` | `BlockEvent`: `Player`, `X`, `Y`, `Z`, `Block` | yes |
+| `BlockBreak` | `BlockEvent`: `Player`, `X`, `Y`, `Z`, `Block`, `Drops` and `Xp` (editable) | yes |
 | `BlockPlace` | `BlockEvent` | yes |
 | `ItemUse` | `ItemUseEvent`: `Player`, `Item`, clicked position and `Block`, `Face` | yes |
 | `EntityDamage` | `EntityDamageEvent`: `Entity`, `Damage` (editable), `Source` | yes |

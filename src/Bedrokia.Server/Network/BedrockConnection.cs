@@ -970,7 +970,11 @@ public sealed partial class BedrockConnection
         var dz = z + 0.5 - Position.Z;
         var allowed = current is not null && !current.IsAir && dx * dx + dy * dy + dz * dz <= MaxReach * MaxReach
                       && (!current.Unbreakable || GameMode == GameMode.Creative) && !SpawnProtected(x, z);
-        allowed = allowed && _server.Events.OnBreak(new BlockEvent(this, x, y, z, current!));
+        // Like PocketMine's BlockBreakEvent, plugins see (and may change) the drops and the experience.
+        var breakEvent = new BlockEvent(this, x, y, z, current!);
+        if (allowed && GameMode == GameMode.Survival)
+            (breakEvent.Drops, breakEvent.Xp) = BreakDrops(current!);
+        allowed = allowed && _server.Events.OnBreak(breakEvent);
         if (!allowed)
         {
             // Undo the client's prediction.
@@ -1011,24 +1015,33 @@ public sealed partial class BedrockConnection
                     .String("").Bool(false).Bool(false).Int64(-1).Bool(false).ToArray());
         if (GameMode != GameMode.Survival)
             return;
+        if (breakEvent.Xp > 0)
+            AddExperience(breakEvent.Xp);
+        foreach (var drop in breakEvent.Drops)
+            _server.DropItem(drop, x + 0.5f, y + 0.25f, z + 0.5f, world: World);
+    }
+
+    // What breaking this block with the held item gives: items and experience.
+    private (List<ItemStack> Drops, int Xp) BreakDrops(BlockType current)
+    {
         var held = Inventory.Held;
-        var drops = DropRules.Drops(current!, held, Random.Shared);
-        if (Enchanting.Level(held, "silk_touch") > 0 && (drops.Count > 0 || current!.Name.Contains("glass") || current!.Name.Contains("ice")) && ItemStack.Of(current!.Name) is { } itself)
+        var drops = DropRules.Drops(current, held, Random.Shared);
+        var xp = 0;
+        if (Enchanting.Level(held, "silk_touch") > 0 && (drops.Count > 0 || current.Name.Contains("glass") || current.Name.Contains("ice")) && ItemStack.Of(current.Name) is { } itself)
             drops = [itself]; // ponytail: blocks with no item form (crops, beds...) keep their normal drops
         else
         {
             if (drops.Count > 0)
-                AddExperience(BlockExperience(current!.Name));
+                xp = BlockExperience(current.Name);
             var fortune = Enchanting.Level(held, "fortune");
-            if (fortune > 0 && current!.Name.EndsWith("_ore"))
+            if (fortune > 0 && current.Name.EndsWith("_ore"))
             {
                 var bonus = Math.Max(0, Random.Shared.Next(fortune + 2) - 1); // vanilla ore fortune: x(bonus + 1)
                 foreach (var drop in drops)
                     drop.SetCount(drop.Count * (bonus + 1));
             }
         }
-        foreach (var drop in drops)
-            _server.DropItem(drop, x + 0.5f, y + 0.25f, z + 0.5f, world: World);
+        return (drops, xp);
     }
 
     internal void UpdateChunks(int centerX, int centerZ)
