@@ -77,6 +77,9 @@ public sealed class CommandManager(Logger logger)
             throw new InvalidOperationException($"Command '{name}' is already registered.");
     }
 
+    /// <summary>Removes a command (e.g. a built-in one a plugin replaces); false if there is none.</summary>
+    public bool Unregister(string name) => _commands.Remove(name);
+
     /// <summary>Operator-only command that ignores who runs it (console style).</summary>
     public void Register(string name, string description, Action<string[]> execute) =>
         Register(name, description, "[args...]", "op", (_, args) => execute(args));

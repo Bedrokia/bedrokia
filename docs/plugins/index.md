@@ -100,6 +100,8 @@ faut pas bloquer (pas de `Thread.Sleep`, pas de requête réseau synchrone).
 | `ReloadConfig()` | relit `config.yml` |
 | `Log`, `LogWarning`, `LogError` | écrit dans la console, préfixé du nom du plugin |
 | `RegisterCommand(nom, description, usage, opSeulement, action)` | ajoute une commande depuis le code |
+| `RegisterCommand(nom, description, usage, permission, action)` | commande avec un nœud de permission (`""` pour tous, `"op"`, ou `"monplugin.fly"`) |
+| `UnregisterCommand(nom)` | retire une commande, par exemple une commande du serveur que le plugin remplace |
 
 ## Config
 
