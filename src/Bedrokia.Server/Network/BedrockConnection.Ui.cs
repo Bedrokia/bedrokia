@@ -66,11 +66,15 @@ public sealed partial class BedrockConnection
     /// <summary>
     /// Shows a Data-Driven UI (DDUI) screen on the client.
     /// </summary>
-    public void ShowDduiScreen(string screenId, DduiDataStore? dataStore = null, string? initialDataStoreJson = null)
+    public void ShowDduiScreen(string screenId, DduiDataStore? dataStore = null)
     {
         uint formId = Interlocked.Increment(ref _nextFormId);
         DduiSession.OpenScreen(screenId, dataStore);
-        Send(UiPackets.DataDrivenUIShowScreen(screenId, formId, initialDataStoreJson));
+        Send(UiPackets.DataDrivenUIShowScreen(screenId, formId));
+        // The packet has no initial data: the store's current values follow as a normal update.
+        if (dataStore is { Values.Count: > 0 })
+            Send(UiPackets.ClientboundDataStore(dataStore.Name, dataStore.Values.ToDictionary(
+                v => v.Key, v => Convert.ToString(v.Value, System.Globalization.CultureInfo.InvariantCulture) ?? "")));
     }
 
     /// <summary>
@@ -144,10 +148,16 @@ public sealed partial class BedrockConnection
             return;
         }
 
-        // Strict validation according to form type
-        if (!form.HandleResponse(this, responseJson))
+        // Strict validation according to form type. The submit and close callbacks are plugin code: an error there is
+        // logged instead of dropping the rest of the player's packets.
+        try
         {
-            form.HandleClose(this, FormCancelReason.InvalidResponse);
+            if (!form.HandleResponse(this, responseJson))
+                form.HandleClose(this, FormCancelReason.InvalidResponse);
+        }
+        catch (Exception e) when (e is not InvalidDataException)
+        {
+            _server.Logger.Error($"A plugin crashed while handling {Name}'s answer to form {formId}: {e}");
         }
     }
 
