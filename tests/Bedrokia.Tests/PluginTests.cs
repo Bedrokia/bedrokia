@@ -22,6 +22,43 @@ public sealed class PluginTests : IDisposable
     public void Dispose() => Directory.Delete(_dir, recursive: true);
 
     [Fact]
+    public void Folder_plugins_use_the_libraries_in_libs()
+    {
+        var plugins = Directory.CreateDirectory(Path.Combine(_dir, "plugins")).FullName;
+        var folder = Directory.CreateDirectory(Path.Combine(plugins, "WithLib")).FullName;
+        var libs = Directory.CreateDirectory(Path.Combine(folder, "libs")).FullName;
+        var library = Microsoft.CodeAnalysis.CSharp.CSharpCompilation.Create("GreetingLib",
+            [Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree.ParseText("namespace GreetingLib; public static class Greeting { public static string Text => \"from lib\"; }")],
+            [Microsoft.CodeAnalysis.MetadataReference.CreateFromFile(typeof(object).Assembly.Location)],
+            new Microsoft.CodeAnalysis.CSharp.CSharpCompilationOptions(Microsoft.CodeAnalysis.OutputKind.DynamicallyLinkedLibrary));
+        using (var dll = File.Create(Path.Combine(libs, "GreetingLib.dll")))
+            Assert.True(library.Emit(dll).Success);
+        File.WriteAllText(Path.Combine(folder, "plugin.yml"), "name: WithLib\nmain: WithLib.Main\n");
+        Directory.CreateDirectory(Path.Combine(folder, "src"));
+        File.WriteAllText(Path.Combine(folder, "src", "Main.cs"), """
+            namespace WithLib;
+            public sealed class Main : Plugin
+            {
+                public override void OnEnable() =>
+                    RegisterCommand("lib", "Library text.", "", false, (sender, _) => sender.Reply(GreetingLib.Greeting.Text));
+            }
+            """);
+
+        using var logger = new Logger(LogLevel.Error, null);
+        var server = new BedrokiaServer(new ServerConfig { WorldsDirectory = TestWorlds.NewDirectory(), Port = 0, OnlineMode = false }, logger)
+        {
+            PluginsDirectory = plugins,
+            PluginDataDirectory = Path.Combine(_dir, "plugin_data"),
+        };
+        server.Plugins.LoadAll(server.PluginsDirectory, server.PluginDataDirectory);
+
+        Assert.Empty(server.Plugins.Failed);
+        var replies = new List<string>();
+        server.Commands.Dispatch(new Bedrokia.Server.Commands.CommandSender("Console", true, replies.Add), "lib");
+        Assert.Equal(["from lib"], replies);
+    }
+
+    [Fact]
     public void Source_plugins_compile_at_startup_and_broken_ones_are_reported()
     {
         var plugins = Directory.CreateDirectory(Path.Combine(_dir, "plugins")).FullName;

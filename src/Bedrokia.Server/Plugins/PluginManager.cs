@@ -26,7 +26,8 @@ public sealed record LoadedPlugin(Plugin Plugin, string File, string Kind);
 /// <summary>
 /// Loads the plugins at startup, each in its own load context (Bedrokia and .NET are shared with the server):
 /// <list type="bullet">
-/// <item>plugins/Name/ with a plugin.yml - the organised form (see <see cref="Plugin"/>), code in src/ or a DLL;</item>
+/// <item>plugins/Name/ with a plugin.yml - the organised form (see <see cref="Plugin"/>), code in src/ or a DLL, and the
+/// libraries the code uses (a database driver...) in libs/;</item>
 /// <item>plugins/Name.cs - a single C# file;</item>
 /// <item>plugins/Name.dll - a compiled class library.</item>
 /// </list>
@@ -126,12 +127,14 @@ public sealed class PluginManager(BedrokiaServer server)
             if (Get(candidate.Name) is not null)
                 throw new PluginLoadException($"another plugin is already named '{candidate.Name}'.");
             var folder = Directory.Exists(path) ? path : Path.GetDirectoryName(Path.GetFullPath(path))!;
+            var libs = Directory.Exists(path) && Directory.Exists(Path.Combine(path, "libs"))
+                ? Directory.GetFiles(Path.Combine(path, "libs"), "*.dll") : [];
             var context = new PluginLoadContext(candidate.Name, folder);
             var assembly = kind switch
             {
                 "dll" => context.LoadFromAssemblyPath(Path.GetFullPath(path)),
-                "source" => Compile(candidate.Name, [path], context),
-                _ when Directory.Exists(Path.Combine(path, "src")) => Compile(candidate.Name, [.. SourceFiles(Path.Combine(path, "src"))], context),
+                "source" => Compile(candidate.Name, [path], context, []),
+                _ when Directory.Exists(Path.Combine(path, "src")) => Compile(candidate.Name, [.. SourceFiles(Path.Combine(path, "src"))], context, libs),
                 _ when Directory.GetFiles(path, "*.dll") is [var dll] => context.LoadFromAssemblyPath(Path.GetFullPath(dll)),
                 _ => throw new PluginLoadException("no code: put the .cs files in src/ (or a single DLL next to plugin.yml)."),
             };
@@ -255,12 +258,12 @@ public sealed class PluginManager(BedrokiaServer server)
 
 
 
-    private static Assembly Compile(string name, string[] files, PluginLoadContext context)
+    private static Assembly Compile(string name, string[] files, PluginLoadContext context, string[] libs)
     {
         var options = CSharpParseOptions.Default.WithLanguageVersion(LanguageVersion.Latest);
         var trees = files.Select(f => CSharpSyntaxTree.ParseText(File.ReadAllText(f), options, f, Encoding.UTF8))
             .Append(CSharpSyntaxTree.ParseText(GlobalUsings, options)).ToList();
-        var compilation = CSharpCompilation.Create(name, trees, References.Value,
+        var compilation = CSharpCompilation.Create(name, trees, References.Value.Concat(libs.Select(l => MetadataReference.CreateFromImage(File.ReadAllBytes(l)))),
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, optimizationLevel: OptimizationLevel.Release,
                 nullableContextOptions: NullableContextOptions.Enable));
         using var image = new MemoryStream();
@@ -309,7 +312,11 @@ public sealed class PluginManager(BedrokiaServer server)
             if (Default.Assemblies.Any(a => a.GetName().Name == assembly.Name))
                 return null;
             var path = Path.Combine(directory, assembly.Name + ".dll");
-            return File.Exists(path) ? LoadFromAssemblyPath(path) : null;
+            if (File.Exists(path))
+                return LoadFromAssemblyPath(path);
+            // Read into memory: the file stays free, so it can be replaced while the server runs.
+            var lib = Path.Combine(directory, "libs", assembly.Name + ".dll");
+            return File.Exists(lib) ? LoadFromStream(new MemoryStream(File.ReadAllBytes(lib))) : null;
         }
     }
 }
