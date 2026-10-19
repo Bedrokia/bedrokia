@@ -25,7 +25,9 @@ public sealed class NetherNetSession
     public const string ReliableLabel = "ReliableDataChannel";
     public const string UnreliableLabel = "UnreliableDataChannel";
     private const int SegmentSize = 10_000; // below every max-message-size seen in practice
-    private const int MaxMessageSize = 16 * 1024 * 1024;
+    // Anti-OOM cap on a message from the client. The login carries the skin: persona skins with their geometry and
+    // animations go well past 512 KB, so the cap stays at 4 MB (the segment count is a byte: 255 at most anyway).
+    private const int MaxMessageSize = 4 * 1024 * 1024;
 
     /// <summary>A client in game sends input every tick; silence this long means it is gone (crash, network loss).</summary>
     public static readonly TimeSpan IdleTimeout = TimeSpan.FromSeconds(30);
@@ -88,13 +90,32 @@ public sealed class NetherNetSession
 
     public event Action<NetherNetSession, string>? Closed;
 
-    /// <summary>Sends <paramref name="message"/> on the reliable channel, split into segments.</summary>
-    public void Send(byte[] message)
+    /// <summary>Sends <paramref name="message"/> on the reliable channel (or unreliable channel if small & ephemeral), split into segments.</summary>
+    public void Send(byte[] message, bool preferUnreliable = false)
     {
         lock (_sync)
         {
-            if (_closed || _reliable is null)
+            if (_closed)
                 return;
+
+            // Route to UnreliableDataChannel only if non-fragmented and small (< 500 bytes)
+            var channel = preferUnreliable && message.Length <= 500 && _unreliable is not null
+                ? _unreliable
+                : _reliable;
+
+            if (channel is null)
+                return;
+
+            if (channel == _unreliable)
+            {
+                // Unreliable packets MUST NEVER be segmented: 1 single segment with remaining = 0
+                var segment = new byte[message.Length + 1];
+                segment[0] = 0;
+                message.AsSpan().CopyTo(segment.AsSpan(1));
+                channel.send(segment);
+                return;
+            }
+
             var segments = Math.Max(1, (message.Length + SegmentSize - 1) / SegmentSize);
             if (segments > 256)
             {
@@ -107,11 +128,12 @@ public sealed class NetherNetSession
                 var length = Math.Min(SegmentSize, message.Length - start);
                 var segment = new byte[length + 1];
                 segment[0] = (byte)(segments - 1 - i);
-                Buffer.BlockCopy(message, start, segment, 1, length);
-                _reliable.send(segment);
+                message.AsSpan(start, length).CopyTo(segment.AsSpan(1));
+                channel.send(segment);
             }
         }
     }
+
 
     /// <summary>Closes after a short grace period, so a Disconnect packet sent just before can reach the client.</summary>
     public void Disconnect(string reason) =>
@@ -182,6 +204,8 @@ public sealed class NetherNetSession
             {
                 if (_expectedRemaining >= 0 && remaining != _expectedRemaining)
                 {
+                    _partial = null;
+                    _expectedRemaining = -1;
                     CloseLocked($"segment {remaining} received, {_expectedRemaining} expected");
                     return;
                 }
@@ -192,8 +216,10 @@ public sealed class NetherNetSession
                 else
                 {
                     _partial ??= new MemoryStream();
-                    if (_partial.Length + data.Length > MaxMessageSize)
+                    if (_partial.Length + (data.Length - 1) > MaxMessageSize)
                     {
+                        _partial = null;
+                        _expectedRemaining = -1;
                         CloseLocked("message too large");
                         return;
                     }
@@ -208,6 +234,7 @@ public sealed class NetherNetSession
                 if (remaining == 0)
                     _expectedRemaining = -1;
             }
+
         }
         if (complete is not null)
             PacketReceived?.Invoke(this, complete);

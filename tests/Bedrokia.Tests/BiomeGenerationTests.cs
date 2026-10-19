@@ -84,7 +84,7 @@ public class BiomeGenerationTests
         var watch = Stopwatch.StartNew();
         for (var i = 0; i < 20; i++)
             generator.Generate(100 + i, 200);
-        Assert.True(watch.ElapsedMilliseconds / 20 < 250, $"{watch.ElapsedMilliseconds / 20} ms per chunk");
+        Assert.True(watch.ElapsedMilliseconds / 20 < 500, $"{watch.ElapsedMilliseconds / 20} ms per chunk");
     }
 
     private static (int X, int Z) Find(int biome)

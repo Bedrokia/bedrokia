@@ -24,6 +24,7 @@ public interface IGameTransport
     ECDsa? PeerPublicKey { get; }
 
     void Send(byte[] batch);
+    void Send(byte[] batch, bool preferUnreliable) => Send(batch);
     void Disconnect(string reason);
 }
 
@@ -31,6 +32,8 @@ internal sealed class NetherNetTransport(NetherNetSession session) : IGameTransp
 {
     public IPEndPoint RemoteEndPoint => session.RemoteEndPoint;
     public ECDsa? PeerPublicKey => session.PeerPublicKey;
-    public void Send(byte[] batch) => session.Send(batch);
+    public void Send(byte[] batch) => session.Send(batch, false);
+    public void Send(byte[] batch, bool preferUnreliable) => session.Send(batch, preferUnreliable);
     public void Disconnect(string reason) => session.Disconnect(reason);
 }
+

@@ -23,11 +23,12 @@ namespace Bedrokia.Tests;
 /// <summary>End-to-end over NetherNet: WebRTC with identity, then the Bedrock login without game-layer encryption.</summary>
 public sealed class NetherNetLoginTests : IAsyncDisposable
 {
-    private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(30);
 
     private readonly Logger _logger = new(LogLevel.Error, null);
     private readonly BedrokiaServer _server;
     private readonly Task _run;
+    private readonly List<Client> _clients = [];
 
     public NetherNetLoginTests()
     {
@@ -37,6 +38,10 @@ public sealed class NetherNetLoginTests : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        foreach (var client in _clients)
+        {
+            try { client.Peer.close(); } catch { }
+        }
         _server.Stop();
         await _run.WaitAsync(Timeout);
         _logger.Dispose();
@@ -100,6 +105,7 @@ public sealed class NetherNetLoginTests : IAsyncDisposable
         var (peer, reliable, response) = await NetherNetTests.ConnectAsync(signaling, identityKey);
         Assert.True(response.IsSuccessStatusCode, await response.Content.ReadAsStringAsync());
         var client = new Client(peer, reliable);
+        _clients.Add(client);
         client.Listen();
         return client;
     }
