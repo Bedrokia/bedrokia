@@ -7,9 +7,108 @@ title: Changelog
 Every change pushed to `main` becomes a new version. This page is **generated automatically** from the
 GitHub releases each time the documentation is updated.
 
-## v0.3.9 { #v0-3-9 }
+## v0.3.15 { #v0-3-15 }
 
 <span class="bk-date">19 October 2026</span> <span class="bk-latest">LATEST</span>
+
+<div class="bk-downloads" markdown>
+
+[:material-linux: Linux / Pterodactyl](https://github.com/Nexiumpvp2/bedrokia/releases/download/v0.3.15/bedrokia){ .md-button }
+[:material-microsoft-windows: Windows](https://github.com/Nexiumpvp2/bedrokia/releases/download/v0.3.15/bedrokia.exe){ .md-button }
+[:material-egg: Egg Pterodactyl](https://github.com/Nexiumpvp2/bedrokia/releases/download/v0.3.15/egg-bedrokia.json){ .md-button }
+
+</div>
+
+!!! bug "Fixes"
+
+    - Data-Driven UI packets had wrong ids and layouts (client crash) ([`a6015c0`](https://github.com/Nexiumpvp2/bedrokia/commit/a6015c036f1265df4ecde98590715bf3c4a0e252))
+
+## v0.3.14 { #v0-3-14 }
+
+<span class="bk-date">19 October 2026</span>
+
+<div class="bk-downloads" markdown>
+
+[:material-linux: Linux / Pterodactyl](https://github.com/Nexiumpvp2/bedrokia/releases/download/v0.3.14/bedrokia){ .md-button }
+[:material-microsoft-windows: Windows](https://github.com/Nexiumpvp2/bedrokia/releases/download/v0.3.14/bedrokia.exe){ .md-button }
+[:material-egg: Egg Pterodactyl](https://github.com/Nexiumpvp2/bedrokia/releases/download/v0.3.14/egg-bedrokia.json){ .md-button }
+
+</div>
+
+!!! success "New features"
+
+    - Timings & /tps profiler, Forms UI & DDUI DataStore system (#5) ([`cbf4242`](https://github.com/Nexiumpvp2/bedrokia/commit/cbf4242997c19b140a389bc33f9386a39778ee6a))
+    - implement secure Forms UI and Data-Driven UI (DDUI / DataStore) ([`27ca736`](https://github.com/Nexiumpvp2/bedrokia/commit/27ca736320e692d1d3551be19d3164175015f7d1))
+    - timings profiling system and /tps command ([`431411b`](https://github.com/Nexiumpvp2/bedrokia/commit/431411b9e2109201bf8381385e8a6fd98b1b10be))
+
+## v0.3.13 { #v0-3-13 }
+
+<span class="bk-date">19 October 2026</span>
+
+<div class="bk-downloads" markdown>
+
+[:material-linux: Linux / Pterodactyl](https://github.com/Nexiumpvp2/bedrokia/releases/download/v0.3.13/bedrokia){ .md-button }
+[:material-microsoft-windows: Windows](https://github.com/Nexiumpvp2/bedrokia/releases/download/v0.3.13/bedrokia.exe){ .md-button }
+[:material-egg: Egg Pterodactyl](https://github.com/Nexiumpvp2/bedrokia/releases/download/v0.3.13/egg-bedrokia.json){ .md-button }
+
+</div>
+
+!!! bug "Fixes"
+
+    - items lost on death, spawn egg used up when a plugin cancels the spawn ([`c855a7b`](https://github.com/Nexiumpvp2/bedrokia/commit/c855a7b1cdc30a91bc0c1a4ec77a500ada0f8eb6))
+
+## v0.3.12 { #v0-3-12 }
+
+<span class="bk-date">19 October 2026</span>
+
+<div class="bk-downloads" markdown>
+
+[:material-linux: Linux / Pterodactyl](https://github.com/Nexiumpvp2/bedrokia/releases/download/v0.3.12/bedrokia){ .md-button }
+[:material-microsoft-windows: Windows](https://github.com/Nexiumpvp2/bedrokia/releases/download/v0.3.12/bedrokia.exe){ .md-button }
+[:material-egg: Egg Pterodactyl](https://github.com/Nexiumpvp2/bedrokia/releases/download/v0.3.12/egg-bedrokia.json){ .md-button }
+
+</div>
+
+??? success "New features"
+
+    - modular server events (damage, death, respawn, drop, inventory, entities) (#4) ([`dd64375`](https://github.com/Nexiumpvp2/bedrokia/commit/dd6437551fffbdbf85900b894d5124fad72b23b2))
+    - modular server events for damage, death, respawn, drop, inventory transactions and entities ([`6af745c`](https://github.com/Nexiumpvp2/bedrokia/commit/6af745cd5a54a78712bb5219e403e3c9ca157294))
+
+## v0.3.11 { #v0-3-11 }
+
+<span class="bk-date">19 October 2026</span>
+
+<div class="bk-downloads" markdown>
+
+[:material-linux: Linux / Pterodactyl](https://github.com/Nexiumpvp2/bedrokia/releases/download/v0.3.11/bedrokia){ .md-button }
+[:material-microsoft-windows: Windows](https://github.com/Nexiumpvp2/bedrokia/releases/download/v0.3.11/bedrokia.exe){ .md-button }
+[:material-egg: Egg Pterodactyl](https://github.com/Nexiumpvp2/bedrokia/releases/download/v0.3.11/egg-bedrokia.json){ .md-button }
+
+</div>
+
+??? info "Documentation"
+
+    - English README by default (README.md), French in README.fr.md ([`5babf47`](https://github.com/Nexiumpvp2/bedrokia/commit/5babf476501a945f91e53e7acfe40a094d7c7f2f))
+
+## v0.3.10 { #v0-3-10 }
+
+<span class="bk-date">19 October 2026</span>
+
+<div class="bk-downloads" markdown>
+
+[:material-linux: Linux / Pterodactyl](https://github.com/Nexiumpvp2/bedrokia/releases/download/v0.3.10/bedrokia){ .md-button }
+[:material-microsoft-windows: Windows](https://github.com/Nexiumpvp2/bedrokia/releases/download/v0.3.10/bedrokia.exe){ .md-button }
+[:material-egg: Egg Pterodactyl](https://github.com/Nexiumpvp2/bedrokia/releases/download/v0.3.10/egg-bedrokia.json){ .md-button }
+
+</div>
+
+??? info "Documentation"
+
+    - English documentation and README, language switcher, English changelog ([`7921779`](https://github.com/Nexiumpvp2/bedrokia/commit/79217798252af0b85c629735a9e6d62b98260a3e))
+
+## v0.3.9 { #v0-3-9 }
+
+<span class="bk-date">19 October 2026</span>
 
 <div class="bk-downloads" markdown>
 
@@ -19,7 +118,7 @@ GitHub releases each time the documentation is updated.
 
 </div>
 
-!!! info "Documentation"
+??? info "Documentation"
 
     - draft of a styled home page template (not used by the site yet) ([`a463923`](https://github.com/Nexiumpvp2/bedrokia/commit/a463923c72cc06fa95f895ae32cee00a3bbda227))
 
@@ -35,7 +134,7 @@ GitHub releases each time the documentation is updated.
 
 </div>
 
-!!! success "New features"
+??? success "New features"
 
     - servers announce new Bedrokia releases in the console, with the download link ([`b39641e`](https://github.com/Nexiumpvp2/bedrokia/commit/b39641ed02c5ee5558e560cac0da354e6b5ffbef))
 
@@ -51,7 +150,7 @@ GitHub releases each time the documentation is updated.
 
 </div>
 
-!!! info "Documentation"
+??? info "Documentation"
 
     - README links to every documentation page and the changelog ([`4b1a63b`](https://github.com/Nexiumpvp2/bedrokia/commit/4b1a63b9cba7781963a283ac1a561f2ce205ad09))
 
@@ -150,10 +249,10 @@ GitHub releases each time the documentation is updated.
 
 ??? success "New features"
 
-    - Moteur de blocs et items personnalises, gestion reseau Dragonfly et plugin CustomContent (#1) ([`7d4691b`](https://github.com/Nexiumpvp2/bedrokia/commit/7d4691bd5e28c30c8728110fa2ac67158b80c86f))
+    - Moteur de blocs et items personnalises, gestion reseau et plugin CustomContent (#1) ([`7d4691b`](https://github.com/Nexiumpvp2/bedrokia/commit/7d4691bd5e28c30c8728110fa2ac67158b80c86f))
     - Add documentation for custom blocks system in docs/custom_blocks.md ([`b1057ce`](https://github.com/Nexiumpvp2/bedrokia/commit/b1057cec2aa02d21218f5211bc07b397e554851a))
     - Add documentation for custom items system in docs/custom_items.md ([`17ff7af`](https://github.com/Nexiumpvp2/bedrokia/commit/17ff7aff0ce765fd537182e79c3c7c01d835fe31))
-    - Add custom blocks and items system, Dragonfly 24-packet network handling, and CustomContent plugin ([`ffd8951`](https://github.com/Nexiumpvp2/bedrokia/commit/ffd8951f80290ea79700dc8e6c0953c676c941fc))
+    - Add custom blocks and items system, 24-packet network handling, and CustomContent plugin ([`ffd8951`](https://github.com/Nexiumpvp2/bedrokia/commit/ffd8951f80290ea79700dc8e6c0953c676c941fc))
 
 ??? note "Other changes"
 

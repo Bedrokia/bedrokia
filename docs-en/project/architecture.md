@@ -20,7 +20,7 @@ src/Bedrokia.Server/              the engine
   Game/Import/                      LevelDB reading and Bedrock world import
   Entities/                         mobs, dropped items, falling blocks
   Plugins/                          plugin loading, events, config
-  Data/                             vanilla data (block states, items, recipes), from Dragonfly
+  Data/                             vanilla data (block states, items, recipes)
 src/Bedrokia.Cli/                 the executable: console, banner, clean shutdown
 tests/Bedrokia.Tests/             automated tests (protocol, world, blocks, inventory, plugins...)
 examples/plugins/                 example plugins

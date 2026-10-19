@@ -4,7 +4,7 @@ title: Configuration
 
 # Configuration
 
-Tout est dans le dossier du serveur, comme PocketMine-MP. Les fichiers sont créés au premier lancement, avec des
+Tout est dans le dossier du serveur. Les fichiers sont créés au premier lancement, avec des
 commentaires.
 
 ```

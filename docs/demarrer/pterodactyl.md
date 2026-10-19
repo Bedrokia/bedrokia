@@ -48,7 +48,7 @@ puis redémarrer. Le panel affiche le bilan de chargement dans la console.
 
 ## Mettre à jour / changer de version
 
-Comme PocketMine-MP, il suffit de **remplacer un fichier** :
+Il suffit de **remplacer un fichier** :
 
 1. télécharger `bedrokia` depuis la [release voulue](https://github.com/Nexiumpvp2/bedrokia/releases) ;
 2. dans le panel : *Files* → supprimer l'ancien `bedrokia` → *Upload* le nouveau ;

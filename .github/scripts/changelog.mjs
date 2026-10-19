@@ -30,7 +30,9 @@ const kinds = [
 function describe(commit) {
   const lines = commit.commit.message.split("\n").map(l => l.trim()).filter(Boolean);
   const merge = lines[0].match(/^Merge pull request #(\d+)/);
-  const subject = merge && lines[1] ? `${lines[1]} (#${merge[1]})` : lines[0];
+  const raw = merge && lines[1] ? `${lines[1]} (#${merge[1]})` : lines[0];
+  // The documentation does not name the reference projects (they are credited in THIRD-PARTY-NOTICES.md).
+  const subject = raw.replace(/\b(Dragonfly|PocketMine(-MP)?)\b\s*/gi, "").replace(/\s{2,}/g, " ").trim();
   return { subject, sha: commit.sha, url: commit.html_url, author: commit.author?.login ?? commit.commit.author.name };
 }
 
