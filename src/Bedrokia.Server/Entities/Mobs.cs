@@ -326,7 +326,23 @@ public sealed class MobManager(BedrokiaServer server)
         var survivalTarget = player is not null && player.GameMode != GameMode.Creative;
         if (mob.Kind.Hostile && survivalTarget && distance < 16 && (!day || mob.Kind != MobKind.Spider || distance < 4))
         {
-            targetX = player!.Position.X;
+            if (server.Events.HasEntityTarget)
+            {
+                var targetEv = new EntityTargetEvent(mob, player);
+                if (!server.Events.OnEntityTarget(targetEv) || targetEv.Target is null)
+                {
+                    survivalTarget = false;
+                    player = null;
+                }
+                else
+                {
+                    player = targetEv.Target;
+                }
+            }
+        }
+        if (mob.Kind.Hostile && survivalTarget && player is not null && distance < 16 && (!day || mob.Kind != MobKind.Spider || distance < 4))
+        {
+            targetX = player.Position.X;
             targetZ = player.Position.Z;
             moving = true;
             if (mob.Kind == MobKind.Skeleton && distance < 15)
@@ -523,15 +539,27 @@ public sealed class MobManager(BedrokiaServer server)
         if (mob.Dead)
         {
             Broadcast(mob, EntityPackets.Event(mob.EntityId, EntityPackets.EventDeath));
-            killer?.AddExperience(mob.Kind.Hostile ? 5 : 1 + _random.Next(3));
+            var drops = new List<ItemStack>();
             if (from is not null) // killed by a player: loot
+            {
                 foreach (var (item, min, max) in mob.Kind.Loot)
                 {
                     var count = _random.Next(min, max + 1 + looting);
                     var name = item == "white_wool" && mob.Colour is { } c ? WoolColour(c) : item;
                     if (count > 0 && ItemStack.Of(name, count) is { } stack)
-                        server.DropItem(stack, (float)mob.X, (float)mob.Y + 0.5f, (float)mob.Z);
+                        drops.Add(stack);
                 }
+            }
+            var droppedXp = mob.Kind.Hostile ? 5 : 1 + _random.Next(3);
+            if (server.Events.HasEntityDeath)
+            {
+                var deathEv = new EntityDeathEvent(mob, killer, drops, droppedXp);
+                server.Events.OnEntityDeath(deathEv);
+                droppedXp = deathEv.DroppedXp;
+            }
+            killer?.AddExperience(droppedXp);
+            foreach (var stack in drops)
+                server.DropItem(stack, (float)mob.X, (float)mob.Y + 0.5f, (float)mob.Z);
         }
         return true;
     }

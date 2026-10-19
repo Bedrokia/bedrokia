@@ -129,13 +129,27 @@ public sealed partial class BedrokiaServer
             }
             if (!boneMeal && _blockRandom.Next(3) != 0)
                 return false; // ponytail: vanilla's chance also depends on farmland moisture and neighbours
-            SetBlockAndUpdate(x, y, z, BedrockConnection.With(block, "growth", Math.Min(7, growth + (boneMeal ? 2 + _blockRandom.Next(4) : 1))), world);
+            var newBlock = BedrockConnection.With(block, "growth", Math.Min(7, growth + (boneMeal ? 2 + _blockRandom.Next(4) : 1)));
+            if (Events.HasBlockGrow)
+            {
+                var growEv = new BlockGrowEvent(new BlockPos(x, y, z), block, newBlock);
+                if (!Events.OnBlockGrow(growEv))
+                    return false;
+                newBlock = growEv.NewBlock;
+            }
+            SetBlockAndUpdate(x, y, z, newBlock, world);
             return true;
         }
         if (name.EndsWith("_sapling"))
         {
             if (!boneMeal && _blockRandom.Next(7) != 0 || boneMeal && _blockRandom.Next(100) >= 45)
                 return boneMeal; // bone meal is used up even when the tree does not grow yet
+            if (Events.HasBlockGrow)
+            {
+                var growEv = new BlockGrowEvent(new BlockPos(x, y, z), block, Blocks.Air);
+                if (!Events.OnBlockGrow(growEv))
+                    return false;
+            }
             GrowTree(x, y, z, name, world);
             return true;
         }
@@ -146,7 +160,15 @@ public sealed partial class BedrokiaServer
                 height++;
             if (height >= 3 || world.GetBlock(x, y + 1, z) is not { IsAir: true } || _blockRandom.Next(4) != 0)
                 return false;
-            SetBlockAndUpdate(x, y + 1, z, Blocks.ByName(name)!, world);
+            var newBlock = Blocks.ByName(name)!;
+            if (Events.HasBlockGrow)
+            {
+                var growEv = new BlockGrowEvent(new BlockPos(x, y + 1, z), Blocks.Air, newBlock);
+                if (!Events.OnBlockGrow(growEv))
+                    return false;
+                newBlock = growEv.NewBlock;
+            }
+            SetBlockAndUpdate(x, y + 1, z, newBlock, world);
             return true;
         }
         if (name == "grass_block" && boneMeal)
@@ -168,7 +190,31 @@ public sealed partial class BedrokiaServer
         if (world.GetBlock(x + dx, y, z + dz) is not { IsAir: true } || world.GetBlock(x + dx, y - 1, z + dz)?.Name is not
                 ("minecraft:dirt" or "minecraft:grass_block" or "minecraft:farmland"))
             return false;
-        SetBlockAndUpdate(x + dx, y, z + dz, Blocks.ByName(fruit)!, world);
+        var fruitBlock = Blocks.ByName(fruit)!;
+        if (Events.HasBlockSpread)
+        {
+            var spreadEv = new BlockSpreadEvent(new BlockPos(x, y, z), new BlockPos(x + dx, y, z + dz), fruitBlock);
+            if (!Events.OnBlockSpread(spreadEv))
+                return false;
+            fruitBlock = spreadEv.NewBlock;
+        }
+        SetBlockAndUpdate(x + dx, y, z + dz, fruitBlock, world);
+        return true;
+    }
+
+    /// <summary>Destroys a flammable block due to fire (cancellable with <see cref="ServerEvents.BlockBurn"/>).</summary>
+    public bool BurnBlock(int x, int y, int z, World? world = null)
+    {
+        world ??= World;
+        if (world.GetBlock(x, y, z) is not { IsAir: false } block)
+            return false;
+        if (Events.HasBlockBurn)
+        {
+            var burnEv = new BlockBurnEvent(new BlockPos(x, y, z), block);
+            if (!Events.OnBlockBurn(burnEv))
+                return false;
+        }
+        SetBlockAndUpdate(x, y, z, Blocks.Air, world);
         return true;
     }
 
@@ -233,6 +279,7 @@ public sealed partial class BedrokiaServer
     {
         world ??= World;
         int cx = (int)Math.Floor(x), cy = (int)Math.Floor(y), cz = (int)Math.Floor(z);
+        var affected = new List<BlockPos>();
         for (var bx = cx - radius; bx <= cx + radius; bx++)
         for (var by = cy - radius; by <= cy + radius; by++)
         for (var bz = cz - radius; bz <= cz + radius; bz++)
@@ -242,6 +289,22 @@ public sealed partial class BedrokiaServer
                 continue;
             if (world.GetBlock(bx, by, bz) is not { IsAir: false } block || block.Unbreakable || Fluids.IsLiquid(block)
                 || block.Name is "minecraft:obsidian" or "minecraft:crying_obsidian")
+                continue;
+            affected.Add(new BlockPos(bx, by, bz));
+        }
+
+        if (Events.HasExplosion)
+        {
+            var ev = new ExplosionEvent(new System.Numerics.Vector3((float)x, (float)y, (float)z), radius, affected);
+            if (!Events.OnExplosion(ev))
+                return;
+            radius = (int)ev.Radius;
+        }
+
+        foreach (var pos in affected)
+        {
+            var (bx, by, bz) = (pos.X, pos.Y, pos.Z);
+            if (world.GetBlock(bx, by, bz) is not { IsAir: false } block)
                 continue;
             if (world.GetBlockEntity(bx, by, bz)?.Items is { } contents)
                 for (var slot = 0; slot < contents.Size; slot++)
@@ -255,10 +318,8 @@ public sealed partial class BedrokiaServer
                     DropItem(drop, bx + 0.5f, by + 0.5f, bz + 0.5f, world: world);
         }
         BroadcastIn(world, Packets.LevelEvent(2025, cx, cy, cz, 0));
-        for (var bx = cx - radius; bx <= cx + radius; bx++)
-        for (var bz = cz - radius; bz <= cz + radius; bz++)
-        for (var by = cy - radius; by <= cy + radius + 1; by++)
-            ApplyGravity(bx, by, bz, world);
+        foreach (var pos in affected)
+            ApplyGravity(pos.X, pos.Y + 1, pos.Z, world);
         var reach = radius * 2;
         foreach (var player in _players.Where(p => p.IsInGame && p.World == world))
         {

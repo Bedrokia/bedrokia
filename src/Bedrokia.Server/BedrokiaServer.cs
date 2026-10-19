@@ -102,6 +102,7 @@ public sealed partial class BedrokiaServer
         Commands = new CommandManager(logger);
         Mobs = new MobManager(this);
         Events = new ServerEvents(logger);
+        Scheduler = new ServerScheduler(logger);
         Plugins = new PluginManager(this);
         RegisterBuiltinCommands();
     }
@@ -115,6 +116,7 @@ public sealed partial class BedrokiaServer
     public string PluginDataDirectory { get; init; } = "plugin_data";
 
     public ServerEvents Events { get; }
+    public ServerScheduler Scheduler { get; }
     public PluginManager Plugins { get; }
 
     public static string Version { get; } =
@@ -128,11 +130,20 @@ public sealed partial class BedrokiaServer
     /// <summary>The overworld; available once <see cref="Started"/> has completed.</summary>
     public World World { get; private set; } = null!;
 
+    internal void InitWorldForTesting(World? world = null)
+    {
+        World = world ?? World.OpenOrCreate(Path.Combine(Config.WorldsDirectory, Config.LevelName), Config.Seed);
+        World.GetChunkAsync(0, 0).GetAwaiter().GetResult();
+        Attach(World);
+    }
+
     /// <summary>Authorization service keys, or null when offline mode is on or they are not fetched yet.</summary>
     public AuthKeys.Snapshot? AuthKeys => Config.OnlineMode ? _authKeys.Current : null;
 
     /// <summary>Players that finished logging in, including those still loading the world.</summary>
     public IReadOnlyList<BedrockConnection> Players => _players;
+    internal List<BedrockConnection> PlayersList => _players;
+    internal void AddPlayer(BedrockConnection connection) => _players.Add(connection);
 
     /// <summary>Server performance and TPS tracker.</summary>
     public PerformanceTracker Performance { get; } = new();
@@ -358,7 +369,7 @@ public sealed partial class BedrokiaServer
         BroadcastIn(world, InventoryPackets.AddItemActor(item.EntityId, stack, item.X, item.Y + DroppedItems.NetworkOffset, item.Z, item.Vx, item.Vy, item.Vz));
     }
 
-    private void TickDroppedItems(World world)
+    internal void TickDroppedItems(World world)
     {
         var items = world.DroppedItems;
         if (items is null)
@@ -393,6 +404,12 @@ public sealed partial class BedrokiaServer
                 && Math.Abs(p.Position.Y - 1.62 - item.Y) < 2);
             if (taker is null)
                 continue;
+            if (Events.HasPlayerPickupItem)
+            {
+                var ev = new PlayerPickupItemEvent(taker, item);
+                if (!Events.OnPlayerPickupItem(ev))
+                    continue;
+            }
             var (packets, remaining) = taker.Inventory.Add(item.Stack);
             if (remaining == item.Stack.Count)
                 continue; // inventory full
@@ -435,7 +452,10 @@ public sealed partial class BedrokiaServer
                 TickBlocks();
 
             using (Timings.Track(Timings.Events))
+            {
+                Scheduler.Tick(CurrentTick);
                 Events.OnTick(CurrentTick);
+            }
 
             using (Timings.Track(Timings.Players))
             {
@@ -517,8 +537,10 @@ public sealed partial class BedrokiaServer
             SavePlayer(connection, leaving: true);
             Broadcast(Packets.RemoveActor(connection.EntityId));
             Broadcast(PlayerPackets.PlayerListRemove(connection.Info!.Uuid));
-            BroadcastMessage($"§e{connection.Name} left the game");
-            Events.OnQuit(connection);
+            var quitEv = new PlayerQuitEvent(connection, $"§e{connection.Name} left the game");
+            Events.OnQuit(quitEv);
+            if (!string.IsNullOrEmpty(quitEv.BroadcastMessage))
+                BroadcastMessage(quitEv.BroadcastMessage);
         }
         Logger.Info($"{connection.Name} disconnected: {reason}.");
     }
@@ -565,8 +587,10 @@ public sealed partial class BedrokiaServer
             connection.Pitch, connection.Yaw, gameMode));
         foreach (var item in connection.World.DroppedItems.All)
             connection.Send(InventoryPackets.AddItemActor(item.EntityId, item.Stack, item.X, item.Y, item.Z, item.Vx, item.Vy, item.Vz));
-        BroadcastMessage($"§e{connection.Name} joined the game");
-        Events.OnJoin(connection);
+        var joinEv = new PlayerJoinEvent(connection, $"§e{connection.Name} joined the game");
+        Events.OnJoin(joinEv);
+        if (!string.IsNullOrEmpty(joinEv.BroadcastMessage))
+            BroadcastMessage(joinEv.BroadcastMessage);
     }
 
     private async Task RefreshAuthKeysAsync(CancellationToken cancellationToken)
@@ -609,6 +633,7 @@ public sealed partial class BedrokiaServer
             "0" or "s" or "survival" => GameMode.Survival,
             "1" or "c" or "creative" => GameMode.Creative,
             "2" or "a" or "adventure" => GameMode.Adventure,
+            "3" or "6" or "sp" or "spectator" => GameMode.Spectator,
             _ => (GameMode)(-1),
         };
         return Enum.IsDefined(mode);

@@ -49,6 +49,19 @@ public abstract class Plugin
     /// <summary>Server events (join, quit, chat, blocks, items, moves, ticks).</summary>
     public ServerEvents Events => Server.Events;
 
+    /// <summary>Task scheduler for the plugin.</summary>
+    public ServerScheduler Scheduler => Server.Scheduler;
+
+    /// <summary>Schedules an action to run on the next tick with this plugin as owner.</summary>
+    public ScheduledTask RunNextTick(Action action) => Server.Scheduler.RunNextTick(action, this);
+
+    /// <summary>Schedules an action to run after <paramref name="delayTicks"/> ticks with this plugin as owner.</summary>
+    public ScheduledTask ScheduleDelayed(int delayTicks, Action action) => Server.Scheduler.ScheduleDelayed(delayTicks, action, this);
+
+    /// <summary>Schedules an action to run repeatedly every <paramref name="periodTicks"/> after an initial delay with this plugin as owner.</summary>
+    public ScheduledTask ScheduleRepeating(int delayTicks, int periodTicks, Action action) =>
+        Server.Scheduler.ScheduleRepeating(delayTicks, periodTicks, action, this);
+
     /// <summary>config.yml in the data folder (copied from resources/config.yml the first time).</summary>
     public PluginConfig Config => _config ??= new PluginConfig(Path.Combine(DataFolder, "config.yml"));
 

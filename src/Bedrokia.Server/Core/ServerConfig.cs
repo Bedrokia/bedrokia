@@ -19,6 +19,7 @@ public enum GameMode
     Survival = 0,
     Creative = 1,
     Adventure = 2,
+    Spectator = 6, // Bedrock's id for spectator
 }
 
 public enum Difficulty
