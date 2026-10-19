@@ -263,7 +263,7 @@ public sealed class PluginManager(BedrokiaServer server)
         var options = CSharpParseOptions.Default.WithLanguageVersion(LanguageVersion.Latest);
         var trees = files.Select(f => CSharpSyntaxTree.ParseText(File.ReadAllText(f), options, f, Encoding.UTF8))
             .Append(CSharpSyntaxTree.ParseText(GlobalUsings, options)).ToList();
-        var compilation = CSharpCompilation.Create(name, trees, References.Value.Concat(libs.Select(l => MetadataReference.CreateFromImage(File.ReadAllBytes(l)))),
+        var compilation = CSharpCompilation.Create(name, trees, References.Value.Concat(LibraryReferences(libs)),
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, optimizationLevel: OptimizationLevel.Release,
                 nullableContextOptions: NullableContextOptions.Enable));
         using var image = new MemoryStream();
@@ -276,6 +276,36 @@ public sealed class PluginManager(BedrokiaServer server)
         }
         image.Position = 0;
         return context.LoadFromStream(image);
+    }
+
+    // The libraries of libs/ and the .NET assemblies they use (a MySQL driver needs System.Data.Common, which the
+    // server itself never loads).
+    private static IEnumerable<MetadataReference> LibraryReferences(string[] libs)
+    {
+        var references = new List<MetadataReference>();
+        foreach (var lib in libs)
+        {
+            var image = File.ReadAllBytes(lib);
+            references.Add(MetadataReference.CreateFromImage(image));
+            using var pe = new System.Reflection.PortableExecutable.PEReader(new MemoryStream(image));
+            var metadata = System.Reflection.Metadata.PEReaderExtensions.GetMetadataReader(pe);
+            foreach (var handle in metadata.AssemblyReferences)
+            {
+                var name = metadata.GetString(metadata.GetAssemblyReference(handle).Name);
+                if (libs.Any(l => Path.GetFileNameWithoutExtension(l) == name))
+                    continue;
+                try
+                {
+                    if (Reference(Assembly.Load(name)) is { } framework)
+                        references.Add(framework);
+                }
+                catch (IOException)
+                {
+                    // not part of .NET: it has to be in libs/ too
+                }
+            }
+        }
+        return references;
     }
 
     // The server's own assemblies, read from memory: they have no file in a single-file build.
