@@ -71,8 +71,9 @@ public sealed partial class BedrockConnection
         UpdateChunks(ChunkPosition.X, ChunkPosition.Z);
 
         var gameMode = (int)_server.Config.GameMode;
-        _server.BroadcastInExcept(target, this, PlayerPackets.AddPlayer(Info!, Position.X, Position.Y, Position.Z, Pitch, Yaw, gameMode));
-        foreach (var other in _server.Players.Where(p => p.IsInGame && p != this && p.World == target))
+        if (!Vanished)
+            _server.BroadcastInExcept(target, this, PlayerPackets.AddPlayer(Info!, Position.X, Position.Y, Position.Z, Pitch, Yaw, gameMode));
+        foreach (var other in _server.Players.Where(p => p.IsInGame && p != this && p.World == target && !p.Vanished))
             Send(PlayerPackets.AddPlayer(other.Info!, other.Position.X, other.Position.Y, other.Position.Z, other.Pitch, other.Yaw, gameMode));
         foreach (var item in target.DroppedItems.All)
             Send(InventoryPackets.AddItemActor(item.EntityId, item.Stack, item.X, item.Y + DroppedItems.NetworkOffset, item.Z, item.Vx, item.Vy, item.Vz));

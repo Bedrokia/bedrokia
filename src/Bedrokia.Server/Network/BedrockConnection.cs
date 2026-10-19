@@ -571,6 +571,11 @@ public sealed partial class BedrockConnection
         // Just after a dimension change the client still reports positions of the old dimension: ignore them.
         if (_portalCooldown > 0 && Math.Abs(x - Position.X) + Math.Abs(y - Position.Y) + Math.Abs(z - Position.Z) > 8)
             return;
+        if (Frozen && Math.Abs(x - Position.X) + Math.Abs(z - Position.Z) + Math.Abs(y - Position.Y) > 0.5)
+        {
+            Teleport(Position.X, Position.Y - EyeHeight, Position.Z);
+            return;
+        }
         var moved = Math.Abs(x - Position.X) + Math.Abs(y - Position.Y) + Math.Abs(z - Position.Z) > 0.001
                     || Math.Abs(pitch - Pitch) + Math.Abs(yaw - Yaw) > 0.1;
         TrackFall(Position.Y, y); // every packet, so that landing is seen even when the player then stands still
@@ -841,6 +846,8 @@ public sealed partial class BedrockConnection
     {
         GameMode = mode;
         Send(Packets.SetPlayerGameType((int)mode));
+        if (_canFly || _god)
+            SendAbilities(); // keep flying / god mode in the new game mode
     }
 
     // ponytail: the block state is the one the client sent (no server-side orientation rules yet).

@@ -556,7 +556,7 @@ public sealed partial class BedrokiaServer
         var others = _players.Where(p => p.IsInGame && p != connection).ToList();
         var gameMode = (int)Config.GameMode;
         connection.Send(PlayerPackets.PlayerListAdd([.. others.Select(p => p.Info!), connection.Info!]));
-        foreach (var other in others.Where(o => o.World == connection.World))
+        foreach (var other in others.Where(o => o.World == connection.World && !o.Vanished))
             connection.Send(PlayerPackets.AddPlayer(other.Info!, other.Position.X, other.Position.Y, other.Position.Z, other.Pitch, other.Yaw, gameMode));
 
         var info = connection.Info!;

@@ -162,6 +162,10 @@ autres plugins et le serveur continuent.
 | `SetSidebar(titre, lignes)` / `ClearSidebar()` | scoreboard sur le côté (15 lignes max) |
 | `AddEffect(effet, niveau, secondes, particules)` / `RemoveEffect(effet)` | effets (`BedrockConnection.Effects.Speed`, `JumpBoost`, `NightVision`...) |
 | `SetSpeed(vitesse)` | vitesse de marche (vanilla 0.1) |
+| `SetHealth(vie)` / `SetFood(faim, saturation)` | soigner, nourrir (20 = plein) |
+| `CanFly`, `God`, `Frozen`, `Vanished` | vol en survie, invincible, immobile, invisible pour les autres joueurs |
+| `ClearInventory(armure)` / `SyncInventory()` | vider l'inventaire ; renvoyer l'inventaire après avoir changé des cases |
+| `ChangeDimension(monde, x, y, z)` | envoyer dans un autre monde (`Server.World`, `Server.Nether`) |
 | `SetMotion(vx, vy, vz)` | pousse le joueur |
 | `GiveItem(stack)` | donne un objet (le surplus tombe au sol) |
 | `HeldItem`, `ArmourItem(0..3)` | objet en main, armure portée |
