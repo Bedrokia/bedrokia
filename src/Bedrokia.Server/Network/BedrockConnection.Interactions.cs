@@ -12,6 +12,7 @@
 using Bedrokia.Protocol;
 using Bedrokia.Server.Core;
 using Bedrokia.Server.Game;
+using Bedrokia.Server.Game.Custom.Items;
 
 namespace Bedrokia.Server.Network;
 
@@ -82,7 +83,7 @@ public sealed partial class BedrockConnection
     /// <summary>Uses the held item on the clicked block; returns true when it did something.</summary>
     private bool UseItemOn(ItemStack held, BlockType clicked, int x, int y, int z, int face)
     {
-        var item = held.Type.Name["minecraft:".Length..];
+        var item = held.Type.Name.StartsWith("minecraft:") ? held.Type.Name["minecraft:".Length..] : held.Type.Name;
         var (fx, fy, fz) = FaceOffset(face);
         var world = _server.World;
         var survival = GameMode != GameMode.Creative;
@@ -159,11 +160,13 @@ public sealed partial class BedrockConnection
     {
         if (item is null)
             return null;
-        var name = item.Type.Name["minecraft:".Length..];
+        var name = item.Type.Name.StartsWith("minecraft:") ? item.Type.Name["minecraft:".Length..] : item.Type.Name;
         if (name is "wheat" or "beetroot") // harvested items sharing the name of their crop
             return null;
         if (item.Block is { } block)
             return block;
+        if (CustomItemRegistry.Get(item.Type.Name)?.GetComponent<BlockPlacerItemComponent>() is { } placer)
+            return Blocks.ByName(placer.Block);
         return Blocks.ByName(name switch
         {
             "oak_sign" => "standing_sign",
@@ -177,14 +180,18 @@ public sealed partial class BedrockConnection
     }
 
     /// <summary>Armour slot an item is worn in (0 head .. 3 feet), null if it is not armour.</summary>
-    internal static int? ArmourSlot(string item) => item["minecraft:".Length..] switch
+    internal static int? ArmourSlot(string item)
     {
-        var n when n.EndsWith("_helmet") => 0,
-        var n when n.EndsWith("_chestplate") || n is "elytra" => 1,
-        var n when n.EndsWith("_leggings") => 2,
-        var n when n.EndsWith("_boots") => 3,
-        _ => null,
-    };
+        var n = item.StartsWith("minecraft:") ? item["minecraft:".Length..] : item;
+        return n switch
+        {
+            var s when s.EndsWith("_helmet") => 0,
+            var s when s.EndsWith("_chestplate") || s is "elytra" => 1,
+            var s when s.EndsWith("_leggings") => 2,
+            var s when s.EndsWith("_boots") => 3,
+            _ => null,
+        };
+    }
 
     // Dragonfly item/armour.go: using armour swaps it with the piece worn in its slot.
     private bool TryEquipHeld()

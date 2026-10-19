@@ -1,0 +1,8 @@
+join:
+  title: "§6§lBEDROKIA"
+  subtitle: "§eBon jeu !"
+  message: "§aBienvenue sur le serveur, {player} !"
+
+break:
+  notify: true
+  prevent-bedrock: true

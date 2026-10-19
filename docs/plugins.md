@@ -181,7 +181,7 @@ player.GiveItem(epee);
 if (player.HeldItem?.CustomName == "§c§lÉpée du dragon") { /* pouvoir spécial */ }
 ```
 
-Les nouveaux blocs et objets avec leur propre texture (comme les add-ons) ne sont pas encore gérés.
+Les nouveaux blocs et objets personnalisés sont supportés via l'API Custom Blocks & Items (`CustomBlockBuilder`, `CustomItemBuilder`). Voir l'exemple `CustomContent`.
 
 ## Console au démarrage
 
@@ -189,8 +189,9 @@ Les nouveaux blocs et objets avec leur propre texture (comme les add-ons) ne son
 [INFO] Loading 3 plugin(s) from plugins/...
 [ERROR] Plugin 'Cassé' could not be loaded: 1 compile error(s):
     plugins\Cassé\src\Main.cs(12,9): error CS0103: The name 'joueur' does not exist in the current context
-[INFO]   [OK]     MagicItems v1.0.0 by Bedrokia (folder: MagicItems) - Bâton de foudre, bottes de vitesse et tremplins.
-[INFO]   [OK]     Showcase v1.0.0 by Bedrokia (folder: Showcase) - Titre de bienvenue, scoreboard et particules.
+[INFO]   [OK]     CustomContent v1.0.0 by Bedrokia (folder: CustomContent) - Blocs et items personnalises.
+[INFO]   [OK]     Listeners v1.0.0 by Bedrokia (folder: Listeners) - Gestion des événements avec listeners séparés.
+[INFO]   [OK]     Ping v1.0.0 by Bedrokia (folder: Ping) - Commande /ping.
 [ERROR]   [FAILED] Cassé (see the error above)
 [WARN] Plugins: 2 loaded, 1 failed (3.4 s).
 ```
@@ -203,7 +204,6 @@ compile `src/` lui-même.
 
 ## Exemples
 
-- **MagicItems** : bâton de foudre (clic droit = éclair), bottes de vitesse (Vitesse + Saut), tremplin (bloc qui
-  propulse). Commande `/magie`.
-- **Showcase** : titre de bienvenue, scoreboard en direct (joueurs, heure, position...), spirale de flammes `/fx`,
-  annonces `/annonce`, mots mis en valeur dans le chat. Tout est réglable dans son `config.yml`.
+- **CustomContent** : enregistrement complet de blocs et d'items personnalisés (épée en rubis, pioche, armure, pomme consommable, minerais et lampes) avec leurs composants Bedrock.
+- **Listeners** : gestion modulaire des événements (connexion d'un joueur, casse de blocs) avec un `Main` et des listeners séparés dans différents fichiers.
+- **Ping** : commande `/ping` (et alias `/pong`) avec gestion des arguments, configuration `config.yml` et action bar.

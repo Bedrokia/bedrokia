@@ -127,7 +127,7 @@ public sealed class Main : Plugin
 ```
 
 Redémarrer le serveur : le plugin est compilé et chargé, la console l'affiche (ou affiche l'erreur exacte avec le
-fichier et la ligne). Deux plugins d'exemple complets : [`examples/plugins`](examples/plugins).
+fichier et la ligne). Plugins d'exemple complets : [`examples/plugins`](examples/plugins).
 Documentation complète : [plugins](https://nexiumpvp2.github.io/bedrokia/plugins).
 
 ## 🛠️ Compiler
