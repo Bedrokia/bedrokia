@@ -33,6 +33,217 @@ public sealed partial class BedrockConnection
     public float Saturation { get; private set; } = 5;
     public bool Dead { get; private set; }
 
+    private readonly Dictionary<EffectType, EffectInstance> _activeEffects = [];
+    private readonly Dictionary<EffectType, int> _effectElapsed = [];
+
+    public IReadOnlyCollection<EffectInstance> GetActiveEffects() => _activeEffects.Values.ToList();
+    public EffectInstance? GetEffect(EffectType type) => _activeEffects.GetValueOrDefault(type);
+
+    public float CurrentSpeed
+    {
+        get
+        {
+            float speed = 0.1f;
+            if (_activeEffects.TryGetValue(EffectType.Speed, out var s))
+                speed *= 1f + 0.2f * (s.Amplifier + 1);
+            if (_activeEffects.TryGetValue(EffectType.Slowness, out var sl))
+                speed *= Math.Max(0f, 1f - 0.15f * (sl.Amplifier + 1));
+            return speed;
+        }
+    }
+
+    public float CurrentMaxHealth => 20f + (_activeEffects.TryGetValue(EffectType.HealthBoost, out var hb) ? 4f * (hb.Amplifier + 1) : 0f);
+
+    public void SetMaxHealth(float maxHealth) => Send(new BedrockWriter().VarUInt32(PacketId.UpdateAttributes).VarUInt64((ulong)EntityId).VarUInt32(1)
+        .Float32(0).Float32(maxHealth).Float32(Health).Float32(0).Float32(maxHealth).Float32(20f).String("minecraft:health").VarUInt32(0)
+        .VarUInt64(0).ToArray());
+
+    public bool AddEffect(EffectInstance effect, EffectChangeCause cause = EffectChangeCause.Plugin)
+    {
+        if (Dead)
+            return false;
+
+        if (effect.Type is EffectType.InstantHealth or EffectType.InstantDamage)
+        {
+            ApplyInstantEffect(effect.Type, effect.Amplifier, cause);
+            return true;
+        }
+
+        MobEffectAction action = MobEffectAction.Add;
+
+        if (_activeEffects.TryGetValue(effect.Type, out var existing))
+        {
+            if (effect.Amplifier > existing.Amplifier)
+                action = MobEffectAction.Modify;
+            else if (effect.Amplifier == existing.Amplifier && effect.DurationTicks > existing.DurationTicks)
+                action = MobEffectAction.Modify;
+            else
+                return false;
+        }
+
+        if (_server.Events.HasPlayerEffectChange)
+        {
+            var ev = new PlayerEffectChangeEvent(this, existing, effect, cause);
+            if (!_server.Events.OnPlayerEffectChange(ev))
+                return false;
+            if (ev.NewEffect is null)
+                return false;
+            effect = ev.NewEffect;
+        }
+
+        _activeEffects[effect.Type] = effect;
+        _effectElapsed[effect.Type] = 0;
+
+        Send(Packets.MobEffect((ulong)EntityId, action, (int)effect.Type, effect.Amplifier, effect.ShowParticles, effect.DurationTicks));
+        ApplyEffectAttributes(effect.Type);
+        return true;
+    }
+
+    public bool RemoveEffect(EffectType type, EffectChangeCause cause = EffectChangeCause.Plugin)
+    {
+        if (!_activeEffects.TryGetValue(type, out var existing))
+            return false;
+
+        if (_server.Events.HasPlayerEffectChange)
+        {
+            var ev = new PlayerEffectChangeEvent(this, existing, null, cause);
+            if (!_server.Events.OnPlayerEffectChange(ev))
+                return false;
+        }
+
+        _activeEffects.Remove(type);
+        _effectElapsed.Remove(type);
+        Send(Packets.MobEffect((ulong)EntityId, MobEffectAction.Remove, (int)type, 0, false, 0));
+        ResetEffectAttributes(type);
+        return true;
+    }
+
+    public void ClearEffects(EffectChangeCause cause = EffectChangeCause.Plugin)
+    {
+        foreach (var (type, effect) in _activeEffects.ToList())
+        {
+            if (_server.Events.HasPlayerEffectChange)
+            {
+                var ev = new PlayerEffectChangeEvent(this, effect, null, cause);
+                if (!_server.Events.OnPlayerEffectChange(ev))
+                    continue;
+            }
+
+            _activeEffects.Remove(type);
+            _effectElapsed.Remove(type);
+            Send(Packets.MobEffect((ulong)EntityId, MobEffectAction.Remove, (int)type, 0, false, 0));
+            ResetEffectAttributes(type);
+        }
+    }
+
+    private void TickEffects()
+    {
+        if (Dead || _activeEffects.Count == 0)
+            return;
+
+        foreach (var (type, effect) in _activeEffects.ToList())
+        {
+            var elapsed = _effectElapsed.GetValueOrDefault(type, 0) + 1;
+            _effectElapsed[type] = elapsed;
+
+            switch (type)
+            {
+                case EffectType.Regeneration:
+                {
+                    var interval = Math.Max(1, 50 >> effect.Amplifier);
+                    if (elapsed % interval == 0)
+                        Heal(1, HealCause.Regeneration);
+                    break;
+                }
+                case EffectType.Poison:
+                {
+                    var interval = Math.Max(1, 25 >> effect.Amplifier);
+                    if (elapsed % interval == 0 && Health > 1f)
+                    {
+                        var dmg = Math.Min(1f, Health - 1f);
+                        if (dmg > 0)
+                        {
+                            _hurtTicks = 0;
+                            Damage(dmg, Position.X, Position.Z, armour: false, source: DamageSource.Poison());
+                        }
+                    }
+                    break;
+                }
+                case EffectType.Wither:
+                {
+                    var interval = Math.Max(1, 40 >> effect.Amplifier);
+                    if (elapsed % interval == 0)
+                    {
+                        _hurtTicks = 0;
+                        Damage(1f, Position.X, Position.Z, armour: false, source: DamageSource.Wither());
+                    }
+                    break;
+                }
+                case EffectType.Hunger:
+                {
+                    AddExhaustion(0.005f * (effect.Amplifier + 1));
+                    break;
+                }
+                case EffectType.Saturation:
+                {
+                    AddFood(1, 2f);
+                    break;
+                }
+            }
+
+            effect.DurationTicks--;
+            if (effect.DurationTicks <= 0)
+            {
+                RemoveEffect(type, EffectChangeCause.Expiration);
+            }
+        }
+    }
+
+    private void ApplyEffectAttributes(EffectType type)
+    {
+        switch (type)
+        {
+            case EffectType.Speed or EffectType.Slowness:
+                SendVitals();
+                break;
+            case EffectType.HealthBoost:
+                SetMaxHealth(CurrentMaxHealth);
+                SendVitals();
+                break;
+        }
+    }
+
+    private void ResetEffectAttributes(EffectType type)
+    {
+        switch (type)
+        {
+            case EffectType.Speed or EffectType.Slowness:
+                SendVitals();
+                break;
+            case EffectType.HealthBoost:
+                SetMaxHealth(CurrentMaxHealth);
+                if (Health > CurrentMaxHealth)
+                    Health = CurrentMaxHealth;
+                SendVitals();
+                break;
+        }
+    }
+
+    private void ApplyInstantEffect(EffectType type, int amplifier, EffectChangeCause cause)
+    {
+        if (type == EffectType.InstantHealth)
+        {
+            var heal = 4f * (1 << amplifier);
+            Heal(heal, HealCause.Effect);
+        }
+        else if (type == EffectType.InstantDamage)
+        {
+            var damage = 6f * (1 << amplifier);
+            _hurtTicks = 0;
+            Damage(damage, Position.X, Position.Z, armour: false, source: DamageSource.Magic());
+        }
+    }
+
     private float _exhaustion;
     private int _hurtTicks, _foodTicks;
     private float _fallPeak = float.NaN;
@@ -47,10 +258,15 @@ public sealed partial class BedrockConnection
     /// </summary>
     public void Damage(float amount, double fromX, double fromZ, bool armour = true, DamageSource? source = null)
     {
-        if (Dead || GameMode == GameMode.Creative || _god || _hurtTicks > 0 || amount <= 0)
+        if (Dead || GameMode is GameMode.Creative or GameMode.Spectator || _god || _hurtTicks > 0 || amount <= 0)
             return;
 
         source ??= DamageSource.Custom();
+
+        // FireResistance cancels fire and lava damage
+        if ((source.Cause is DamageCause.Fire or DamageCause.Lava) && _activeEffects.ContainsKey(EffectType.FireResistance))
+            return;
+
         var ev = new PlayerDamageEvent(this, source, amount, (fromX, fromZ));
         if (!_server.Events.OnPlayerDamage(ev))
             return;
@@ -58,6 +274,13 @@ public sealed partial class BedrockConnection
         amount = ev.Damage;
         if (amount <= 0)
             return;
+
+        // Resistance reduces damage by 20% * (amplifier + 1) (except void/starvation)
+        if (source.Cause is not (DamageCause.Void or DamageCause.Starvation) && _activeEffects.TryGetValue(EffectType.Resistance, out var resistance))
+        {
+            var reduction = Math.Min(1.0f, 0.20f * (resistance.Amplifier + 1));
+            amount *= Math.Max(0f, 1f - reduction);
+        }
 
         _lastDamageSource = source;
 
@@ -109,14 +332,51 @@ public sealed partial class BedrockConnection
 
     private int ProtectionPoints() => Inventory.Armour.Slots.Sum(piece => Enchanting.Level(piece, "protection"));
 
-    private void Heal(float amount)
+    public void Heal(float amount, HealCause cause = HealCause.Custom)
     {
-        Health = Math.Min(MaxHealth, Health + amount);
+        if (amount <= 0 || Health >= CurrentMaxHealth)
+            return;
+
+        if (_server.Events.HasPlayerHeal)
+        {
+            var healEvent = new PlayerHealEvent(this, amount, cause);
+            if (!_server.Events.OnPlayerHeal(healEvent))
+                return;
+            amount = healEvent.Amount;
+            if (amount <= 0)
+                return;
+        }
+
+        Health = Math.Min(CurrentMaxHealth, Health + amount);
         SendVitals();
     }
 
     private void SendVitals() =>
-        Send(PlayerPackets.PlayerAttributes(EntityId, (float)Math.Ceiling(Health), Food, Saturation, ExperienceLevel, ExperienceProgress));
+        Send(PlayerPackets.PlayerAttributes(EntityId, (float)Math.Ceiling(Health), Food, Saturation, ExperienceLevel, ExperienceProgress, CurrentSpeed, CurrentMaxHealth));
+
+    public void AddFood(int foodAmount, float saturationAmount)
+    {
+        var targetFood = Math.Clamp(Food + foodAmount, 0, MaxFood);
+        var targetSat = Math.Clamp(Saturation + saturationAmount, 0, targetFood);
+        if (targetFood == Food && Math.Abs(targetSat - Saturation) < 0.001f)
+            return;
+
+        if (_server.Events.HasPlayerHungerChange)
+        {
+            var ev = new PlayerHungerChangeEvent(this, Food, targetFood, targetSat);
+            if (!_server.Events.OnPlayerHungerChange(ev))
+            {
+                SendVitals();
+                return;
+            }
+            targetFood = ev.NewFood;
+            targetSat = ev.NewSaturation;
+        }
+
+        Food = targetFood;
+        Saturation = targetSat;
+        SendVitals();
+    }
 
     /// <summary>Hunger cost of an action (Bedrock values: sprinting 0.1/m, jumping 0.05, attacking 0.1, mining 0.005).</summary>
     public void AddExhaustion(float amount)
@@ -127,16 +387,35 @@ public sealed partial class BedrockConnection
         if (_exhaustion < 4)
             return;
         _exhaustion -= 4;
-        if (Saturation > 0)
-            Saturation = Math.Max(0, Saturation - 1);
+
+        var targetFood = Food;
+        var targetSat = Saturation;
+        if (targetSat > 0)
+            targetSat = Math.Max(0, targetSat - 1);
         else
-            Food = Math.Max(0, Food - 1);
+            targetFood = Math.Max(0, targetFood - 1);
+
+        if (_server.Events.HasPlayerHungerChange)
+        {
+            var ev = new PlayerHungerChangeEvent(this, Food, targetFood, targetSat);
+            if (!_server.Events.OnPlayerHungerChange(ev))
+            {
+                SendVitals();
+                return;
+            }
+            targetFood = ev.NewFood;
+            targetSat = ev.NewSaturation;
+        }
+
+        Food = targetFood;
+        Saturation = targetSat;
         SendVitals();
     }
 
     private void Die()
     {
         Dead = true;
+        ClearEffects(EffectChangeCause.Death);
         CloseAllForms(FormCancelReason.UserClosed);
         DduiSession.CloseAll();
         _fallPeak = float.NaN;
@@ -207,6 +486,8 @@ public sealed partial class BedrockConnection
         if (_server.CurrentTick % 100 == 0)
             PruneExpiredForms(_server.CurrentTick);
         TickPortal();
+        TickEffects();
+
         if (Dead || GameMode == GameMode.Creative)
             return;
 
@@ -227,13 +508,13 @@ public sealed partial class BedrockConnection
             // Saturation boost: fast regeneration.
             _foodTicks = 0;
             var spent = Math.Min(Saturation, 6);
-            Heal(spent / 6);
+            Heal(spent / 6, HealCause.Food);
             AddExhaustion(spent);
         }
         else if (Food >= 18 && Health < MaxHealth && _foodTicks >= 80)
         {
             _foodTicks = 0;
-            Heal(1);
+            Heal(1, HealCause.Food);
             AddExhaustion(6);
         }
         else if (Food == 0 && _foodTicks >= 80)
@@ -279,30 +560,94 @@ public sealed partial class BedrockConnection
         return null;
     }
 
-    /// <summary>Right click in the air: starts eating if the held item is food and the player can eat.</summary>
+    /// <summary>Right click in the air: starts eating/drinking if the held item is consumable.</summary>
     private void StartEating()
     {
-        var always = Inventory.Held?.Type.Name is "minecraft:golden_apple" or "minecraft:enchanted_golden_apple"
-            || (Inventory.Held is not null && CustomItemRegistry.Get(Inventory.Held.Type.Name)?.GetComponent<FoodItemComponent>()?.CanAlwaysEat == true);
-        if (FoodValue(Inventory.Held) is not null && (Food < MaxFood || always || GameMode == GameMode.Creative) && _eatingSince < 0)
+        if (Inventory.Held is not { } held)
+            return;
+        var name = held.Type.Name;
+        var isPotion = name == "minecraft:potion";
+        var isMilk = name == "minecraft:milk_bucket";
+        var always = isPotion || isMilk || name is "minecraft:golden_apple" or "minecraft:enchanted_golden_apple"
+            || (CustomItemRegistry.Get(name)?.GetComponent<FoodItemComponent>()?.CanAlwaysEat == true);
+        if ((FoodValue(held) is not null || isPotion || isMilk) && (Food < MaxFood || always || GameMode == GameMode.Creative) && _eatingSince < 0)
             _eatingSince = _server.CurrentTick;
     }
 
     private void FinishEating()
     {
         _eatingSince = -1;
-        if (FoodValue(Inventory.Held) is not { } food)
+        if (Inventory.Held is not { } held)
             return;
-        Food = Math.Min(MaxFood, Food + food.Food);
-        Saturation = Math.Min(Food, Saturation + food.Saturation);
-        if (Inventory.Held!.Type.Name is "minecraft:golden_apple" or "minecraft:enchanted_golden_apple")
-            Heal(4);
-        var bowl = Inventory.Held.Type.Name.EndsWith("_stew") || Inventory.Held.Type.Name.EndsWith("_soup");
-        if (GameMode != GameMode.Creative)
+
+        var name = held.Type.Name;
+        var isPotion = name == "minecraft:potion";
+        var isMilk = name == "minecraft:milk_bucket";
+        var food = FoodValue(held);
+
+        if (!isPotion && !isMilk && food is null)
+            return;
+
+        if (_server.Events.HasPlayerConsumeItem)
         {
-            Send(Inventory.ConsumeHeld());
-            if (bowl && ItemStack.Of("bowl") is { } empty)
-                Send([.. Inventory.Add(empty).Packets]);
+            var consumeEv = new PlayerConsumeItemEvent(this, held);
+            if (!_server.Events.OnPlayerConsumeItem(consumeEv))
+            {
+                Send(InventoryPackets.InventorySlot(InventoryPackets.WindowInventory, Inventory.SelectedSlot, held));
+                SendVitals();
+                return;
+            }
+        }
+
+        if (isPotion)
+        {
+            if (StatusEffects.FromPotionMeta(held.Meta) is { } effect)
+                AddEffect(effect, EffectChangeCause.Potion);
+
+            if (GameMode != GameMode.Creative)
+            {
+                Send(Inventory.ConsumeHeld());
+                if (ItemStack.Of("glass_bottle") is { } bottle)
+                    Send([.. Inventory.Add(bottle).Packets]);
+            }
+        }
+        else if (isMilk)
+        {
+            ClearEffects(EffectChangeCause.Milk);
+
+            if (GameMode != GameMode.Creative)
+            {
+                Send(Inventory.ConsumeHeld());
+                if (ItemStack.Of("bucket") is { } bucket)
+                    Send([.. Inventory.Add(bucket).Packets]);
+            }
+        }
+        else if (food is { } f)
+        {
+            AddFood(f.Food, f.Saturation);
+
+            if (held.Type.Name is "minecraft:golden_apple")
+            {
+                Heal(4, HealCause.Food);
+                AddEffect(new EffectInstance(EffectType.Absorption, 0, 2400), EffectChangeCause.Potion);
+                AddEffect(new EffectInstance(EffectType.Regeneration, 1, 100), EffectChangeCause.Potion);
+            }
+            else if (held.Type.Name is "minecraft:enchanted_golden_apple")
+            {
+                Heal(4, HealCause.Food);
+                AddEffect(new EffectInstance(EffectType.Absorption, 3, 2400), EffectChangeCause.Potion);
+                AddEffect(new EffectInstance(EffectType.Regeneration, 4, 600), EffectChangeCause.Potion);
+                AddEffect(new EffectInstance(EffectType.Resistance, 0, 6000), EffectChangeCause.Potion);
+                AddEffect(new EffectInstance(EffectType.FireResistance, 0, 6000), EffectChangeCause.Potion);
+            }
+
+            var bowl = held.Type.Name.EndsWith("_stew") || held.Type.Name.EndsWith("_soup");
+            if (GameMode != GameMode.Creative)
+            {
+                Send(Inventory.ConsumeHeld());
+                if (bowl && ItemStack.Of("bowl") is { } empty)
+                    Send([.. Inventory.Add(empty).Packets]);
+            }
         }
         SendVitals();
     }
@@ -355,13 +700,32 @@ public sealed partial class BedrockConnection
     // --- Combat ---
 
     // InventoryTransaction type 3 (UseItemOnEntity): target runtime id, action (1 = attack), hotbar slot, held item, ...
-    private void OnUseItemOnEntity(ref BedrockReader reader)
+    internal void AttackEntity(long targetEntityId)
+    {
+        var writer = new BedrockWriter();
+        writer.VarUInt64((ulong)targetEntityId);
+        writer.VarInt32(1);
+        var reader = new BedrockReader(writer.ToArray());
+        OnUseItemOnEntity(ref reader);
+    }
+
+    internal void OnUseItemOnEntity(ref BedrockReader reader)
     {
         var target = (long)reader.VarUInt64();
         var action = reader.VarInt32();
+        if (action == 0)
+        {
+            if (_server.Events.HasPlayerInteractEntity)
+                _server.Events.OnPlayerInteractEntity(new PlayerInteractEntityEvent(this, target));
+            return;
+        }
         if (action != 1 || Dead)
             return;
         var damage = AttackDamage(Inventory.Held);
+        if (_activeEffects.TryGetValue(EffectType.Strength, out var str))
+            damage += 3f * (str.Amplifier + 1);
+        if (_activeEffects.TryGetValue(EffectType.Weakness, out var weak))
+            damage = Math.Max(0f, damage - 4f * (weak.Amplifier + 1));
         AddExhaustion(0.1f);
         _server.BroadcastInExcept(World, this, EntityPackets.Swing(EntityId));
         if (_server.Mobs.Find(target) is { } mob)

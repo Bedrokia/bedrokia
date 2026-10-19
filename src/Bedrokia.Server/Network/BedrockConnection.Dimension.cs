@@ -86,6 +86,8 @@ public sealed partial class BedrockConnection
     /// <summary>Called every tick: standing in a portal for 4 s (at once in creative) takes the player through it.</summary>
     private void TickPortal()
     {
+        if (_server.World is null)
+            return; // no world loaded (tests)
         if (_portalCooldown > 0)
         {
             _portalCooldown--;

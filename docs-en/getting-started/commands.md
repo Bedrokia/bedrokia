@@ -27,7 +27,7 @@ this list and show up in the game's auto-completion.
 | `stop` | stops the server cleanly |
 | `save-all` | saves everything now |
 | `say <message...>` | message to everyone |
-| `gamemode <mode> [player]` (`gm`) | changes the game mode |
+| `gamemode <mode> [player]` (`gm`) | changes the game mode: `survival`, `creative`, `adventure`, `spectator` (or 0 to 3) |
 | `give <player> <item> [amount]` | gives items |
 | `clear [player]` | empties the inventory |
 | `tp <target> [destination] [x] [y] [z]` (`teleport`) | teleports |

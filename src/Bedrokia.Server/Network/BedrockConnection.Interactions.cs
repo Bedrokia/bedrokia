@@ -29,8 +29,17 @@ public sealed partial class BedrockConnection
     public (int X, int Y, int Z)? BedSpawn { get; private set; }
 
     /// <summary>Uses the clicked block; returns false if it does nothing (then the held item is used or placed).</summary>
-    private bool UseBlock(BlockType block, int x, int y, int z)
+    private bool UseBlock(BlockType block, int x, int y, int z, int face = 0)
     {
+        if (_server.Events.HasPlayerInteractBlock)
+        {
+            var interactEv = new PlayerInteractBlockEvent(this, new BlockPos(x, y, z), block, face);
+            if (!_server.Events.OnPlayerInteractBlock(interactEv))
+            {
+                Send(Packets.UpdateBlock(x, y, z, block.NetworkId));
+                return true;
+            }
+        }
         var name = block.Name;
         if (TryOpenContainer(block, x, y, z))
             return true;

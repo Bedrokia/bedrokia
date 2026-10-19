@@ -27,7 +27,7 @@ s'ajoutent à cette liste et apparaissent dans l'autocomplétion du jeu.
 | `stop` | arrête proprement le serveur |
 | `save-all` | sauvegarde tout maintenant |
 | `say <message...>` | message à tous |
-| `gamemode <mode> [joueur]` (`gm`) | change le mode de jeu |
+| `gamemode <mode> [joueur]` (`gm`) | change le mode de jeu : `survival`, `creative`, `adventure`, `spectator` (ou 0 à 3) |
 | `give <joueur> <objet> [nombre]` | donne des objets |
 | `clear [joueur]` | vide l'inventaire |
 | `tp <cible> [destination] [x] [y] [z]` (`teleport`) | téléporte |

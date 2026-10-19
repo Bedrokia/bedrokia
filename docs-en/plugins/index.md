@@ -54,7 +54,7 @@ public sealed class Main : Plugin
     public override void OnEnable()
     {
         Log("Started!");
-        Events.PlayerJoin += player => player.SendMessage("§aWelcome " + player.Name);
+        Events.PlayerJoin += e => e.Player.SendMessage("§aWelcome " + e.Player.Name);
     }
 
     public override void OnDisable()
@@ -102,6 +102,7 @@ All plugin code runs on the **game thread** (20 ticks per second): no locks need
 | `RegisterCommand(name, description, usage, opOnly, action)` | adds a command from code |
 | `RegisterCommand(name, description, usage, permission, action)` | command needing a permission node (`""` for everyone, `"op"`, or `"myplugin.fly"`) |
 | `UnregisterCommand(name)` | removes a command, for example a server command the plugin replaces |
+| `RunNextTick(action)` / `ScheduleDelayed(ticks, action)` / `ScheduleRepeating(delay, period, action)` | scheduled tasks (20 ticks = 1 s), cancel with `.Cancel()`, stopped when the plugin is disabled |
 
 ## Config
 
@@ -124,9 +125,23 @@ action (the block comes back, the message is not sent...).
 
 | Event | Argument | Cancellable |
 |---|---|---|
-| `PlayerJoin` | the player | no |
-| `PlayerQuit` | the player | no |
-| `PlayerMove` | the player (position or rotation changed) | no |
+| `PlayerLogin` | `PlayerLoginEvent`: `Player`, `KickReason` (editable) | yes (the player is kicked) |
+| `PlayerJoin` | `PlayerJoinEvent`: `Player`, `BroadcastMessage` (editable, `null` = no message) | no |
+| `PlayerQuit` | `PlayerQuitEvent`: `Player`, `BroadcastMessage` (editable) | no |
+| `PlayerMove` | `PlayerMoveEvent`: `Player`, `From`, `To`, `Yaw`, `Pitch`, `IsBlockChange` | yes (sent back) |
+| `PlayerCommand` | `PlayerCommandEvent`: `Player`, `CommandLine` (editable) | yes |
+| `PlayerToggleAction` | `PlayerToggleActionEvent`: `Player`, `Action` (sneak, sprint...), `NewState` | yes |
+| `PlayerHeal` | `PlayerHealEvent`: `Player`, `Amount` (editable), `Cause` | yes |
+| `PlayerHungerChange` | `PlayerHungerChangeEvent`: `Player`, `OldFood`, `NewFood` and `NewSaturation` (editable) | yes |
+| `PlayerEffectChange` | `PlayerEffectChangeEvent`: `Player`, `OldEffect`, `NewEffect`, `Cause` | yes |
+| `PlayerConsumeItem` | `PlayerConsumeItemEvent`: `Player`, `Item` (food, potion, milk) | yes |
+| `PlayerPickupItem` | `PlayerPickupItemEvent`: `Player`, `Item` | yes |
+| `PlayerHeldSlotChange` | `PlayerHeldSlotChangeEvent`: `Player`, `OldSlot`, `NewSlot` | yes |
+| `PlayerInteractBlock` | `PlayerInteractBlockEvent`: `Player`, `Position`, `Block`, `Face` | yes |
+| `PlayerInteractEntity` | `PlayerInteractEntityEvent`: `Player`, `EntityId`, `Mob` | yes |
+| `ContainerOpen` / `ContainerClose` | `ContainerOpenEvent`: `Player`, `Position`, `ContainerKind`, `Items`; `ContainerCloseEvent`: `Player` | yes / no |
+| `PlayerCraftItem` | `PlayerCraftItemEvent`: `Player`, `Result` (editable), `Ingredients` | yes |
+| `PlayerEnchantItem` | `PlayerEnchantItemEvent`: `Player`, `Item`, `LevelCost` and `LapisCost` (editable) | yes |
 | `PlayerChat` | `PlayerChatEvent`: `Player`, `Message` (editable) | yes |
 | `PlayerDamage` | `PlayerDamageEvent`: `Player`, `Damage` (editable), `Source`, `ApplyKnockback` (editable) | yes |
 | `PlayerDeath` | `PlayerDeathEvent`: `Player`, `Source`, `DeathMessage` (editable), `KeepInventory` (editable), `Drops` (editable) | no |
@@ -140,6 +155,12 @@ action (the block comes back, the message is not sent...).
 | `EntityDamage` | `EntityDamageEvent`: `Entity`, `Damage` (editable), `Source` | yes |
 | `EntitySpawn` | `EntitySpawnEvent`: `Kind`, `X`, `Y`, `Z` (editable) | yes |
 | `EntityDespawn` | `EntityDespawnEvent`: `Entity`, `Reason` | no |
+| `EntityDeath` | `EntityDeathEvent`: `Entity`, `Killer`, `Drops`, `DroppedXp` (editable) | no |
+| `EntityTarget` | `EntityTargetEvent`: `Entity`, `Target` (editable) | yes |
+| `Explosion` | `ExplosionEvent`: `Position`, `Radius`, `AffectedBlocks` (editable) | yes |
+| `BlockBurn` / `BlockSpread` / `BlockGrow` | fire burns a block; a block spreads (melon, pumpkin); a plant grows (`NewBlock` editable) | yes |
+| `FluidFlow` | `FluidFlowEvent`: `From`, `To`, `FluidBlock` (editable) | yes |
+| `FurnaceSmelt` / `FurnaceBurn` | a furnace cooks (`Result` editable); a furnace burns a fuel (`BurnDuration` editable) | yes |
 | `Tick` | tick number (20 per second) | no |
 
 ```csharp
@@ -164,6 +185,7 @@ server keep running.
 | `SetSidebar(title, lines)` / `ClearSidebar()` | sidebar scoreboard (15 lines max) |
 | `AddEffect(effect, level, seconds, particles)` / `RemoveEffect(effect)` | effects (`BedrockConnection.Effects.Speed`, `JumpBoost`, `NightVision`...) |
 | `SetSpeed(speed)` | walk speed (vanilla 0.1) |
+| `AddEffect(new EffectInstance(EffectType.Poison, level, ticks))` / `RemoveEffect(EffectType)` / `ClearEffects()` / `GetActiveEffects()` | effects run by the server (regeneration, poison, wither, strength, resistance...); potions and milk too |
 | `SetHealth(health)` / `SetFood(food, saturation)` | heal, feed (20 = full) |
 | `CanFly`, `God`, `Frozen`, `Vanished` | flying in survival, invincible, unable to move, invisible to the other players |
 | `ClearInventory(armour)` / `SyncInventory()` | empty the inventory; resend the inventory after changing slots |

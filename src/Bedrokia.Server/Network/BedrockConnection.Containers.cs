@@ -30,7 +30,7 @@ public sealed partial class BedrockConnection
     ];
 
     /// <summary>Opens the container at (x, y, z) if the block is one; returns false otherwise.</summary>
-    private bool TryOpenContainer(BlockType block, int x, int y, int z)
+    internal bool TryOpenContainer(BlockType block, int x, int y, int z)
     {
         if (!ContainerBlocks.Contains(block.Name))
             return false;
@@ -45,6 +45,14 @@ public sealed partial class BedrockConnection
             return false;
         var contents = entity.Id == "EnderChest" ? Inventory.EnderChest : entity.Items!;
         var type = entity.Id switch { "Furnace" => (byte)2, "BlastFurnace" => (byte)27, "Smoker" => (byte)28, _ => (byte)0 };
+
+        if (_server.Events.HasContainerOpen)
+        {
+            var openEv = new ContainerOpenEvent(this, WindowContainer, type, new BlockPos(x, y, z), entity.Id, contents);
+            if (!_server.Events.OnContainerOpen(openEv))
+                return true;
+        }
+
         Inventory.OpenContainer = (contents, entity.Id);
         OpenContainerAt = (x, y, z);
         Send(InventoryPackets.ContainerOpen(WindowContainer, type, x, y, z),
@@ -69,6 +77,11 @@ public sealed partial class BedrockConnection
     /// <summary>The container was broken or the window was closed.</summary>
     internal void CloseContainer(bool notifyClient)
     {
+        if (OpenContainerAt is not null)
+        {
+            if (_server.Events.HasContainerClose)
+                _server.Events.OnContainerClose(new ContainerCloseEvent(this, WindowContainer));
+        }
         if (notifyClient && OpenContainerAt is not null)
             Send(InventoryPackets.ContainerClose(WindowContainer, 0));
         OpenContainerAt = null;

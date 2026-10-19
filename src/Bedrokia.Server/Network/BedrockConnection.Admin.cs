@@ -24,7 +24,7 @@ public sealed partial class BedrockConnection
     private const uint UpdateAbilitiesId = 187;
     private const uint AbilityBuild = 1 << 0, AbilityMine = 1 << 1, AbilityDoorsAndSwitches = 1 << 2, AbilityOpenContainers = 1 << 3,
         AbilityAttackPlayers = 1 << 4, AbilityAttackMobs = 1 << 5, AbilityOperatorCommands = 1 << 6, AbilityTeleport = 1 << 7,
-        AbilityInvulnerable = 1 << 8, AbilityFlying = 1 << 9, AbilityMayFly = 1 << 10, AbilityInstantBuild = 1 << 11,
+        AbilityInvulnerable = 1 << 8, AbilityFlying = 1 << 9, AbilityMayFly = 1 << 10, AbilityInstantBuild = 1 << 11, AbilityNoClip = 1 << 17,
         AbilityAll = (1 << 20) - 1;
 
     private bool _canFly, _god, _vanished;
@@ -108,7 +108,9 @@ public sealed partial class BedrockConnection
         if (!IsInGame)
             return;
         var creative = GameMode == GameMode.Creative;
-        var values = AbilityBuild | AbilityMine | AbilityDoorsAndSwitches | AbilityOpenContainers | AbilityAttackPlayers | AbilityAttackMobs;
+        var spectator = GameMode == GameMode.Spectator;
+        var values = spectator ? AbilityMayFly | AbilityFlying | AbilityNoClip | AbilityInvulnerable
+            : AbilityBuild | AbilityMine | AbilityDoorsAndSwitches | AbilityOpenContainers | AbilityAttackPlayers | AbilityAttackMobs;
         if (IsOp)
             values |= AbilityOperatorCommands | AbilityTeleport;
         if (creative || _canFly)

@@ -64,21 +64,10 @@ public sealed partial class BedrockConnection
     public void ClearSidebar() => Send(new BedrockWriter().VarUInt32(RemoveObjectiveId).String(SidebarObjective).ToArray());
 
     /// <summary>Gives a potion effect (see <see cref="Effects"/>); level 0 is "I". Speed also changes the walk speed.</summary>
-    public void AddEffect(int effect, int amplifier, int seconds, bool particles = true)
-    {
-        Send(new BedrockWriter().VarUInt32(MobEffectId).VarUInt64((ulong)EntityId).Byte(1).VarInt32(effect).VarInt32(amplifier)
-            .Bool(particles).VarInt32(seconds * 20).VarUInt64(0).Bool(false).ToArray());
-        if (effect == Effects.Speed)
-            SetSpeed(0.1f * (1 + 0.2f * (amplifier + 1)));
-    }
+    public void AddEffect(int effect, int amplifier, int seconds, bool particles = true) =>
+        AddEffect(new EffectInstance((EffectType)effect, amplifier, seconds * 20, particles));
 
-    public void RemoveEffect(int effect)
-    {
-        Send(new BedrockWriter().VarUInt32(MobEffectId).VarUInt64((ulong)EntityId).Byte(3).VarInt32(effect).VarInt32(0)
-            .Bool(false).VarInt32(0).VarUInt64(0).Bool(false).ToArray());
-        if (effect == Effects.Speed)
-            SetSpeed(0.1f);
-    }
+    public void RemoveEffect(int effect) => RemoveEffect((EffectType)effect);
 
     /// <summary>Walk speed (vanilla 0.1).</summary>
     public void SetSpeed(float speed) => Send(new BedrockWriter().VarUInt32(PacketId.UpdateAttributes).VarUInt64((ulong)EntityId).VarUInt32(1)
