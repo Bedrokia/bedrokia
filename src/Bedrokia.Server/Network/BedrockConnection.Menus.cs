@@ -73,6 +73,9 @@ public sealed partial class BedrockConnection
         });
     }
 
+    /// <summary>Closes the open window (menu, chest, furnace...), like PocketMine removeCurrentWindow.</summary>
+    public void CloseWindow() => CloseContainer(notifyClient: true);
+
     /// <summary>Sends the menu's items again after changing them while it is open.</summary>
     public void RefreshMenu()
     {
