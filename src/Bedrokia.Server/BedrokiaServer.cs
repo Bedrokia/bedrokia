@@ -534,6 +534,7 @@ public sealed partial class BedrokiaServer
         _players.Remove(connection);
         if (wasInGame)
         {
+            connection.CloseContainer(notifyClient: false); // a plugin menu gets its OnClose
             SavePlayer(connection, leaving: true);
             Broadcast(Packets.RemoveActor(connection.EntityId));
             Broadcast(PlayerPackets.PlayerListRemove(connection.Info!.Uuid));

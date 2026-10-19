@@ -204,6 +204,7 @@ autres plugins et le serveur continuent.
 | `SendTitle(titre, sousTitre, fadeIn, stay, fadeOut)` | grand titre à l'écran |
 | `SendActionBar(texte)` | texte au-dessus de la barre d'objets |
 | `SendTip(texte)` / `SendPopup(texte)` | petit texte au-dessus de la barre d'objets (tip / popup) |
+| `SendMenu(new InventoryMenu("Titre", doubleChest))` / `RefreshMenu()` | menu coffre (27 ou 54 cases) : `menu.Inventory[slot] = ...`, `menu.Listener = clic => ...` (`false` refuse le clic, `clic.Slot`, `clic.ItemClicked`, `clic.ItemClickedWith`), `menu.OnClose`, `menu.ReadOnly()` |
 | `SetSidebar(titre, lignes)` / `ClearSidebar()` | scoreboard sur le côté (15 lignes max) |
 | `AddEffect(effet, niveau, secondes, particules)` / `RemoveEffect(effet)` | effets (`BedrockConnection.Effects.Speed`, `JumpBoost`, `NightVision`...) |
 | `SetSpeed(vitesse)` | vitesse de marche (vanilla 0.1) |

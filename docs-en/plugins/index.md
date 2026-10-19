@@ -204,6 +204,7 @@ server keep running.
 | `SendTitle(title, subtitle, fadeIn, stay, fadeOut)` | big title on screen |
 | `SendActionBar(text)` | text above the hotbar |
 | `SendTip(text)` / `SendPopup(text)` | small text above the hotbar (tip / popup) |
+| `SendMenu(new InventoryMenu("Title", doubleChest))` / `RefreshMenu()` | chest menu (27 or 54 slots): `menu.Inventory[slot] = ...`, `menu.Listener = click => ...` (`false` refuses the click, `click.Slot`, `click.ItemClicked`, `click.ItemClickedWith`), `menu.OnClose`, `menu.ReadOnly()` |
 | `SetSidebar(title, lines)` / `ClearSidebar()` | sidebar scoreboard (15 lines max) |
 | `AddEffect(effect, level, seconds, particles)` / `RemoveEffect(effect)` | effects (`BedrockConnection.Effects.Speed`, `JumpBoost`, `NightVision`...) |
 | `SetSpeed(speed)` | walk speed (vanilla 0.1) |
