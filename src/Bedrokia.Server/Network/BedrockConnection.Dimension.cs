@@ -26,12 +26,11 @@ public sealed partial class BedrockConnection
     private const int PortalWaitTicks = 80; // survival: 4 s standing in a portal
     // After a dimension change the client keeps sending positions from the old dimension for a while: portals are
     // ignored meanwhile, otherwise a stale position "leaves" the portal and the player bounces back and forth.
-    private const int PortalCooldownTicks = 100;
+    private const int PortalCooldownTicks = 100; // 5 s, then the portal works again even if the player stayed inside
 
     private World? _world;
     private int _portalTicks;
     private int _portalCooldown;
-    private bool _leftPortal = true; // after going through a portal, the player must step out before using one again
 
     /// <summary>The world (dimension) this player is in.</summary>
     public World World => _world ??= _server.World;
@@ -57,7 +56,6 @@ public sealed partial class BedrockConnection
 
         _world = target;
         _portalCooldown = PortalCooldownTicks;
-        _leftPortal = false;
         _portalTicks = 0;
         Position = (x, y + EyeHeight, z);
         _sentChunks.Clear();
@@ -97,15 +95,14 @@ public sealed partial class BedrockConnection
         if (!inPortal)
         {
             _portalTicks = 0;
-            _leftPortal = true;
             return;
         }
-        if (!_leftPortal || Dead)
+        if (Dead)
             return;
         if (++_portalTicks < (GameMode == Core.GameMode.Creative ? 1 : PortalWaitTicks))
             return;
         _portalTicks = 0;
-        _leftPortal = false;
+        _portalCooldown = PortalCooldownTicks; // no second trip while the destination chunks load
         TravelThroughPortal(x, feet, z);
     }
 
