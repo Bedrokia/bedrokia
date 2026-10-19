@@ -53,6 +53,26 @@ public sealed partial class BedrockConnection
 
     private bool _nameTagVisible = true;
 
+    private string? _nameTag;
+
+    /// <summary>The text above the head (PocketMine setNameTag), the player's name by default.</summary>
+    public string NameTag
+    {
+        get => _nameTag ?? Name;
+        set
+        {
+            if (NameTag == value)
+                return;
+            _nameTag = value;
+            if (IsInGame)
+                _server.BroadcastInExcept(World, this, PlayerPackets.SetPlayerData(EntityId, NameTag, _nameTagVisible));
+        }
+    }
+
+    /// <summary>AddPlayer for another client: this player as it stands, name tag included.</summary>
+    internal byte[] AddPlayerPacket() =>
+        PlayerPackets.AddPlayer(Info!, Position.X, Position.Y, Position.Z, Pitch, Yaw, (int)GameMode, _nameTagVisible, NameTag);
+
     /// <summary>Whether the other players see this player's name above the head (PocketMine setNameTagVisible).</summary>
     public bool NameTagVisible
     {
@@ -63,7 +83,7 @@ public sealed partial class BedrockConnection
                 return;
             _nameTagVisible = value;
             if (IsInGame)
-                _server.BroadcastInExcept(World, this, PlayerPackets.SetPlayerData(EntityId, Name, value));
+                _server.BroadcastInExcept(World, this, PlayerPackets.SetPlayerData(EntityId, NameTag, value));
         }
     }
 
@@ -84,7 +104,7 @@ public sealed partial class BedrockConnection
             if (value)
                 _server.BroadcastInExcept(World, this, Packets.RemoveActor(EntityId));
             else
-                _server.BroadcastInExcept(World, this, PlayerPackets.AddPlayer(Info!, Position.X, Position.Y, Position.Z, Pitch, Yaw, (int)GameMode, NameTagVisible));
+                _server.BroadcastInExcept(World, this, AddPlayerPacket());
         }
     }
 

@@ -115,7 +115,7 @@ public static class PlayerPackets
         .Uuid(uuid)
         .ToArray();
 
-    public static byte[] AddPlayer(PlayerInfo p, float x, float y, float z, float pitch, float yaw, int gameMode, bool showName = true) =>
+    public static byte[] AddPlayer(PlayerInfo p, float x, float y, float z, float pitch, float yaw, int gameMode, bool showName = true, string? nameTag = null) =>
         new BedrockWriter().VarUInt32(PacketId.AddPlayer)
             .Uuid(p.Uuid)
             .String(p.Name)
@@ -126,7 +126,7 @@ public static class PlayerPackets
             .Float32(pitch).Float32(yaw).Float32(yaw)
             .Int16(0).UInt16(0).VarUInt32(0).Bool(false).VarUInt32(0).VarUInt32(0) // held item: air
             .VarInt32(gameMode)
-            .PlayerMetadata(p.Name, showName)
+            .PlayerMetadata(nameTag ?? p.Name, showName)
             .VarUInt32(0).VarUInt32(0) // entity properties (int, float)
             .Int64(p.EntityId).Byte(1).Byte(0).VarUInt32(0) // abilities: member, normal commands, no layers
             .VarUInt32(0) // entity links

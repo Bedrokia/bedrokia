@@ -211,7 +211,7 @@ autres plugins et le serveur continuent.
 | `SetSpeed(vitesse)` | vitesse de marche (vanilla 0.1) |
 | `AddEffect(new EffectInstance(EffectType.Poison, niveau, ticks))` / `RemoveEffect(EffectType)` / `ClearEffects()` / `GetActiveEffects()` | effets gérés par le serveur (régénération, poison, wither, force, résistance...) ; potions et lait aussi |
 | `SetHealth(vie)` / `SetFood(faim, saturation)` | soigner, nourrir (20 = plein) |
-| `NameTagVisible` / `PlaySound(son)` / `Server.PlaySound(son, x, y, z, monde)` | cacher le pseudo au-dessus de la tête ; jouer un son (`random.pop`, `random.totem`...) |
+| `NameTag` / `NameTagVisible` / `PlaySound(son)` / `Server.PlaySound(son, x, y, z, monde)` | texte au-dessus de la tête, le cacher ; jouer un son (`random.pop`, `random.totem`...) |
 | `CanFly`, `God`, `Frozen`, `Vanished` | vol en survie, invincible, immobile, invisible pour les autres joueurs |
 | `ClearInventory(armure)` / `SyncInventory()` | vider l'inventaire ; renvoyer l'inventaire après avoir changé des cases |
 | `ChangeDimension(monde, x, y, z)` | envoyer dans un autre monde (`Server.World`, `Server.Nether`) |
