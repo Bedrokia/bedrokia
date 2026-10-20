@@ -527,6 +527,33 @@ public sealed class PlayerInventory
                     }
                     case Craft c:
                     {
+                        // Special recipes (fireworks, map copies): the result comes from what is in the grid.
+                        if (Recipes.ByNetworkId(c.RecipeId) is null && Recipes.IsMulti(c.RecipeId))
+                        {
+                            var (gridOffset, gridSize) = CraftingTableOpen ? (LargeGridOffset, LargeGridSize) : (SmallGridOffset, SmallGridSize);
+                            for (var time = 0; time < Math.Max(1, (int)c.Times); time++)
+                            {
+                                var cells = Enumerable.Range(gridOffset, gridSize).Where(s => Ui[s] is not null).ToList();
+                                if (SpecialRecipes.Craft([.. cells.Select(s => Ui[s]!)]) is not { } special)
+                                {
+                                    if (time == 0)
+                                        throw new InvalidOperationException($"nothing to craft with recipe {c.RecipeId}");
+                                    break;
+                                }
+                                if (Player is not null && !Player.Server.Events.OnInventoryTransaction(
+                                        new InventoryTransactionEvent(Player, InventoryTransactionType.Craft, special, special.Count, (0, 0))))
+                                    throw new InvalidOperationException("craft cancelled");
+                                foreach (var cell in cells)
+                                    Take(ContainerCraftingInput, Ui, cell, 1);
+                                pending.Add(special);
+                            }
+                            if (pending.Count == 1)
+                            {
+                                CreateResult(pending[0]);
+                                pending.Clear();
+                            }
+                            break;
+                        }
                         // Crafting table and inventory crafting
                         if (Recipes.ByNetworkId(c.RecipeId) is not { Block: "crafting_table" } recipe || c.Times < 1)
                             throw new InvalidOperationException($"unknown crafting recipe {c.RecipeId}");

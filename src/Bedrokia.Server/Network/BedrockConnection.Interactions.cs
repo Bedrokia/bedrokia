@@ -41,6 +41,9 @@ public sealed partial class BedrockConnection
             }
         }
         var name = block.Name;
+        // Mobs on a lead get tied to the fence.
+        if (name.EndsWith("_fence") && _server.Mobs.TieToFence(this, x, y, z))
+            return true;
         if (TryOpenContainer(block, x, y, z))
             return true;
         switch (name)

@@ -54,6 +54,7 @@ public static class Recipes
         var userData = new BedrockWriter();
         var multi = new BedrockWriter();
         uint shapedCount = 0, shapelessCount = 0, userDataCount = 0, multiCount = 0, next = 1;
+        var multiIds = new HashSet<uint>();
 
         void IndexRecipe(Recipe r)
         {
@@ -91,9 +92,11 @@ public static class Recipes
         {
             if (id is not string text || !Guid.TryParse(text, out var uuid))
                 continue;
+            multiIds.Add(next);
             multi.Uuid(uuid).VarUInt32(next++);
             multiCount++;
         }
+        MultiIds = multiIds.ToFrozenSet();
 
         ById = byIdTemp.ToFrozenDictionary();
         ByResultItem = byResultTemp.ToFrozenDictionary(k => k.Key, k => k.Value.ToArray());
@@ -147,6 +150,11 @@ public static class Recipes
     public static int Count { get; }
 
     public static Recipe? ByNetworkId(uint id) => ById.GetValueOrDefault(id);
+
+    private static readonly FrozenSet<uint> MultiIds;
+
+    /// <summary>A "multi" recipe (fireworks, map copies...): its result comes from <see cref="SpecialRecipes"/>.</summary>
+    public static bool IsMulti(uint id) => MultiIds.Contains(id);
 
     public static IEnumerable<Recipe> All => ById.Values;
 

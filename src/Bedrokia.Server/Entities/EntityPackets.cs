@@ -23,10 +23,11 @@ internal static class EntityPackets
     public const byte EventLoveParticles = 21;
     // Actor flag bits (gophertunnel entity_metadata.go).
     public const long FlagOnFire = 1L << 0, FlagInLove = 1L << 7, FlagIgnited = 1L << 10, FlagBaby = 1L << 11, FlagAngry = 1L << 25,
-        FlagSheared = 1L << 31, FlagBreathing = 1L << 35, FlagHasCollision = 1L << 48, FlagGravity = 1L << 49;
+        FlagSheared = 1L << 31, FlagSaddled = 1L << 8, FlagTamed = 1L << 28, FlagWasdControlled = 1L << 44, FlagCanPowerJump = 1L << 45, FlagBreathing = 1L << 35, FlagHasCollision = 1L << 48, FlagGravity = 1L << 49;
 
     public static byte[] AddActor(long entityId, string type, double x, double y, double z, float yaw, float health,
-        float maxHealth, float speed, float width, float height, long flags, int? colour = null, int? variant = null, float scale = 1, string? nameTag = null)
+        float maxHealth, float speed, float width, float height, long flags, int? colour = null, int? variant = null, float scale = 1, string? nameTag = null,
+        OrderedDictionary<string, object>? displayNbt = null, long? leashHolder = null)
     {
         var w = new BedrockWriter().VarUInt32(AddActorId).VarInt64(entityId).VarUInt64((ulong)entityId).String(type)
             .Vec3((float)x, (float)y, (float)z).Vec3(0, 0, 0)
@@ -34,35 +35,45 @@ internal static class EntityPackets
         w.VarUInt32(2); // attributes: name, min, value, max
         w.String("minecraft:health").Float32(0).Float32(health).Float32(maxHealth);
         w.String("minecraft:movement").Float32(0).Float32(speed).Float32(float.MaxValue);
-        Metadata(w, flags, width, height, colour, variant, scale, nameTag);
+        Metadata(w, flags, width, height, colour, variant, scale, nameTag, displayNbt, leashHolder);
         return w.VarUInt32(0).VarUInt32(0) // entity properties (ints, floats)
             .VarUInt32(0) // links
             .ToArray();
     }
 
-    public static byte[] SetData(long entityId, long flags, float width, float height, int? colour = null, float scale = 1, string? nameTag = null)
+    public static byte[] SetData(long entityId, long flags, float width, float height, int? colour = null, float scale = 1, string? nameTag = null, long? leashHolder = null)
     {
         var w = new BedrockWriter().VarUInt32(SetActorDataId).VarUInt64((ulong)entityId);
-        Metadata(w, flags, width, height, colour, scale: scale, nameTag: nameTag);
+        Metadata(w, flags, width, height, colour, scale: scale, nameTag: nameTag, leashHolder: leashHolder);
         return w.VarUInt32(0).VarUInt32(0).VarUInt64(0).ToArray();
     }
 
     // Key, type (+ legacy type byte), value; keys from gophertunnel entity_metadata.go.
     private static void Metadata(BedrockWriter w, long flags, float width, float height, int? colour, int? variant = null, float scale = 1,
-        string? nameTag = null)
+        string? nameTag = null, OrderedDictionary<string, object>? displayNbt = null, long? leashHolder = null)
     {
-        const uint typeString = 4;
+        const uint typeString = 4, typeCompound = 5;
         if (nameTag is not null)
             flags |= (1L << 14) | (1L << 15); // show name, always show name
+        if (leashHolder is not null)
+            flags |= 1L << 30; // leashed
         const uint typeByte = 0, typeInt16 = 1, typeInt32 = 2, typeFloat = 3, typeInt64 = 7;
         void Key(uint key, uint type) => w.VarUInt32(key).VarUInt32(type).Byte((byte)type);
-        w.VarUInt32(6u + (colour is null ? 0u : 1u) + (variant is null ? 0u : 1u) + (nameTag is null ? 0u : 1u));
+        w.VarUInt32(6u + (colour is null ? 0u : 1u) + (variant is null ? 0u : 1u) + (nameTag is null ? 0u : 1u) + (displayNbt is null ? 0u : 1u) + (leashHolder is null ? 0u : 1u));
         Key(0, typeInt64); w.VarInt64(flags);
         Key(7, typeInt16); w.Int16(300); // air supply
         Key(42, typeInt16); w.Int16(300); // max air supply
         if (nameTag is not null)
         {
             Key(4, typeString); w.String(nameTag);
+        }
+        if (displayNbt is not null) // a firework rocket's item NBT: the stars it bursts into
+        {
+            Key(16, typeCompound); w.Bytes(Nbt.Write(displayNbt, network: true));
+        }
+        if (leashHolder is { } holder) // the entity holding the lead: a player or a leash knot
+        {
+            Key(37, typeInt64); w.VarInt64(holder);
         }
         Key(38, typeFloat); w.Float32(scale); // 0.5 for babies
         Key(53, typeFloat); w.Float32(width);

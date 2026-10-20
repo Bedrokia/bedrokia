@@ -185,6 +185,15 @@ public sealed class Mob(long entityId, MobKind kind, double x, double y, double 
     /// <summary>Name given with a name tag, shown above it; a named mob never despawns.</summary>
     public string? NameTag { get; set; }
 
+    /// <summary>Saddled: a player can ride it (pigs, striders, horses, donkeys, mules, camels).</summary>
+    public bool Saddled { get; internal set; }
+
+    /// <summary>The player riding it, or null.</summary>
+    public BedrockConnection? Rider { get; internal set; }
+
+    /// <summary>What holds its lead: a player or a <see cref="LeashKnot"/>; null when free.</summary>
+    public object? LeashHolder { get; internal set; }
+
     /// <summary>Kept when its chunk unloads and saved with the world (animals and other non-hostile mobs).</summary>
     public bool Persistent { get; set; }
 
@@ -216,13 +225,38 @@ public sealed class Mob(long entityId, MobKind kind, double x, double y, double 
                          | (LoveTicks > 0 ? EntityPackets.FlagInLove : 0)
                          | (Sheared ? EntityPackets.FlagSheared : 0)
                          | (FuseTicks > 0 ? EntityPackets.FlagIgnited : 0)
-                         | (AngerTicks > 0 ? EntityPackets.FlagAngry : 0);
+                         | (AngerTicks > 0 ? EntityPackets.FlagAngry : 0)
+                         | (Saddled ? EntityPackets.FlagSaddled : 0)
+                         // A saddled horse is tamed and steered by its rider's keys, with the jump bar.
+                         | (Saddled && MobManager.ClientSteered(Kind)
+                             ? EntityPackets.FlagTamed | EntityPackets.FlagWasdControlled | EntityPackets.FlagCanPowerJump : 0);
+
+    /// <summary>Unique id of what holds the lead (shown as the lead), or null.</summary>
+    internal long? LeashHolderId => LeashHolder switch
+    {
+        BedrockConnection player => player.EntityId,
+        LeashKnot knot => knot.EntityId,
+        _ => null,
+    };
 
     public byte[] AddPacket() =>
         EntityPackets.AddActor(EntityId, Kind.Id, X, Y, Z, Yaw, Health, Kind.MaxHealth, (float)Kind.Speed, Width, Height, Flags, Colour,
-            scale: Baby ? 0.5f : 1, nameTag: NameTag);
+            scale: Baby ? 0.5f : 1, nameTag: NameTag, leashHolder: LeashHolderId);
 
-    internal byte[] DataPacket() => EntityPackets.SetData(EntityId, Flags, Width, Height, Colour, Baby ? 0.5f : 1, NameTag);
+    internal byte[] DataPacket() => EntityPackets.SetData(EntityId, Flags, Width, Height, Colour, Baby ? 0.5f : 1, NameTag, LeashHolderId);
+}
+
+/// <summary>A lead tied to a fence: the mobs on it stay around it.</summary>
+public sealed class LeashKnot(long entityId, World world, int x, int y, int z)
+{
+    public long EntityId { get; } = entityId;
+    public World World { get; } = world;
+    public int X { get; } = x;
+    public int Y { get; } = y;
+    public int Z { get; } = z;
+    internal readonly HashSet<BedrockConnection> Viewers = [];
+
+    public byte[] AddPacket() => EntityPackets.AddActor(EntityId, "minecraft:leash_knot", X + 0.5, Y + 0.25, Z + 0.5, 0, 1, 1, 0, 0.375f, 0.5f, 0);
 }
 
 /// <summary>
@@ -397,15 +431,21 @@ public sealed class MobManager(BedrokiaServer server)
             }
 
             var active = nearestDist2 <= ActiveRange * ActiveRange;
+            if (mob.Rider is { } rider && (!rider.IsInGame || rider.Dead || rider.World != world || rider.Riding != mob))
+                mob.Rider = null;
+            // A horse, donkey, mule or camel under its rider moves as the rider's client steers it.
+            var steered = mob.Rider is not null && ClientSteered(mob.Kind);
+            if (mob.Rider is { } driver && !steered)
+                Ride(mob, driver);
             // Entity Activation Range: full AI within 32 blocks, a quarter of the ticks up to 64, none beyond.
-            if (active && (nearestDist2 <= 32 * 32 || ((tick + mob.EntityId) & 3) == 0))
+            else if (!steered && active && (nearestDist2 <= 32 * 32 || ((tick + mob.EntityId) & 3) == 0))
                 Think(mob, nearest, Math.Sqrt(nearestDist2), tick);
             Live(mob, tick);
             if (mob.Dead)
                 continue;
 
             // A far mob standing still costs nothing.
-            if (active || !mob.OnGround || Math.Abs(mob.Vx) + Math.Abs(mob.Vz) > 0.003 || mob.FireTicks > 0)
+            if (!steered && (active || !mob.OnGround || Math.Abs(mob.Vx) + Math.Abs(mob.Vz) > 0.003 || mob.FireTicks > 0))
                 Physics(mob, tick);
             if (mob.HurtTicks > 0)
                 mob.HurtTicks--;
@@ -418,6 +458,7 @@ public sealed class MobManager(BedrokiaServer server)
             for (var i = 0; i < _mobs.Count; i++)
                 Sync(_mobs[i], _playerScratch);
         }
+        TickKnots(tick);
     }
 
     // --- Spawning ---
@@ -683,6 +724,10 @@ public sealed class MobManager(BedrokiaServer server)
 
     private void Live(Mob mob, long tick)
     {
+        // A lead breaks beyond 10 blocks, or when its holder is gone.
+        if (mob.LeashHolder is not null && (HolderPosition(mob) is not var (hx, hy, hz)
+                                            || Distance2(mob, hx, hz) + (hy - mob.Y) * (hy - mob.Y) > 10 * 10))
+            Unleash(mob, drop: true);
         var changed = false;
         if (mob.Baby)
         {
@@ -749,6 +794,17 @@ public sealed class MobManager(BedrokiaServer server)
         {
             ThinkSwimming(mob, player, distance, speed, day);
             return;
+        }
+
+        // On a lead: follows what holds it.
+        if (HolderPosition(mob) is var (hx, hy, hz))
+        {
+            var away = Math.Sqrt(Distance2(mob, hx, hz) + (hy - mob.Y) * (hy - mob.Y));
+            if (away > 3)
+            {
+                MoveTowards(mob, hx, hy, hz, speed * (away > 6 ? 1.6 : 1.1), pathfind: true);
+                return;
+            }
         }
 
         var target = Target(mob, player, distance, day);
@@ -1460,6 +1516,35 @@ public sealed class MobManager(BedrokiaServer server)
         var name = held?.Type.Name;
         var creative = player.GameMode == GameMode.Creative;
 
+        // Leads: put one on, or take it off when it is the player who holds it.
+        if (mob.LeashHolder == player)
+        {
+            Unleash(mob, drop: !creative);
+            return true;
+        }
+        if (name == "minecraft:lead" && mob.LeashHolder is null && Leashable(mob))
+        {
+            mob.LeashHolder = player;
+            mob.Persistent = true;
+            Broadcast(mob, mob.DataPacket());
+            server.PlaySound("leashknot.place", mob.X, mob.Y, mob.Z, mob.World);
+            if (!creative)
+                player.Send(player.Inventory.ConsumeHeld());
+            return true;
+        }
+        // Saddles, then riding.
+        if (name == "minecraft:saddle" && Saddleable(mob.Kind) && !mob.Saddled && !mob.Baby)
+        {
+            mob.Saddled = true;
+            mob.Persistent = true;
+            Broadcast(mob, mob.DataPacket());
+            server.PlaySound("mob.horse.leather", mob.X, mob.Y, mob.Z, mob.World);
+            if (!creative)
+                player.Send(player.Inventory.ConsumeHeld());
+            return true;
+        }
+        if (mob.Saddled && mob.Rider is null && !mob.Baby && !Eats(mob.Kind, held) && name != "minecraft:name_tag")
+            return server.Vehicles.Mount(player, mob);
         // A name tag renamed on an anvil names the mob, which then stays in the world.
         if (name == "minecraft:name_tag" && held!.CustomName is { Length: > 0 } tag)
         {
@@ -1706,6 +1791,12 @@ public sealed class MobManager(BedrokiaServer server)
     {
         // Loot on any death (babies drop nothing); cooked when the mob was burning. Experience only for a player kill.
         var drops = new List<ItemStack>();
+        if (mob.Rider is { } rider)
+            server.Vehicles.Dismount(rider);
+        if (mob.LeashHolder is not null)
+            Unleash(mob, drop: true);
+        if (mob.Saddled && ItemStack.Of("saddle") is { } saddle)
+            drops.Add(saddle);
         if (!mob.Baby)
         {
             foreach (var (item, min, max) in mob.Kind.Loot)
@@ -1842,7 +1933,11 @@ public sealed class MobManager(BedrokiaServer server)
         {
             var visible = player.World == mob.World && Distance2(mob, player) < ViewDistance * ViewDistance;
             if (visible && mob.Viewers.Add(player))
+            {
                 player.Send(mob.AddPacket());
+                if (mob.Rider is { } rider)
+                    player.Send(VehicleManager.Link(mob.EntityId, rider.EntityId, mount: true));
+            }
             else if (!visible && mob.Viewers.Remove(player))
                 player.Send(Bedrokia.Protocol.Packets.RemoveActor(mob.EntityId));
         }
@@ -1878,7 +1973,135 @@ public sealed class MobManager(BedrokiaServer server)
                 mob.AngryAt = null;
             if (mob.LoveCause == player)
                 mob.LoveCause = null;
+            if (mob.LeashHolder == player)
+                Unleash(mob, drop: true);
+            if (mob.Rider == player)
+                mob.Rider = null;
         }
+        foreach (var knot in _knots)
+            knot.Viewers.Remove(player);
+    }
+
+    // --- Riding and leads ---
+
+    /// <summary>Mobs a saddle goes on.</summary>
+    public static bool Saddleable(MobKind kind) => kind == MobKind.Pig || kind == MobKind.Strider || ClientSteered(kind);
+
+    /// <summary>Mounts steered by the rider's client (the others go where their rider looks, holding their bait on a stick).</summary>
+    public static bool ClientSteered(MobKind kind) =>
+        kind == MobKind.Horse || kind == MobKind.Donkey || kind == MobKind.Mule || kind == MobKind.Camel;
+
+    /// <summary>Height of the rider's eyes above the mob's feet.</summary>
+    public static float SeatHeight(MobKind kind) =>
+        kind == MobKind.Pig ? 1.85f : kind == MobKind.Strider ? 2.6f : kind == MobKind.Camel ? 3.2f : 2.4f;
+
+    private static bool Leashable(Mob mob) => !mob.Kind.Hostile && mob.Kind.Movement != MobMovement.Swim && mob.Kind != MobKind.Bat;
+
+    // Feet position of what holds the lead; null when it is gone.
+    private static (double X, double Y, double Z)? HolderPosition(Mob mob) => mob.LeashHolder switch
+    {
+        BedrockConnection { IsInGame: true, Dead: false } player when player.World == mob.World =>
+            (player.Position.X, player.Position.Y - BedrockConnection.EyeHeight, player.Position.Z),
+        LeashKnot knot when knot.World == mob.World && knot.World.GetBlock(knot.X, knot.Y, knot.Z)?.Name.EndsWith("_fence") == true =>
+            (knot.X + 0.5, knot.Y, knot.Z + 0.5),
+        _ => null,
+    };
+
+    private readonly List<LeashKnot> _knots = [];
+
+    public IReadOnlyList<LeashKnot> Knots => _knots;
+
+    public LeashKnot? FindKnot(long entityId) => _knots.FirstOrDefault(k => k.EntityId == entityId);
+
+    /// <summary>The mob is free; with <paramref name="drop"/> its lead falls on the ground.</summary>
+    public void Unleash(Mob mob, bool drop)
+    {
+        if (mob.LeashHolder is null)
+            return;
+        mob.LeashHolder = null;
+        Broadcast(mob, mob.DataPacket());
+        if (drop && ItemStack.Of("lead") is { } lead)
+            server.DropItem(lead, (float)mob.X, (float)mob.Y + 0.5f, (float)mob.Z, world: mob.World);
+    }
+
+    /// <summary>The player clicks a fence: the mobs they lead are tied to it. False when they lead none.</summary>
+    public bool TieToFence(BedrockConnection player, int x, int y, int z)
+    {
+        var led = _mobs.Where(m => m.LeashHolder == player).ToList();
+        if (led.Count == 0)
+            return false;
+        var knot = _knots.FirstOrDefault(k => k.World == player.World && k.X == x && k.Y == y && k.Z == z);
+        if (knot is null)
+        {
+            knot = new LeashKnot(server.NextEntityId(), player.World, x, y, z);
+            _knots.Add(knot);
+        }
+        foreach (var mob in led)
+        {
+            mob.LeashHolder = knot;
+            Broadcast(mob, mob.DataPacket());
+        }
+        server.PlaySound("leashknot.place", x + 0.5, y + 0.5, z + 0.5, player.World);
+        return true;
+    }
+
+    /// <summary>A knot is hit: its mobs are free and their leads drop.</summary>
+    public void BreakKnot(LeashKnot knot)
+    {
+        foreach (var mob in _mobs.Where(m => m.LeashHolder == knot).ToList())
+            Unleash(mob, drop: true);
+        RemoveKnot(knot);
+    }
+
+    private void RemoveKnot(LeashKnot knot)
+    {
+        _knots.Remove(knot);
+        foreach (var viewer in knot.Viewers)
+            viewer.Send(Bedrokia.Protocol.Packets.RemoveActor(knot.EntityId));
+        knot.Viewers.Clear();
+        server.PlaySound("leashknot.break", knot.X + 0.5, knot.Y + 0.5, knot.Z + 0.5, knot.World);
+    }
+
+    // Knots without mobs or without their fence go away; the others are shown to the players around.
+    private void TickKnots(long tick)
+    {
+        if (tick % 20 == 0)
+            foreach (var knot in _knots.ToList())
+                if (knot.World.GetBlock(knot.X, knot.Y, knot.Z)?.Name.EndsWith("_fence") != true || _mobs.All(m => m.LeashHolder != knot))
+                    BreakKnot(knot);
+        if (tick % 2 != 0)
+            return;
+        foreach (var knot in _knots)
+            foreach (var player in _playerScratch)
+            {
+                var visible = player.World == knot.World && Math.Abs(player.Position.X - knot.X) < ViewDistance && Math.Abs(player.Position.Z - knot.Z) < ViewDistance;
+                if (visible && knot.Viewers.Add(player))
+                    player.Send(knot.AddPacket());
+                else if (!visible && knot.Viewers.Remove(player))
+                    player.Send(Bedrokia.Protocol.Packets.RemoveActor(knot.EntityId));
+            }
+    }
+
+    /// <summary>The rider of a client-steered mount reports where it is (eyes); the mount follows.</summary>
+    internal void RiderInput(Mob mob, BedrockConnection rider, float x, float y, float z, float yaw)
+    {
+        if (!ClientSteered(mob.Kind))
+            return;
+        (mob.X, mob.Y, mob.Z, mob.Yaw) = (x, y - SeatHeight(mob.Kind), z, yaw);
+        mob.Vx = mob.Vy = mob.Vz = 0;
+    }
+
+    // A pig or a strider under its rider goes where the rider looks while they hold the bait on a stick.
+    private void Ride(Mob mob, BedrockConnection rider)
+    {
+        var bait = mob.Kind == MobKind.Pig ? "minecraft:carrot_on_a_stick" : "minecraft:warped_fungus_on_a_stick";
+        if (rider.HeldItem?.Type.Name != bait)
+        {
+            Stop(mob, null, null);
+            return;
+        }
+        var rad = rider.Yaw * Math.PI / 180;
+        MoveTowards(mob, mob.X - Math.Sin(rad) * 4, mob.Y, mob.Z + Math.Cos(rad) * 4, mob.Kind.Speed * 0.45 * 1.2, pathfind: false);
     }
 
     private static double Distance2(Mob mob, BedrockConnection player) => Distance2(mob, player.Position.X, player.Position.Z)
@@ -1899,6 +2122,7 @@ public static class BlockPhysics
         "minecraft:cornflower", "minecraft:lily_of_the_valley", "minecraft:sunflower", "minecraft:lilac", "minecraft:rose_bush",
         "minecraft:peony", "minecraft:reeds", "minecraft:snow_layer", "minecraft:brown_mushroom", "minecraft:red_mushroom",
         "minecraft:vine", "minecraft:torch", "minecraft:wheat", "minecraft:waterlily",
+        "minecraft:rail", "minecraft:golden_rail", "minecraft:detector_rail", "minecraft:activator_rail",
     }.ToFrozenSet();
 
     public static bool IsSolid(BlockType? block) =>

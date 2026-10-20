@@ -266,6 +266,7 @@ public sealed partial class BedrockConnection
         _handlers[PacketId.EmoteList] = null;
         _handlers[PacketId.FilterText] = null;
         _handlers[PacketId.Interact] = OnInteract;
+        _handlers[MapInfoRequestId] = OnMapInfoRequest;
         _handlers[PacketId.InventoryTransaction] = OnInventoryTransactionPacket;
         _handlers[PacketId.ItemStackRequest] = OnItemStackRequest;
         _handlers[PacketId.LecternUpdate] = OnLecternUpdate;
@@ -365,7 +366,13 @@ public sealed partial class BedrockConnection
 
     private void OnInteract(ref BedrockReader reader)
     {
-        if (reader.Byte() == InventoryPackets.InteractOpenInventory && !_inventoryOpen)
+        var action = reader.Byte();
+        if (action == 3) // leave vehicle
+        {
+            _server.Vehicles.Dismount(this);
+            return;
+        }
+        if (action == InventoryPackets.InteractOpenInventory && !_inventoryOpen)
         {
             _inventoryOpen = true;
             Send(InventoryPackets.ContainerOpen(0, InventoryPackets.ContainerTypeInventory,
@@ -683,11 +690,17 @@ public sealed partial class BedrockConnection
 
         // Rest of PlayerAuthInput (gophertunnel packet/player_auth_input.go, MIT): this is where a modern client
         // reports block breaking, item use and some inventory requests.
-        reader.Bytes(12); // move vector, head yaw
+        var moveX = reader.Float32();
+        var moveZ = reader.Float32();
+        reader.Bytes(4); // head yaw
+        if (Riding is not null)
+            _server.Vehicles.RiderInput(this, x, y, z, yaw, moveX, moveZ);
         var flags = reader.VarUInt32();
         var sneaking = false;
         for (var i = 0; i < flags; i++)
             sneaking |= reader.VarInt32() == InputFlagSneaking;
+        if (sneaking && !Sneaking && Riding is not null)
+            _server.Vehicles.Dismount(this); // sneaking gets off
         if (sneaking != Sneaking)
         {
             if (_server.Events.HasPlayerToggleAction)
@@ -1017,6 +1030,8 @@ public sealed partial class BedrockConnection
         World.Fluids.Wake(x, y, z);
         foreach (var (px, py, pz, _) in parts)
             _server.UpdateShapes(px, py, pz, World);
+        if (Rails.IsRail(block))
+            Rails.Connect(World, x, y, z, (rx, ry, rz, shaped) => _server.SetBlockAndUpdate(rx, ry, rz, shaped, World));
         if (survival)
             Send(Inventory.ConsumeHeld());
     }
