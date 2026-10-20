@@ -3,8 +3,6 @@
     <OutputType>Exe</OutputType>
     <AssemblyName>bedrokia</AssemblyName>
     <InvariantGlobalization>true</InvariantGlobalization>
-    <ServerGarbageCollection>true</ServerGarbageCollection>
-    <GarbageCollectionAdaptationMode>1</GarbageCollectionAdaptationMode>
     <TieredPGO>true</TieredPGO>
   </PropertyGroup>
   <ItemGroup>
