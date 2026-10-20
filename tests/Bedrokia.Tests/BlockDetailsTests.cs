@@ -118,4 +118,61 @@ public class BlockDetailsTests
         player.Position = (8f, Floor + 3 + BedrockConnection.EyeHeight, 2f); // jumping: air under the feet
         Assert.Equal(onGround / 5, player.BreakProgressPerTick(dirt), 5);
     }
+
+    [Fact]
+    public void Tnt_in_water_breaks_nothing_and_obsidian_resists()
+    {
+        var (server, _) = Arena();
+        var dirt = Blocks.ByName("dirt")!;
+        server.World.SetBlock(4, Floor, 4, Blocks.Water);
+        server.World.SetBlock(5, Floor, 4, dirt);
+        server.Explode(4.5, Floor + 0.1, 4.5, 4);
+        Assert.Equal(dirt, server.World.GetBlock(5, Floor, 4)); // the water took the blast
+
+        var obsidian = Blocks.ByName("obsidian")!;
+        server.World.SetBlock(10, Floor, 10, obsidian);
+        server.World.SetBlock(12, Floor, 10, dirt);
+        server.Explode(11.5, Floor + 0.1, 10.5, 4);
+        Assert.Equal(obsidian, server.World.GetBlock(10, Floor, 10));
+        Assert.True(server.World.GetBlock(12, Floor, 10)!.IsAir);
+    }
+
+    [Fact]
+    public void Obsidian_breaks_after_obsidian_durability_explosions()
+    {
+        var (server, _) = Arena();
+        server.Config.ObsidianDurability = 3;
+        var obsidian = Blocks.ByName("obsidian")!;
+        server.World.SetBlock(10, Floor, 10, obsidian);
+        server.Explode(11.5, Floor + 0.1, 10.5, 4);
+        server.Explode(11.5, Floor + 0.1, 10.5, 4);
+        Assert.Equal(obsidian, server.World.GetBlock(10, Floor, 10));
+        server.Explode(11.5, Floor + 0.1, 10.5, 4);
+        Assert.True(server.World.GetBlock(10, Floor, 10)!.IsAir);
+    }
+
+    [Fact]
+    public void Pvp_reach_refuses_far_hits_but_counts_where_the_victim_just_was()
+    {
+        var (server, attacker) = Arena();
+        var victim = new BedrockConnection(server, new FakeTransport(), 101) { Position = (8f, Floor + BedrockConnection.EyeHeight, 5f), IsInGame = true };
+        server.AddPlayer(victim);
+        Assert.True(attacker.InReach(victim)); // 3 blocks
+        victim.Position = (8f, Floor + BedrockConnection.EyeHeight, 9f);
+        Assert.False(attacker.InReach(victim)); // 7 blocks, never closer
+        victim.Position = (8f, Floor + BedrockConnection.EyeHeight, 5f);
+        victim.TickHealth(); // remembered at 3 blocks...
+        victim.Position = (8f, Floor + BedrockConnection.EyeHeight, 9f);
+        Assert.True(attacker.InReach(victim)); // ...what a laggy attacker still sees
+    }
+
+    [Fact]
+    public void Splash_potions_are_thrown_slower_than_snowballs()
+    {
+        var (server, player) = Arena();
+        var potion = server.Projectiles.Launch(player, ProjectileManager.SplashPotion, potion: 21)!;
+        var snowball = server.Projectiles.Launch(player, ProjectileManager.Snowball)!;
+        Assert.Equal(0.5f, potion.Velocity.Length(), 3);
+        Assert.Equal(1.5f, snowball.Velocity.Length(), 3);
+    }
 }

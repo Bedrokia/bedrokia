@@ -123,7 +123,7 @@ public sealed class TimingsManager
         sb.AppendLine("§eSubsystems Breakdown:");
 
         var breakdown = _records.Values
-            .Where(r => r != FullTick && r.Count > 0)
+            .Where(r => r != FullTick && r.Count > 0 && r.Group?.StartsWith(PluginGroup) != true)
             .OrderByDescending(r => r.TotalMs)
             .ToList();
 
@@ -144,6 +144,27 @@ public sealed class TimingsManager
             }
         }
 
+        // Per plugin: its events and scheduled tasks, the heaviest first (also outside the tick: packet events).
+        var plugins = _records.Values.Where(r => r.Count > 0 && r.Group?.StartsWith(PluginGroup) == true)
+            .GroupBy(r => r.Group![PluginGroup.Length..])
+            .Select(g => (Name: g.Key, Ms: g.Sum(r => r.TotalMs), Top: g.OrderByDescending(r => r.TotalMs).Take(3).ToList()))
+            .OrderByDescending(p => p.Ms)
+            .ToList();
+        if (plugins.Count > 0)
+        {
+            sb.AppendLine("§ePlugins:");
+            foreach (var (name, ms, top) in plugins)
+            {
+                var avg = ticks > 0 ? ms / ticks : 0;
+                var color = avg > 5 ? "§c" : avg > 1 ? "§e" : "§f";
+                sb.AppendLine($"§7- §b{name}§7: {color}{avg:F2}ms§7/tick");
+                foreach (var record in top)
+                    sb.AppendLine($"§8    {record.Name[(name.Length + 2)..]}: {record.AverageMsPerTick(ticks):F2}ms/tick, {record.Count} calls, peak {record.PeakMs:F2}ms");
+            }
+        }
+
         return sb.ToString().TrimEnd();
     }
+
+    private const string PluginGroup = "Plugin:";
 }

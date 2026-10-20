@@ -76,7 +76,7 @@ public sealed class ProjectileManager(BedrokiaServer server)
         SmallFireball = "minecraft:small_fireball", Trident = "minecraft:thrown_trident", FishingHook = "minecraft:fishing_hook",
         XpBottle = "minecraft:xp_bottle", WindCharge = "minecraft:wind_charge_projectile", LingeringPotion = "minecraft:lingering_potion";
 
-    private const float Gravity = 0.03f, ArrowGravity = 0.05f, Drag = 0.99f, SplashRadius = 4;
+    private const float Gravity = 0.03f, ArrowGravity = 0.05f, PotionGravity = 0.05f, PotionThrowSpeed = 0.5f, Drag = 0.99f, SplashRadius = 4;
     private const int MaxTicks = 1200;
 
     private readonly List<Projectile> _projectiles = [];
@@ -88,11 +88,13 @@ public sealed class ProjectileManager(BedrokiaServer server)
         or "minecraft:experience_bottle" or "minecraft:wind_charge";
 
     /// <summary>
-    /// Throws a projectile from the player's eyes where they look; <paramref name="speed"/> 1.5 is a hand throw.
+    /// Throws a projectile from the player's eyes where they look; <paramref name="speed"/> 1.5 is a hand throw
+    /// (0.5 for splash and lingering potions, as vanilla and PocketMine: pot PvP throws them at the feet).
     /// Returns null when a plugin cancelled <see cref="ServerEvents.ProjectileLaunch"/>.
     /// </summary>
-    public Projectile? Launch(BedrockConnection player, string identifier, float speed = 1.5f, short potion = 0)
+    public Projectile? Launch(BedrockConnection player, string identifier, float? throwSpeed = null, short potion = 0)
     {
+        var speed = throwSpeed ?? (identifier is SplashPotion or LingeringPotion ? PotionThrowSpeed : 1.5f);
         if (server.Events.HasProjectileLaunch)
         {
             var launch = new ProjectileLaunchEvent(player, identifier, speed);
@@ -184,6 +186,7 @@ public sealed class ProjectileManager(BedrokiaServer server)
     private static float GravityOf(string identifier) => identifier switch
     {
         Arrow => ArrowGravity,
+        SplashPotion or LingeringPotion => PotionGravity,
         Fireball or SmallFireball => 0,
         _ => Gravity,
     };
@@ -322,7 +325,7 @@ public sealed class ProjectileManager(BedrokiaServer server)
                 WindBurst(p, at);
                 break;
             case LingeringPotion:
-                Splash(p, at, durationFactor: 0.25f);
+                Splash(p, at, player, durationFactor: 0.25f);
                 break;
             case Fireball:
                 player?.Damage(6, p.Position.X, p.Position.Z, source: source);
@@ -349,7 +352,7 @@ public sealed class ProjectileManager(BedrokiaServer server)
                 }
                 break;
             case SplashPotion:
-                Splash(p, at);
+                Splash(p, at, player);
                 break;
         }
     }
@@ -378,7 +381,7 @@ public sealed class ProjectileManager(BedrokiaServer server)
         }
     }
 
-    private void Splash(Projectile p, Vector3 at, float durationFactor = 1)
+    private void Splash(Projectile p, Vector3 at, BedrockConnection? hit, float durationFactor = 1)
     {
         var radius = SplashRadius;
         if (server.Events.HasPotionSplash)
@@ -393,15 +396,16 @@ public sealed class ProjectileManager(BedrokiaServer server)
             return;
         foreach (var player in server.Players.Where(pl => pl.IsInGame && pl.World == p.World && !pl.Dead).ToList())
         {
-            var distance = Vector3.Distance(at, new Vector3(player.Position.X, player.Position.Y - BedrockConnection.EyeHeight + 0.9f, player.Position.Z));
-            if (distance > radius)
+            // PocketMine SplashPotion::onHit: distance to the eyes, the player hit directly gets it all.
+            var distance = Vector3.Distance(at, new Vector3(player.Position.X, player.Position.Y, player.Position.Z));
+            if (distance > radius && player != hit)
                 continue;
-            // Closer is stronger, as vanilla: full at the centre, nothing at the edge (instant effects keep their level).
-            var factor = 1 - distance / radius;
+            // Closer is stronger: full at the centre, nothing at the edge (an instant heal heals less too).
+            var factor = player == hit ? 1 : 1 - distance / radius;
             var applied = effect.Clone();
             if (!applied.IsInstant)
                 applied.DurationTicks = Math.Max(1, (int)(applied.DurationTicks * factor * durationFactor));
-            player.AddEffect(applied, EffectChangeCause.Potion);
+            player.AddEffect(applied, EffectChangeCause.Potion, potency: factor);
         }
     }
 

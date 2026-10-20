@@ -59,14 +59,15 @@ public sealed partial class BedrockConnection
         .Float32(0).Float32(maxHealth).Float32(Health).Float32(0).Float32(maxHealth).Float32(20f).String("minecraft:health").VarUInt32(0)
         .VarUInt64(0).ToArray());
 
-    public bool AddEffect(EffectInstance effect, EffectChangeCause cause = EffectChangeCause.Plugin)
+    /// <param name="potency">For instant health or damage: the share applied (a splash potion landing further away).</param>
+    public bool AddEffect(EffectInstance effect, EffectChangeCause cause = EffectChangeCause.Plugin, float potency = 1)
     {
         if (Dead)
             return false;
 
         if (effect.Type is EffectType.InstantHealth or EffectType.InstantDamage)
         {
-            ApplyInstantEffect(effect.Type, effect.Amplifier, cause);
+            ApplyInstantEffect(effect.Type, effect.Amplifier, potency);
             return true;
         }
 
@@ -230,16 +231,16 @@ public sealed partial class BedrockConnection
         }
     }
 
-    private void ApplyInstantEffect(EffectType type, int amplifier, EffectChangeCause cause)
+    private void ApplyInstantEffect(EffectType type, int amplifier, float potency)
     {
         if (type == EffectType.InstantHealth)
         {
-            var heal = 4f * (1 << amplifier);
+            var heal = 4f * (1 << amplifier) * potency;
             Heal(heal, HealCause.Effect);
         }
         else if (type == EffectType.InstantDamage)
         {
-            var damage = 6f * (1 << amplifier);
+            var damage = 6f * (1 << amplifier) * potency;
             _hurtTicks = 0;
             Damage(damage, Position.X, Position.Z, armour: false, source: DamageSource.Magic());
         }
@@ -518,6 +519,7 @@ public sealed partial class BedrockConnection
         TickPortal();
         TickEffects();
         TickBreaking();
+        _positionHistory[(int)(_server.CurrentTick % PositionHistoryTicks)] = Position;
 
         if (Dead || GameMode == GameMode.Creative)
             return;
@@ -740,8 +742,41 @@ public sealed partial class BedrockConnection
         OnUseItemOnEntity(ref reader);
     }
 
+    // Where this player was over the last second, one position (eyes) per tick: what laggy attackers saw.
+    private const int PositionHistoryTicks = 20;
+    private readonly (float X, float Y, float Z)[] _positionHistory = new (float, float, float)[PositionHistoryTicks];
+
+    /// <summary>
+    /// pvp-reach with lag compensation: an attacker sees its victim where it was up to its ping ago, so the hit
+    /// counts when the attacker's eyes were within reach of the victim's box (0.6 x 1.8, 0.1 margin) now or at any
+    /// position of the last second. Stops long-reach hacks without refusing the hits of players with ping.
+    /// </summary>
+    internal bool InReach(BedrockConnection victim)
+    {
+        var reach = _server.Config.PvpReach;
+        if (reach <= 0)
+            return true;
+        if (BoxDistanceSquared(victim.Position) <= reach * reach)
+            return true;
+        foreach (var at in victim._positionHistory)
+            if (at != default && BoxDistanceSquared(at) <= reach * reach)
+                return true;
+        return false;
+    }
+
+    private double BoxDistanceSquared((float X, float Y, float Z) victimEyes)
+    {
+        const double half = 0.3 + 0.1, margin = 0.1;
+        var feet = victimEyes.Y - EyeHeight;
+        var dx = Math.Max(0, Math.Abs(Position.X - victimEyes.X) - half);
+        var dz = Math.Max(0, Math.Abs(Position.Z - victimEyes.Z) - half);
+        var dy = Position.Y < feet - margin ? feet - margin - Position.Y : Position.Y > feet + 1.8 + margin ? Position.Y - feet - 1.8 - margin : 0;
+        return dx * dx + dy * dy + dz * dz;
+    }
+
     internal void OnUseItemOnEntity(ref BedrockReader reader)
     {
+        FlushTickMovement(); // the attacker's position of this same moment (PocketMine handles movement at once)
         var target = (long)reader.VarUInt64();
         var action = reader.VarInt32();
         if (_server.Vehicles.Find(target) is { } vehicle && vehicle.World == World)
@@ -802,9 +837,7 @@ public sealed partial class BedrockConnection
         }
         if (_server.Config.Pvp && _server.Players.FirstOrDefault(p => p.EntityId == target && p.IsInGame) is { } victim && victim != this)
         {
-            var dx = victim.Position.X - Position.X;
-            var dz = victim.Position.Z - Position.Z;
-            if (dx * dx + dz * dz <= 6 * 6)
+            if (InReach(victim))
             {
                 damage += 1.25f * Enchanting.Level(Inventory.Held, "sharpness");
                 // Critical hit (PocketMine/vanilla): falling, not in water, not riding, not blind: x1.5 and stars.

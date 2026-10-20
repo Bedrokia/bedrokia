@@ -348,7 +348,22 @@ public sealed partial class BedrokiaServer
 
     // --- TNT and explosions ---
 
-    private readonly List<(long EntityId, World World, int X, int Y, int Z, long Explodes)> _tnt = [];
+    /// <summary>
+    /// A lit TNT: falls, slides, and is thrown by the other explosions (TNT cannons), as vanilla (Java PrimedTnt:
+    /// gravity 0.04, drag 0.98, ground friction 0.7, a small random kick when lit).
+    /// ponytail: flowing water does not push it (water cannons still work: TNT in water is launched by the others).
+    /// </summary>
+    private sealed class PrimedTnt(long id, World world, double x, double y, double z, long explodes)
+    {
+        public readonly long Id = id;
+        public readonly World World = world;
+        public readonly long Explodes = explodes;
+        public double X = x, Y = y, Z = z, Vx, Vy, Vz;
+        public bool OnGround;
+    }
+
+    private const double TntHalf = 0.49, TntHeight = 0.98;
+    private readonly List<PrimedTnt> _tnt = [];
 
     /// <summary>A lit TNT block: a "minecraft:tnt" entity that explodes 4 seconds later.</summary>
     public void PrimeTnt(int x, int y, int z, int fuse = 80, World? world = null)
@@ -362,42 +377,198 @@ public sealed partial class BedrokiaServer
                 return;
             fuse = ev.FuseTicks;
         }
-        _tnt.Add((id, world, x, y, z, CurrentTick + fuse));
-        BroadcastIn(world, EntityPackets.AddActor(id, "minecraft:tnt", x + 0.5, y, z + 0.5, 0, 1, 1, 0, 0.98f, 0.98f,
+        var angle = _blockRandom.NextDouble() * Math.PI * 2;
+        var tnt = new PrimedTnt(id, world, x + 0.5, y, z + 0.5, CurrentTick + fuse) { Vx = -Math.Sin(angle) * 0.02, Vy = 0.2, Vz = -Math.Cos(angle) * 0.02 };
+        _tnt.Add(tnt);
+        BroadcastIn(world, EntityPackets.AddActor(id, "minecraft:tnt", tnt.X, tnt.Y, tnt.Z, 0, 1, 1, 0, 0.98f, 0.98f,
             EntityPackets.FlagGravity | EntityPackets.FlagHasCollision | (1L << 10))); // 10: ignited
+        BroadcastIn(world, EntityPackets.Motion(id, tnt.Vx, tnt.Vy, tnt.Vz));
     }
+
+    /// <summary>Lit TNT entities (for plugins and tests).</summary>
+    public int PrimedTntCount => _tnt.Count;
 
     private void TickTnt()
     {
-        foreach (var tnt in _tnt.Where(t => t.Explodes <= CurrentTick).ToList())
+        if (_tnt.Count == 0)
+            return;
+        // A copy: explosions light more TNT and remove the ones they reach.
+        foreach (var tnt in _tnt.ToArray())
         {
+            if (!_tnt.Contains(tnt))
+                continue;
+            MoveTnt(tnt);
+            if (tnt.Explodes > CurrentTick)
+                continue;
             _tnt.Remove(tnt);
-            BroadcastIn(tnt.World, Packets.RemoveActor(tnt.EntityId));
-            Explode(tnt.X + 0.5, tnt.Y + 0.5, tnt.Z + 0.5, 4, tnt.World);
+            BroadcastIn(tnt.World, Packets.RemoveActor(tnt.Id));
+            Explode(tnt.X, tnt.Y + 0.0625, tnt.Z, 4, tnt.World); // Java PrimedTnt explodes 1/16 above its base
         }
     }
 
+    private void MoveTnt(PrimedTnt t)
+    {
+        var world = t.World;
+        if (world.LoadedChunk((int)Math.Floor(t.X) >> 4, (int)Math.Floor(t.Z) >> 4) is null)
+            return; // frozen in unloaded chunks
+        var (oldX, oldY, oldZ) = (t.X, t.Y, t.Z);
+        t.Vy -= 0.04;
+        // Steps of at most half a block: a cannon throws TNT several blocks a tick, it must not cross walls.
+        var steps = (int)Math.Clamp(Math.Ceiling(Math.Max(Math.Abs(t.Vx), Math.Max(Math.Abs(t.Vy), Math.Abs(t.Vz))) / 0.5), 1, 40);
+        t.OnGround = false;
+        for (var i = 0; i < steps; i++)
+        {
+            var ny = t.Y + t.Vy / steps;
+            if (TntCollides(world, t.X, ny, t.Z))
+            {
+                if (t.Vy < 0)
+                {
+                    t.OnGround = true;
+                    var floor = Math.Floor(ny) + 1;
+                    if (!TntCollides(world, t.X, floor, t.Z))
+                        t.Y = floor;
+                }
+                t.Vy = 0;
+            }
+            else
+                t.Y = ny;
+            var nx = t.X + t.Vx / steps;
+            if (TntCollides(world, nx, t.Y, t.Z))
+                t.Vx = 0;
+            else
+                t.X = nx;
+            var nz = t.Z + t.Vz / steps;
+            if (TntCollides(world, t.X, t.Y, nz))
+                t.Vz = 0;
+            else
+                t.Z = nz;
+        }
+        t.Vx *= 0.98;
+        t.Vy *= 0.98;
+        t.Vz *= 0.98;
+        if (t.OnGround || TntCollides(world, t.X, t.Y - 0.01, t.Z))
+        {
+            t.OnGround = true;
+            t.Vx *= 0.7;
+            t.Vz *= 0.7;
+            t.Vy *= -0.5;
+        }
+        if (Math.Abs(t.X - oldX) + Math.Abs(t.Y - oldY) + Math.Abs(t.Z - oldZ) > 0.001)
+            BroadcastInChunk(world, (int)Math.Floor(t.X) >> 4, (int)Math.Floor(t.Z) >> 4,
+                EntityPackets.MoveAbsolute(t.Id, t.X, t.Y, t.Z, 0, 0, t.OnGround));
+    }
+
+    private static bool TntCollides(World world, double x, double y, double z)
+    {
+        for (var bx = (int)Math.Floor(x - TntHalf); bx <= (int)Math.Floor(x + TntHalf); bx++)
+        for (var bz = (int)Math.Floor(z - TntHalf); bz <= (int)Math.Floor(z + TntHalf); bz++)
+        for (var by = (int)Math.Floor(y); by <= (int)Math.Floor(y + TntHeight); by++)
+            if (BlockPhysics.IsSolid(world.GetBlock(bx, by, bz)))
+                return true;
+        return false;
+    }
+
+    // 1352 rays from the centre, as vanilla (Dragonfly block/explosion.go, MIT): the faces of a 16x16x16 cube.
+    private static readonly (double X, double Y, double Z)[] ExplosionRays = BuildRays();
+
+    private static (double, double, double)[] BuildRays()
+    {
+        var rays = new List<(double, double, double)>(1352);
+        for (var x = 0; x < 16; x++)
+        for (var y = 0; y < 16; y++)
+        for (var z = 0; z < 16; z++)
+        {
+            if (x != 0 && x != 15 && y != 0 && y != 15 && z != 0 && z != 15)
+                continue;
+            double dx = x / 15.0 * 2 - 1, dy = y / 15.0 * 2 - 1, dz = z / 15.0 * 2 - 1;
+            var length = Math.Sqrt(dx * dx + dy * dy + dz * dz);
+            rays.Add((dx / length * 0.3, dy / length * 0.3, dz / length * 0.3));
+        }
+        return [.. rays];
+    }
+
     /// <summary>
-    /// Destroys blocks in a sphere of <paramref name="radius"/> (not bedrock and other unbreakable blocks), drops
-    /// some of them, lights nearby TNT, and hurts players and mobs around. Particles for the players of that world.
+    /// Vanilla blast resistance (Java values): what an explosion ray loses crossing the block. Water and lava
+    /// (100) stop it, so TNT exploding in water breaks nothing; obsidian and the like (1200) are never reached.
+    /// </summary>
+    public static float BlastResistance(BlockType block)
+    {
+        if (block.IsAir)
+            return 0;
+        if (Fluids.IsLiquid(block))
+            return 100;
+        if (block.Unbreakable)
+            return float.PositiveInfinity;
+        var name = block.Name.StartsWith("minecraft:") ? block.Name["minecraft:".Length..] : block.Name;
+        if (name.Contains("obsidian") || name is "anvil" or "chipped_anvil" or "damaged_anvil" or "enchanting_table" or "netherite_block"
+                or "ancient_debris" or "respawn_anchor" or "reinforced_deepslate")
+            return 1200;
+        if (name == "ender_chest")
+            return 600;
+        if (name == "end_stone" || name.StartsWith("end_stone_brick"))
+            return 9;
+        var hardness = DropRules.HardnessOf(block);
+        // Stone, bricks, ores, metal blocks: 6 (their hardness is lower).
+        return DropRules.EffectiveTool(block) == "pickaxe" && hardness >= 1.5f ? Math.Max(6, hardness) : hardness;
+    }
+
+    // Obsidian hits per block (obsidian-durability): explosions needed before it breaks.
+    // ponytail: the count stays if the obsidian is mined and placed again; it resets when the server restarts.
+    private readonly Dictionary<(World, int, int, int), int> _obsidianHits = [];
+
+    /// <summary>
+    /// A vanilla explosion of strength <paramref name="radius"/> (TNT 4): 1352 rays lose force through the blocks by
+    /// their blast resistance (water and obsidian stop them) and break what they get through, some dropping; TNT
+    /// reached is lit, players and mobs are hurt and thrown by how much of them the blast sees (TNT is thrown too:
+    /// cannons). With obsidian-durability, obsidian close by breaks after that many explosions (factions raids).
     /// </summary>
     public void Explode(double x, double y, double z, int radius, World? world = null)
     {
         world ??= World;
+        var size = (double)radius;
         int cx = (int)Math.Floor(x), cy = (int)Math.Floor(y), cz = (int)Math.Floor(z);
         var affected = new List<BlockPos>();
-        for (var bx = cx - radius; bx <= cx + radius; bx++)
-        for (var by = cy - radius; by <= cy + radius; by++)
-        for (var bz = cz - radius; bz <= cz + radius; bz++)
+        var resistance = new Dictionary<(int, int, int), float>();
+        var seen = new HashSet<(int, int, int)>();
+        foreach (var ray in ExplosionRays)
         {
-            var d2 = (bx - cx) * (bx - cx) + (by - cy) * (by - cy) + (bz - cz) * (bz - cz);
-            if (d2 > radius * radius + _blockRandom.Next(3))
-                continue;
-            if (world.GetBlock(bx, by, bz) is not { IsAir: false } block || block.Unbreakable || Fluids.IsLiquid(block)
-                || block.Name is "minecraft:obsidian" or "minecraft:crying_obsidian")
-                continue;
-            affected.Add(new BlockPos(bx, by, bz));
+            double px = x, py = y, pz = z;
+            for (var force = size * (0.7 + _blockRandom.NextDouble() * 0.6); force > 0; force -= 0.225)
+            {
+                var pos = ((int)Math.Floor(px), (int)Math.Floor(py), (int)Math.Floor(pz));
+                if (!resistance.TryGetValue(pos, out var r))
+                    resistance[pos] = r = world.GetBlock(pos.Item1, pos.Item2, pos.Item3) is { } block ? BlastResistance(block) : float.PositiveInfinity;
+                if (float.IsPositiveInfinity(r))
+                    break;
+                force -= (r + 0.3) * 0.3;
+                if (force > 0 && r > 0 && r < 100 && seen.Add(pos))
+                    affected.Add(new BlockPos(pos.Item1, pos.Item2, pos.Item3));
+                px += ray.X;
+                py += ray.Y;
+                pz += ray.Z;
+            }
         }
+        // Factions: obsidian within 3 blocks takes a hit, unless the explosion is in water or lava.
+        var durability = Config.ObsidianDurability;
+        var inLiquid = world.GetBlock(cx, cy, cz) is { } centre && Fluids.IsLiquid(centre);
+        if (durability > 0 && !inLiquid)
+            for (var bx = cx - 3; bx <= cx + 3; bx++)
+            for (var by = cy - 3; by <= cy + 3; by++)
+            for (var bz = cz - 3; bz <= cz + 3; bz++)
+            {
+                if ((bx + 0.5 - x) * (bx + 0.5 - x) + (by + 0.5 - y) * (by + 0.5 - y) + (bz + 0.5 - z) * (bz + 0.5 - z) > 3.5 * 3.5
+                    || world.GetBlock(bx, by, bz)?.Name is not ("minecraft:obsidian" or "minecraft:crying_obsidian"))
+                    continue;
+                var key = (world, bx, by, bz);
+                var hits = _obsidianHits.GetValueOrDefault(key) + 1;
+                if (hits < durability)
+                {
+                    _obsidianHits[key] = hits;
+                    continue;
+                }
+                _obsidianHits.Remove(key);
+                affected.Add(new BlockPos(bx, by, bz));
+            }
 
         bool breaksBlocks = true;
         bool dropItems = true;
@@ -406,7 +577,7 @@ public sealed partial class BedrokiaServer
             var ev = new ExplosionEvent(new System.Numerics.Vector3((float)x, (float)y, (float)z), radius, affected);
             if (!Events.OnExplosion(ev))
                 return;
-            radius = (int)Math.Max(0, ev.Radius);
+            size = Math.Max(0, ev.Radius);
             breaksBlocks = ev.BreaksBlocks;
         }
 
@@ -414,13 +585,9 @@ public sealed partial class BedrokiaServer
         {
             var blocksEv = new ExplosionBlocksEvent(new System.Numerics.Vector3((float)x, (float)y, (float)z), affected);
             if (!Events.OnExplosionBlocks(blocksEv))
-            {
                 breaksBlocks = false;
-            }
             else
-            {
                 dropItems = blocksEv.DropItems;
-            }
         }
 
         if (breaksBlocks)
@@ -437,31 +604,96 @@ public sealed partial class BedrokiaServer
                 SetBlockAndUpdate(bx, by, bz, Blocks.Air, world);
                 if (block.Name == "minecraft:tnt")
                     PrimeTnt(bx, by, bz, 10 + _blockRandom.Next(20), world);
-                else if (dropItems && _blockRandom.Next(4) == 0)
+                else if (dropItems && (block.Name is "minecraft:obsidian" or "minecraft:crying_obsidian" || _blockRandom.NextDouble() < 1 / Math.Max(1, size)))
                     foreach (var drop in DropRules.Drops(block, null, Random.Shared))
                         DropItem(drop, bx + 0.5f, by + 0.5f, bz + 0.5f, world: world);
             }
-            BroadcastIn(world, Packets.LevelEvent(2025, cx, cy, cz, 0));
             foreach (var pos in affected)
                 ApplyGravity(pos.X, pos.Y + 1, pos.Z, world);
         }
-        var reach = radius * 2;
-        foreach (var player in _players.Where(p => p.IsInGame && p.World == world))
+        BroadcastIn(world, Packets.LevelEvent(2025, cx, cy, cz, 0));
+        BroadcastIn(world, BedrockConnection.LevelSound("explode", (float)x, (float)y, (float)z, -1));
+
+        // Entities: impact = (1 - distance / (2 x size)) x exposure; damage and push as vanilla.
+        var reach = size * 2;
+        if (reach <= 0)
+            return;
+        foreach (var player in _players.Where(p => p.IsInGame && p.World == world && !p.Dead).ToList())
         {
-            var dx = player.Position.X - x;
-            var dy = player.Position.Y - BedrockConnection.EyeHeight - y;
-            var dz = player.Position.Z - z;
-            var distance = Math.Sqrt(dx * dx + dy * dy + dz * dz);
-            if (distance < reach)
-                player.Damage((float)Math.Round(7 * radius * (1 - distance / reach)), x, z, source: DamageSource.Explosion());
+            var feet = player.Position.Y - BedrockConnection.EyeHeight;
+            var impact = Impact(world, x, y, z, reach, player.Position.X, feet, player.Position.Z, 0.3, 1.8);
+            if (impact <= 0)
+                continue;
+            player.Damage((float)Math.Floor((impact * impact + impact) / 2 * 7 * size + 1), x, z, source: DamageSource.Explosion());
+            if (player.GameMode is Core.GameMode.Survival or Core.GameMode.Adventure && !player.Dead)
+            {
+                var (dx, dy, dz) = Direction(x, y, z, player.Position.X, player.Position.Y, player.Position.Z);
+                player.SetMotion(dx * impact, dy * impact, dz * impact);
+            }
         }
         foreach (var mob in Mobs.All.ToList())
         {
-            if (mob.World != world)
+            if (mob.World != world || mob.Dead)
                 continue;
-            var distance = Math.Sqrt((mob.X - x) * (mob.X - x) + (mob.Y - y) * (mob.Y - y) + (mob.Z - z) * (mob.Z - z));
-            if (distance < reach)
-                Mobs.Damage(mob, (float)Math.Round(7 * radius * (1 - distance / reach)), (x, z), source: DamageSource.Explosion());
+            var impact = Impact(world, x, y, z, reach, mob.X, mob.Y, mob.Z, mob.Width / 2, mob.Height);
+            if (impact <= 0)
+                continue;
+            Mobs.Damage(mob, (float)Math.Floor((impact * impact + impact) / 2 * 7 * size + 1), (x, z), source: DamageSource.Explosion());
+            var (dx, dy, dz) = Direction(x, y, z, mob.X, mob.Y + mob.Height * 0.85, mob.Z);
+            mob.Vx += dx * impact;
+            mob.Vy += dy * impact;
+            mob.Vz += dz * impact;
         }
+        foreach (var tnt in _tnt)
+        {
+            if (tnt.World != world)
+                continue;
+            var impact = Impact(world, x, y, z, reach, tnt.X, tnt.Y, tnt.Z, TntHalf, TntHeight);
+            if (impact <= 0)
+                continue;
+            var (dx, dy, dz) = Direction(x, y, z, tnt.X, tnt.Y, tnt.Z); // TNT: from its base, as Java
+            tnt.Vx += dx * impact;
+            tnt.Vy += dy * impact;
+            tnt.Vz += dz * impact;
+        }
+    }
+
+    private static (double X, double Y, double Z) Direction(double fromX, double fromY, double fromZ, double x, double y, double z)
+    {
+        double dx = x - fromX, dy = y - fromY, dz = z - fromZ;
+        var length = Math.Sqrt(dx * dx + dy * dy + dz * dz);
+        return length < 1e-4 ? (0, 0, 0) : (dx / length, dy / length, dz / length);
+    }
+
+    // (1 - distance / reach) x the share of 9 points of the box (corners and centre) the blast sees.
+    private static double Impact(World world, double x, double y, double z, double reach, double ex, double ey, double ez, double half, double height)
+    {
+        var distance = Math.Sqrt((ex - x) * (ex - x) + (ey - y) * (ey - y) + (ez - z) * (ez - z));
+        if (distance > reach)
+            return 0;
+        var seen = 0;
+        const double inset = 0.05;
+        for (var i = 0; i < 9; i++)
+        {
+            var (px, py, pz) = i == 8 ? (ex, ey + height / 2, ez)
+                : (ex + ((i & 1) == 0 ? -half + inset : half - inset), ey + ((i & 2) == 0 ? inset : height - inset), ez + ((i & 4) == 0 ? -half + inset : half - inset));
+            if (!RayBlocked(world, x, y, z, px, py, pz))
+                seen++;
+        }
+        return (1 - distance / reach) * seen / 9;
+    }
+
+    private static bool RayBlocked(World world, double x, double y, double z, double tx, double ty, double tz)
+    {
+        double dx = tx - x, dy = ty - y, dz = tz - z;
+        var length = Math.Sqrt(dx * dx + dy * dy + dz * dz);
+        var steps = (int)Math.Ceiling(length / 0.3);
+        for (var i = 1; i < steps; i++)
+        {
+            var t = (double)i / steps;
+            if (BlockPhysics.IsSolid(world.GetBlock((int)Math.Floor(x + dx * t), (int)Math.Floor(y + dy * t), (int)Math.Floor(z + dz * t))))
+                return true;
+        }
+        return false;
     }
 }
