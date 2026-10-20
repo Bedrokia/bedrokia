@@ -443,7 +443,8 @@ public sealed partial class BedrokiaServer
     }
 
     private static bool Falls(BlockType block) =>
-        block.Name is "minecraft:sand" or "minecraft:red_sand" or "minecraft:gravel" || block.Name.EndsWith("_concrete_powder");
+        block.Name is "minecraft:sand" or "minecraft:red_sand" or "minecraft:gravel" || block.Name.EndsWith("_concrete_powder")
+        || Anvil.IsAnvilBlock(block.Name);
 
     /// <summary>Removes every item lying on the ground in every world (a "clear lag"); returns how many there were.</summary>
     public int ClearDroppedItems()
@@ -1227,8 +1228,7 @@ public sealed partial class BedrokiaServer
                 return;
             }
             
-            var enchantName = args[0].ToLowerInvariant().Replace("minecraft:", "");
-            var enchant = Enchanting.All.FirstOrDefault(e => e.Name == enchantName);
+            var enchant = Enchanting.ByIdOrName(args[0]);
             if (enchant is null)
             {
                 sender.Reply($"§cUnknown enchantment '{args[0]}'. Available: {string.Join(", ", Enchanting.All.Select(e => e.Name))}");
@@ -1237,19 +1237,14 @@ public sealed partial class BedrokiaServer
             
             var level = args.Length == 2 ? Int(args[1], 1, enchant.MaxLevel) : 1;
             
-            // Vérifier si l'enchantement peut être appliqué à cet item
             var itemName = held.Type.Name.StartsWith("minecraft:") ? held.Type.Name["minecraft:".Length..] : held.Type.Name;
-            if (!enchant.Fits(itemName))
+            if (itemName is not ("book" or "enchanted_book") && !enchant.Fits(itemName))
             {
                 sender.Reply($"§c{enchant.Name} cannot be applied to {itemName}.");
                 return;
             }
             
-            // Récupérer les enchantements existants et ajouter le nouveau
-            var existing = Enchanting.Of(held).Where(e => e.Id != enchant.Id).ToList();
-            existing.Add((enchant.Id, level));
-            
-            var enchanted = Enchanting.With(held, existing);
+            var enchanted = held.AddEnchantment(enchant.Id, level);
             var slot = player.Inventory.SelectedSlot;
             player.Inventory.Main[slot] = enchanted;
             player.Send([.. player.Inventory.ContentPackets()]);
