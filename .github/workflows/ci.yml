@@ -9,10 +9,10 @@ on:
 permissions:
   contents: write # release job: create the GitHub release and its tag
 
-# One run at a time per branch: two quick pushes must not compute the same version.
+# One run at a time per branch: a new push cancels the run still going (only the newest commit is released).
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   test:
@@ -20,12 +20,14 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
-      - run: dotnet test Bedrokia.slnx -c Release
+      # A test stuck for 3 minutes is stopped and named in the log instead of holding the run.
+      - run: dotnet test Bedrokia.slnx -c Release --blame-hang-timeout 3m
 
   version:
     # Every push to main is a release: last tag + 1 patch (v0.3.0 -> v0.3.1), or the <Version> of
@@ -52,7 +54,8 @@ jobs:
           echo "Version: $version"
 
   publish:
-    needs: [test, version]
+    # Built at the same time as the tests; the release still waits for both.
+    needs: [version]
     strategy:
       matrix:
         rid: [linux-x64, win-x64]
@@ -72,7 +75,7 @@ jobs:
   release:
     # Every push to main (and every v* tag) publishes the binaries, the Pterodactyl egg and the example plugins.
     if: github.event_name == 'push'
-    needs: [publish, version]
+    needs: [test, publish, version]
     runs-on: ubuntu-latest
     env:
       TAG: v${{ needs.version.outputs.version }}
