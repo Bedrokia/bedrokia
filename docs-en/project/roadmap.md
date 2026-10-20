@@ -24,7 +24,8 @@ title: Roadmap
 - Anvil, stonecutter, grindstone, loom, cauldron, campfire
 - Fire spread, farmland drying, leaf decay
 - Caves, lakes, structures (villages...)
-- Nether mobs and structures, the End
+- Nether structures, the End
+- Water and flying mobs, taming, villager trading
 - Redstone
 
 Ideas and contributions are welcome: see [The project and AI](ai.md).

@@ -37,8 +37,9 @@ server.log            log
 | `level-seed` | *(empty)* | seed of a **new** world |
 | `difficulty` | `normal` | `peaceful`, `easy`, `normal`, `hard` |
 | `pvp` | `on` | players can hurt each other |
+| `mobs` | `on` | mobs in the world (`off`: no mob at all, natural, spawn egg or `/summon`; saved animals come back with `on`) |
 | `spawn-animals` | `on` | animals spawn |
-| `spawn-monsters` | `on` | monsters spawn at night (never in peaceful) |
+| `spawn-monsters` | `on` | monsters spawn in the dark: at night, in caves, in the Nether (never in peaceful) |
 | `spawn-protection` | `16` | radius around spawn where only ops can build (`0` = off) |
 | `keep-inventory` | `off` | keep items on death |
 | `force-resources` | `off` | players must accept the resource packs |

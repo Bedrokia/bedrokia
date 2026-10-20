@@ -47,8 +47,8 @@ public sealed partial class BedrokiaServer
             if (Math.Abs(px - x) < 3 && Math.Abs(py - Network.BedrockConnection.EyeHeight - y) < 4 && Math.Abs(pz - z) < 3)
                 player.Damage(5, x, z, source: DamageSource.Custom("lightning"));
         }
-        foreach (var mob in world == World ? Mobs.All.ToList() : [])
-            if (Math.Abs(mob.X - x) < 3 && Math.Abs(mob.Y - y) < 4 && Math.Abs(mob.Z - z) < 3)
+        foreach (var mob in Mobs.All.ToList())
+            if (mob.World == world && Math.Abs(mob.X - x) < 3 && Math.Abs(mob.Y - y) < 4 && Math.Abs(mob.Z - z) < 3)
                 Mobs.Damage(mob, 5, (x, z), source: DamageSource.Custom("lightning"));
     }
 }

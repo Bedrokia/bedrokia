@@ -37,8 +37,9 @@ server.log            journal
 | `level-seed` | *(vide)* | graine d'un **nouveau** monde |
 | `difficulty` | `normal` | `peaceful`, `easy`, `normal`, `hard` |
 | `pvp` | `on` | les joueurs peuvent se blesser |
+| `mobs` | `on` | mobs dans le monde (`off` : aucun mob, ni naturel, ni œuf, ni `/summon` ; les animaux sauvegardés reviennent avec `on`) |
 | `spawn-animals` | `on` | apparition des animaux |
-| `spawn-monsters` | `on` | apparition des monstres la nuit (jamais en peaceful) |
+| `spawn-monsters` | `on` | apparition des monstres dans le noir : la nuit, dans les grottes, dans le Nether (jamais en peaceful) |
 | `spawn-protection` | `16` | rayon autour du spawn où seuls les ops construisent (`0` = désactivé) |
 | `keep-inventory` | `off` | garder ses objets à la mort |
 | `force-resources` | `off` | obliger les joueurs à accepter les packs de ressources |

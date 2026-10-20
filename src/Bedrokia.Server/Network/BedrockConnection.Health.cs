@@ -718,7 +718,7 @@ public sealed partial class BedrockConnection
         }
         var (dx, dy, dz) = face switch { 0 => (0, -2, 0), 1 => (0, 1, 0), 2 => (0, 0, -1), 3 => (0, 0, 1), 4 => (-1, 0, 0), _ => (1, 0, 0) };
         // A plugin can cancel the spawn (EntitySpawn): then the egg is not used up.
-        if (_server.Mobs.Spawn(kind, x + dx + 0.5, y + dy, z + dz + 0.5) is not null && GameMode != GameMode.Creative)
+        if (_server.Mobs.Spawn(kind, x + dx + 0.5, y + dy, z + dz + 0.5, World) is not null && GameMode != GameMode.Creative)
             Send(Inventory.ConsumeHeld());
     }
 
@@ -746,8 +746,11 @@ public sealed partial class BedrockConnection
         }
         if (action == 0)
         {
-            if (_server.Events.HasPlayerInteractEntity)
-                _server.Events.OnPlayerInteractEntity(new PlayerInteractEntityEvent(this, target));
+            var clicked = _server.Mobs.Find(target);
+            if (_server.Events.HasPlayerInteractEntity && !_server.Events.OnPlayerInteractEntity(new PlayerInteractEntityEvent(this, target, clicked)))
+                return;
+            if (clicked is not null)
+                _server.Mobs.Interact(this, clicked); // feeding, shearing, milking
             return;
         }
         if (action != 1 || Dead)
@@ -759,7 +762,7 @@ public sealed partial class BedrockConnection
             damage = Math.Max(0f, damage - 4f * (weak.Amplifier + 1));
         AddExhaustion(0.1f);
         _server.BroadcastInExcept(World, this, EntityPackets.Swing(EntityId));
-        if (_server.Mobs.Find(target) is { } mob)
+        if (_server.Mobs.Find(target) is { } mob && mob.World == World)
         {
             var dx = mob.X - Position.X;
             var dz = mob.Z - Position.Z;

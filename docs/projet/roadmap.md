@@ -24,7 +24,8 @@ title: Feuille de route
 - Enclume, tailleur de pierre, meule, métier à tisser, chaudron, feu de camp
 - Propagation du feu, terre labourée qui sèche, feuilles qui disparaissent
 - Grottes, lacs, structures (villages...)
-- Mobs et structures du Nether, l'End
+- Structures du Nether, l'End
+- Mobs aquatiques et volants, dressage, commerce avec les villageois
 - Redstone
 
 Les idées et contributions sont les bienvenues : voir [Le projet et l'IA](ia.md).

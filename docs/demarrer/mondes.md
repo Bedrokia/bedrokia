@@ -24,7 +24,34 @@ Le Nether est le monde `worlds/<level-name>/nether/`, créé au premier démarra
     - mourir dans le Nether ramène dans le monde normal.
 - Le joueur se reconnecte dans la dimension où il s'est déconnecté.
 
-> Les mobs du Nether, les forteresses et les bastions ne sont pas encore là.
+> Les forteresses et les bastions ne sont pas encore là.
+
+### Les mobs
+
+- `mobs=off` dans `server.properties` retire tous les mobs : apparitions naturelles, œufs et `/summon`. Les animaux
+  restent sauvegardés et reviennent avec `mobs=on`.
+- `spawn-animals` et `spawn-monsters` règlent chaque famille séparément.
+- **Animaux** : ils apparaissent sur l'herbe, avec le ciel au-dessus. L'espèce dépend du biome : vaches, cochons,
+  moutons et poules partout ; chevaux dans les plaines, loups et renards dans la taïga ; lapins dans le désert et la
+  neige ; meuh-meuh sur les îles champignons, etc.
+- Les animaux sont **sauvegardés avec le monde** (`entities.json`), même quand leurs chunks ne sont plus chargés.
+- **Monstres** : ils apparaissent dans le noir, la nuit dehors ou à toute heure dans les grottes, mais jamais près
+  d'une torche ou d'une autre source de lumière. Ce sont des husks dans le désert et des strays dans la neige. Dans
+  le Nether apparaissent piglins zombifiés, piglins, hoglins, cubes de magma et endermen, selon le biome.
+- Comme en vanilla, les monstres disparaissent loin des joueurs.
+- **Comportement** :
+    - les monstres trouvent leur chemin autour des murs (pathfinding) et ne voient pas à travers les blocs ;
+    - les mobs neutres n'attaquent que le joueur qui les frappe : piglins zombifiés (tout le groupe), endermen,
+      loups, abeilles, golems de fer, ours polaires, lamas…
+    - les animaux suivent le joueur qui tient leur nourriture.
+- **Élevage** : nourrir deux animaux (blé, carottes, graines…) les fait se reproduire. Le bébé grandit en
+  20 minutes, plus vite si on le nourrit.
+- Les cisailles tondent les moutons (la laine repousse quand ils mangent de l'herbe), le seau trait les vaches, et
+  les poules pondent des œufs.
+- Les mobs subissent les dégâts de chute, de feu et de lave. Ceux qui meurent en brûlant lâchent leur viande cuite.
+
+> Il n'y a pas encore de mobs aquatiques ni volants en apparition naturelle, de dressage, de commerce avec les
+> villageois ni de raids.
 
 ### Importer un monde Bedrock
 
