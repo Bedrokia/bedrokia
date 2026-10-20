@@ -64,7 +64,7 @@ favourite AI to fix a bug: as long as the tests pass and the code stays readable
 
 | Area | Details |
 |---|---|
-| **Connection** | Bedrock 26.50, NetherNet (WebRTC) on one TCP port + a UDP range, Xbox Live authentication, encryption |
+| **Connection** | Bedrock 26.50, NetherNet (WebRTC) on one port (TCP + UDP) for every player, Xbox Live authentication, encryption |
 | **World** | Vanilla generation (biomes, terrain, trees, ores), flat or void worlds, saving, Bedrock world import (`.mcworld` / LevelDB) |
 | **Blocks** | Oriented placement (stairs, logs, doors, beds…), chests, ender chests, barrels, furnaces / blast furnaces / smokers, doors, trapdoors, levers, buttons, beds (respawn, skip the night), connected walls, gravity (sand, gravel), flowing water and lava, crops, trees, TNT and explosions |
 | **Players** | Full inventory, crafting (every vanilla recipe), enchanting, experience, hunger, damage, falls, death, armour, dropped and picked-up items |
@@ -85,7 +85,7 @@ structures. See the [roadmap](https://nexiumpvp2.github.io/bedrokia/en/project/r
 chmod +x bedrokia && ./bedrokia
 ```
 
-3. Open the ports: **TCP 19132** and **UDP 19132 to 19156** (server port + number of players + 5).
+3. Open the port **19132** in **TCP and UDP**.
 4. In Minecraft: *Play → Servers → Add Server*, the machine's address, port 19132.
 
 **Updating = replacing one file**: download the new `bedrokia`, replace the old one, restart. Worlds, players and
@@ -106,8 +106,7 @@ resource_packs/     resource packs (folders or .mcpack)
 ## 🦖 Pterodactyl
 
 An egg is included: [`deploy/pterodactyl/egg-bedrokia.json`](deploy/pterodactyl/egg-bedrokia.json).
-*Admin → Nests → Import Egg*, then create a server with it. The server needs its main port **and** a range of UDP
-ports (add allocations, or set the `WEBRTC_PORTS` variable). Details:
+*Admin → Nests → Import Egg*, then create a server with it. The server only needs its main port (TCP and UDP). Details:
 [Pterodactyl docs](https://nexiumpvp2.github.io/bedrokia/en/getting-started/pterodactyl/).
 
 ## 🧩 Plugins in 30 seconds

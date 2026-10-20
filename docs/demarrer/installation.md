@@ -33,10 +33,10 @@ Les joueurs passent par **NetherNet** (WebRTC), comme les serveurs Bedrock réce
 | Port | Protocole | Rôle |
 |---|---|---|
 | `server-port` (19132) | TCP | connexion (signalisation) |
-| de `server-port` à `server-port + max-players + 4` | UDP | trafic des joueurs |
+| `server-port` (19132) | UDP | trafic de tous les joueurs |
 
-Avec 20 joueurs : TCP 19132 et UDP 19132-19156. La plage peut être changée avec `webrtc-ports` dans
-[server.properties](configuration.md).
+Un seul numéro de port, ouvert en TCP et en UDP. Pour donner un port à chaque joueur à la place (ancien fonctionnement),
+mettre une plage dans `webrtc-ports` ([server.properties](configuration.md)).
 
 ```bash
 sudo ufw allow 19132/tcp && sudo ufw allow 19132:19156/udp
