@@ -7,6 +7,9 @@ title: Commands
 In game, with `/`. In the console, without `/` (the console is always an operator). Plugin commands are added to
 this list and show up in the game's auto-completion.
 
+Wherever a command expects a player, selectors work: `@s` (yourself), `@p` (the nearest player), `@r` (a random
+player), `@a` and `@e` (every player: the command runs for each).
+
 ## Everyone
 
 | Command | Role |

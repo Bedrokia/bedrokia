@@ -343,7 +343,7 @@ public sealed partial class BedrockConnection
         foreach (var stack in Inventory.ReturnCraftingItems())
             _server.DropItem(stack, Position.X, Position.Y - EyeHeight + 0.5f, Position.Z, world: World);
         Send(InventoryPackets.ContainerClose(window, window == InventoryPackets.WindowCraftingTable
-            ? InventoryPackets.ContainerTypeWorkbench : type));
+            ? InventoryPackets.ContainerTypeWorkbench : type, serverInitiated: false));
         Send([.. Inventory.ContentPackets()]);
     }
 

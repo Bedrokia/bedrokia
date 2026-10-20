@@ -36,8 +36,10 @@ internal static class InventoryPackets
         new BedrockWriter().VarUInt32(ContainerOpenId).Byte(windowId).Byte(type)
             .VarInt32(x).VarInt32(y).VarInt32(z).VarInt64(-1).ToArray();
 
-    public static byte[] ContainerClose(byte windowId, byte type) =>
-        new BedrockWriter().VarUInt32(ContainerCloseId).Byte(windowId).Byte(type).Bool(false).ToArray();
+    /// <param name="serverInitiated">True when the server closes the window itself; false when it answers the client closing it
+    /// (the client rejects a close sent with the wrong one).</param>
+    public static byte[] ContainerClose(byte windowId, byte type, bool serverInitiated) =>
+        new BedrockWriter().VarUInt32(ContainerCloseId).Byte(windowId).Byte(type).Bool(serverInitiated).ToArray();
 
     public const uint WindowInventory = 0;
     public const uint WindowOffhand = 119;

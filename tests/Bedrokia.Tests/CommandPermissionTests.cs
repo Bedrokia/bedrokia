@@ -90,6 +90,30 @@ public class CommandUsageTests
     }
 
     [Fact]
+    public void Selectors_in_player_arguments_run_the_command_for_each_match()
+    {
+        using var logger = new Logger(LogLevel.Warn, null);
+        var manager = new CommandManager(logger)
+        {
+            SelectorResolver = (_, word) => word switch { "@a" => ["Alice", "Bob"], "@s" => ["Alice"], "@r" => [], _ => null },
+        };
+        var runs = new List<string>();
+        manager.Register("hit", "", "<target:player> <message...>", false, (_, args) => runs.Add(string.Join(' ', args)));
+        var replies = new List<string>();
+        var sender = new CommandSender("Alice", true, replies.Add);
+
+        manager.Dispatch(sender, "hit @a hello @a");
+        Assert.Equal(["Alice hello @a", "Bob hello @a"], runs); // a message keeps its @a
+        runs.Clear();
+        manager.Dispatch(sender, "hit @s hi");
+        Assert.Equal(["Alice hi"], runs);
+        runs.Clear();
+        manager.Dispatch(sender, "hit @r hi");
+        Assert.Empty(runs);
+        Assert.Contains(replies, r => r.Contains("No player matches @r"));
+    }
+
+    [Fact]
     public void Enums_with_the_same_name_get_distinct_names()
     {
         using var logger = new Logger(LogLevel.Warn, null);

@@ -90,6 +90,39 @@ public sealed class CommandManager(Logger logger)
     /// <summary>Runs one console line.</summary>
     public void Dispatch(string line) => Dispatch(Console, line);
 
+    /// <summary>
+    /// Turns a target selector into player names for <paramref name="sender"/>: @s (the sender), @p (the nearest player),
+    /// @r (a random one), @a and @e (everyone). Null when the word is not a selector. Set by the server.
+    /// </summary>
+    public Func<CommandSender, string, IReadOnlyList<string>?>? SelectorResolver { get; set; }
+
+    // Player arguments ("<x:player>") holding a selector are replaced by the names it matches; with several names the
+    // command runs once per name, like vanilla commands do for each target. Other arguments (a message) are left as is.
+    private List<string[]>? ExpandSelectors(CommandSender sender, string usage, string[] args)
+    {
+        var runs = new List<string[]> { args };
+        if (SelectorResolver is null || !args.Any(a => a.StartsWith('@')))
+            return runs;
+        var playerPositions = ParseUsage(usage).SelectMany(o => o.Select((p, i) => (p, i))).Where(x => x.p.Type == 8).Select(x => x.i).ToHashSet();
+        foreach (var position in playerPositions.Where(i => i < args.Length).Order())
+        {
+            if (SelectorResolver(sender, args[position]) is not { } names)
+                continue;
+            if (names.Count == 0)
+            {
+                sender.Reply($"§cNo player matches {args[position]}.");
+                return null;
+            }
+            runs = [.. runs.SelectMany(run => names.Select(name =>
+            {
+                var copy = (string[])run.Clone();
+                copy[position] = name;
+                return copy;
+            }))];
+        }
+        return runs;
+    }
+
     /// <summary>Parses and runs one input line. Errors are reported to the sender, never thrown.</summary>
     public void Dispatch(CommandSender sender, string line)
     {
@@ -162,21 +195,28 @@ public sealed class CommandManager(Logger logger)
             args = [.. argList];
         }
 
-        try
+        if (ExpandSelectors(sender, command.Usage, args) is not { } runs)
+            return;
+        foreach (var run in runs)
         {
-            command.Execute(sender, args);
-        }
-        catch (CommandUsageException)
-        {
-            sender.Reply($"§cUsage: {command.Name} {DisplayUsage(command.Usage)}");
-        }
-        catch (Exception e)
-        {
-            var owner = command.Execute.Method.DeclaringType?.Assembly.GetName().Name;
-            logger.Error(owner is not null && !owner.StartsWith("Bedrokia.", StringComparison.Ordinal)
-                ? $"Plugin '{owner}' crashed in command '{command.Name}': {e}"
-                : $"Command '{command.Name}' failed: {e}");
-            sender.Reply("§cAn internal error occurred while running this command.");
+            try
+            {
+                command.Execute(sender, run);
+            }
+            catch (CommandUsageException)
+            {
+                sender.Reply($"§cUsage: {command.Name} {DisplayUsage(command.Usage)}");
+                return;
+            }
+            catch (Exception e)
+            {
+                var owner = command.Execute.Method.DeclaringType?.Assembly.GetName().Name;
+                logger.Error(owner is not null && !owner.StartsWith("Bedrokia.", StringComparison.Ordinal)
+                    ? $"Plugin '{owner}' crashed in command '{command.Name}': {e}"
+                    : $"Command '{command.Name}' failed: {e}");
+                sender.Reply("§cAn internal error occurred while running this command.");
+                return;
+            }
         }
     }
 
