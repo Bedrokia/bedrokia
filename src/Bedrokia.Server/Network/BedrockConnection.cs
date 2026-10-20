@@ -692,7 +692,7 @@ public sealed partial class BedrockConnection
         // reports block breaking, item use and some inventory requests.
         var moveX = reader.Float32();
         var moveZ = reader.Float32();
-        reader.Bytes(4); // head yaw
+        _headYaw = System.Buffers.Binary.BinaryPrimitives.ReadSingleLittleEndian(reader.Bytes(4));
         if (Riding is not null)
             _server.Vehicles.RiderInput(this, x, y, z, yaw, moveX, moveZ);
         var flags = reader.VarUInt32();
@@ -764,6 +764,7 @@ public sealed partial class BedrockConnection
     private const int InputFlagSneaking = 8, InputFlagMissedSwing = 39, InputFlagStartFlying = 42, InputFlagStopFlying = 43,
         InputFlagVerticalCollision = 50; // gophertunnel packet/player_auth_input.go
     private bool _onGround, _flying;
+    private float _headYaw = float.NaN; // NaN until the client sends one: the body yaw is used
 
     /// <summary>Holding sneak: right clicks place against containers and doors instead of using them.</summary>
     public bool Sneaking { get; private set; }
@@ -899,7 +900,7 @@ public sealed partial class BedrockConnection
     }
 
     // LevelSoundEvent: name, position, extra data, entity type, baby, global, actor id, ...
-    private static byte[] LevelSound(string name, float x, float y, float z, int data) =>
+    internal static byte[] LevelSound(string name, float x, float y, float z, int data) =>
         new BedrockWriter().VarUInt32(123).String(name).Vec3(x, y, z).VarInt32(data)
             .String("").Bool(false).Bool(false).Int64(-1).Bool(false).ToArray();
 
@@ -1031,7 +1032,7 @@ public sealed partial class BedrockConnection
             if (Entities.ProjectileManager.IsThrowable(Inventory.Held))
             {
                 var held = Inventory.Held!;
-                if (_server.Projectiles.Launch(this, held.Type.Name, potion: held.Type.Name == Entities.ProjectileManager.SplashPotion ? held.Meta : (short)0) is not null
+                if (_server.Projectiles.Launch(this, held.Type.Name, potion: held.Type.Name is Entities.ProjectileManager.SplashPotion or Entities.ProjectileManager.LingeringPotion ? held.Meta : (short)0) is not null
                     && GameMode != GameMode.Creative)
                     Send(Inventory.ConsumeHeld());
                 else
@@ -1324,9 +1325,15 @@ public sealed partial class BedrockConnection
             Pitch = pitch;
             Yaw = yaw;
             UpdateChunks(ChunkPosition.X, ChunkPosition.Z);
-            _server.BroadcastInExcept(World, this, Packets.MovePlayer(EntityId, x, y, z, pitch, yaw, yaw, teleport: false, onGround: true));
+            // Only to the players who see this chunk (they get the position again when the chunk is sent to them),
+            // with the real head turn and ground state: walking and landing animate as vanilla.
+            var (cx, cz) = ChunkPosition;
+            _server.BroadcastInChunkExcept(World, cx, cz, this, MovePacket(teleport: false));
         }
     }
+
+    private byte[] MovePacket(bool teleport) => Packets.MovePlayer(EntityId, Position.X, Position.Y, Position.Z, Pitch, Yaw,
+        float.IsNaN(_headYaw) ? Yaw : _headYaw, teleport, _onGround);
 
     internal void UpdateChunks(int centerX, int centerZ)
     {
@@ -1409,6 +1416,10 @@ public sealed partial class BedrockConnection
         chunk.Viewers.Add(this);
         var (count, payload) = chunk.NetworkPayload(world.Dimension == 1);
         Send(Packets.LevelChunk(chunk.X, chunk.Z, count, payload, world.Dimension));
+        // Players standing in this chunk: their movements were not sent while it was out of sight.
+        foreach (var other in _server.Players)
+            if (other != this && other.IsInGame && other.World == world && other.ChunkPosition == (chunk.X, chunk.Z))
+                Send(other.MovePacket(teleport: true));
         TrySpawn();
     }
 

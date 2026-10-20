@@ -223,7 +223,7 @@ public class MobSystemTests
     {
         var (server, _) = Arena();
         var ghast = server.Mobs.Spawn(MobKind.Ghast, 8.5, Floor + 1, 2.5)!;
-        server.World.SetBlock(8, Floor + 1, 12, Blocks.Stone);
+        server.World.SetBlock(8, Floor + 1, 12, Blocks.ByName("dirt")!); // strength 1: stone resists it, as vanilla
         server.Projectiles.Shoot(ghast, ProjectileManager.Fireball, new(8.5f, Floor + 1.5f, 6f), new(0, 0, 0.9f), 6);
         for (var i = 0; i < 20 && server.Projectiles.All.Count > 0; i++)
             server.Projectiles.Tick();

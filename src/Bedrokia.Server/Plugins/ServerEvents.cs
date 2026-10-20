@@ -721,25 +721,52 @@ public sealed class ServerEvents(Logger logger)
         _reported.Clear();
     }
 
+    /// <summary>While /timings runs: the time of each plugin's handlers, per plugin and event.</summary>
+    internal Performance.TimingsManager? Timings { get; set; }
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<(System.Reflection.Assembly, string), Performance.TimingRecord?> _pluginRecords = new();
+
+    // The plugin a handler belongs to (null for the server's own handlers).
+    private Performance.TimingRecord? RecordOf(Delegate handler, string name)
+    {
+        var assembly = handler.Method.DeclaringType?.Assembly ?? typeof(ServerEvents).Assembly;
+        if (_pluginRecords.TryGetValue((assembly, name), out var record))
+            return record;
+        return _pluginRecords.GetOrAdd((assembly, name), key => key.Item1 == typeof(ServerEvents).Assembly ? null
+            : Timings!.GetOrCreate($"{key.Item1.GetName().Name}: {key.Item2}", "Plugin:" + key.Item1.GetName().Name));
+    }
+
     // Returns false when a handler cancelled the event.
     private bool Fire<T>(Action<T>? handlers, T e, [System.Runtime.CompilerServices.CallerArgumentExpression(nameof(handlers))] string name = "")
     {
         if (handlers is null)
             return true;
+        var timed = Timings is { IsEnabled: true };
+        if (handlers.HasSingleTarget && !timed)
+        {
+            Invoke(handlers, e, name); // the common case, without the invocation list array
+            return e is not CancellableEvent { Cancelled: true };
+        }
         foreach (var handler in handlers.GetInvocationList().Cast<Action<T>>())
         {
-            try
-            {
-                handler(e);
-            }
-            catch (Exception ex)
-            {
-                // Full error once per handler: a broken Tick or PlayerMove handler would flood the console.
-                if (_reported.Add(handler))
-                    logger.Error($"Plugin '{handler.Method.DeclaringType?.Assembly.GetName().Name}' crashed in event {name} "
-                                 + $"({handler.Method.DeclaringType?.Name}.{handler.Method.Name}); later errors of this handler are hidden: {ex}");
-            }
+            using (timed ? Timings!.Track(RecordOf(handler, name)) : default)
+                Invoke(handler, e, name);
         }
         return e is not CancellableEvent { Cancelled: true };
+    }
+
+    private void Invoke<T>(Action<T> handler, T e, string name)
+    {
+        try
+        {
+            handler(e);
+        }
+        catch (Exception ex)
+        {
+            // Full error once per handler: a broken Tick or PlayerMove handler would flood the console.
+            if (_reported.Add(handler))
+                logger.Error($"Plugin '{handler.Method.DeclaringType?.Assembly.GetName().Name}' crashed in event {name} "
+                             + $"({handler.Method.DeclaringType?.Name}.{handler.Method.Name}); later errors of this handler are hidden: {ex}");
+        }
     }
 }

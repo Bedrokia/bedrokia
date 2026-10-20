@@ -126,8 +126,8 @@ public sealed partial class BedrokiaServer
         Maps = new MapManager(this);
         Npcs = new NpcManager(this);
         Projectiles = new ProjectileManager(this);
-        Events = new ServerEvents(logger);
-        Scheduler = new ServerScheduler(logger);
+        Events = new ServerEvents(logger) { Timings = Timings };
+        Scheduler = new ServerScheduler(logger) { Timings = Timings };
         Plugins = new PluginManager(this);
         RegisterBuiltinCommands();
     }
@@ -389,6 +389,19 @@ public sealed partial class BedrokiaServer
                 viewer.Send(packet);
     }
 
+
+    /// <summary>Like <see cref="BroadcastInChunk"/>, without <paramref name="except"/>.</summary>
+    public void BroadcastInChunkExcept(World world, int chunkX, int chunkZ, BedrockConnection except, byte[] packet)
+    {
+        if (world?.LoadedChunk(chunkX, chunkZ) is not { } chunk)
+        {
+            BroadcastInExcept(world!, except, packet);
+            return;
+        }
+        foreach (var viewer in chunk.Viewers)
+            if (viewer.IsInGame && viewer != except)
+                viewer.Send(packet);
+    }
 
     // "§e" colour codes are for the game, not for the console.
     private static string StripFormatting(string text) => System.Text.RegularExpressions.Regex.Replace(text, "§.", "");

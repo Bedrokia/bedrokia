@@ -37,6 +37,8 @@ server.log            log
 | `level-seed` | *(empty)* | seed of a **new** world |
 | `difficulty` | `normal` | `peaceful`, `easy`, `normal`, `hard` |
 | `pvp` | `on` | players can hurt each other |
+| `pvp-reach` | `4` | longest melee hit between players, eyes to hitbox, lag compensated (last second of positions); `0` = no check |
+| `obsidian-durability` | `0` | TNT explosions needed to break obsidian within 3 blocks (factions raids); `0` = never, as vanilla |
 | `mobs` | `on` | mobs in the world (`off`: no mob at all, natural, spawn egg or `/summon`; saved animals come back with `on`) |
 | `spawn-animals` | `on` | animals spawn |
 | `spawn-monsters` | `on` | monsters spawn in the dark: at night, in caves, in the Nether (never in peaceful) |
