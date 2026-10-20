@@ -128,7 +128,8 @@ public static class DropRules
                 var count = random.Next(rule.Min, rule.Max + 1);
                 if (fortune > 0 && name.Contains("ore"))
                 {
-                    var multiplier = 1 + random.Next(fortune + 2);
+                    var k = random.Next(fortune + 2);
+                    var multiplier = k <= 1 ? 1 : k;
                     if (multiplier > 1)
                         count = rule.Min == 1 && rule.Max == 1 ? multiplier : count * multiplier;
                 }
