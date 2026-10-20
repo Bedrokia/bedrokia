@@ -845,6 +845,9 @@ public sealed partial class BedrockConnection
     // UseItemTransactionData: action, trigger, block position, face, hotbar slot, hand, held item, ...
     private void OnUseItem(ref BedrockReader reader)
     {
+        // The move of this same packet first (PocketMine handles movement at once): placing a block under yourself
+        // while jumping was refused because the server still saw you standing there.
+        FlushTickMovement();
         const int clickBlock = 0, clickAir = 1, breakBlock = 2;
         var action = reader.VarInt32();
         reader.Byte(); // trigger type
@@ -1044,7 +1047,9 @@ public sealed partial class BedrockConnection
             return false;
         var (px, eyes, pz) = p.Position;
         var feet = eyes - EyeHeight;
-        return px + 0.3 > x && px - 0.3 < x + 1 && pz + 0.3 > z && pz - 0.3 < z + 1 && feet + 1.8 > y && feet < y + 1;
+        // A small margin like PocketMine's bounding boxes: standing on the block or brushing its side does not count.
+        const double e = 0.05;
+        return px + 0.3 - e > x && px - 0.3 + e < x + 1 && pz + 0.3 - e > z && pz - 0.3 + e < z + 1 && feet + 1.8 - e > y && feet + e < y + 1;
     });
 
     private void BreakBlock(int x, int y, int z)
