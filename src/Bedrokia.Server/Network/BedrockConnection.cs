@@ -696,9 +696,22 @@ public sealed partial class BedrockConnection
         if (Riding is not null)
             _server.Vehicles.RiderInput(this, x, y, z, yaw, moveX, moveZ);
         var flags = reader.VarUInt32();
-        var sneaking = false;
+        bool sneaking = false, missedSwing = false;
+        _onGround = false;
         for (var i = 0; i < flags; i++)
-            sneaking |= reader.VarInt32() == InputFlagSneaking;
+            switch (reader.VarInt32())
+            {
+                case InputFlagSneaking: sneaking = true; break;
+                case InputFlagMissedSwing: missedSwing = true; break;
+                case InputFlagVerticalCollision: _onGround = true; break;
+                case InputFlagStartFlying: _flying = true; break;
+                case InputFlagStopFlying: _flying = false; break;
+            }
+        if (missedSwing) // PocketMine Player::missSwing: the others see the arm and hear the swing
+        {
+            _server.BroadcastInExcept(World, this, Entities.EntityPackets.Swing(EntityId));
+            _server.BroadcastInExcept(World, this, LevelSound("attack.nodamage", Position.X, Position.Y, Position.Z, -1));
+        }
         if (sneaking && !Sneaking && Riding is not null)
             _server.Vehicles.Dismount(this); // sneaking gets off
         if (sneaking != Sneaking)
@@ -724,9 +737,12 @@ public sealed partial class BedrockConnection
             OnUseItem(ref reader);
         }
         if (reader.Bool())
+        {
+            // Only after a request: these ran for every movement packet, resending open containers 20 times a second.
             Send([.. Inventory.HandleRequest(ref reader, GameMode, DropFromHand)]);
             RefreshEnchantOptions();
             SyncOpenContainer();
+        }
         if (reader.Bool())
         {
             var count = reader.VarUInt32();
@@ -745,15 +761,20 @@ public sealed partial class BedrockConnection
     }
 
     // Player action ids (gophertunnel protocol/player.go).
-    private const int InputFlagSneaking = 8; // gophertunnel packet/player_auth_input.go
+    private const int InputFlagSneaking = 8, InputFlagMissedSwing = 39, InputFlagStartFlying = 42, InputFlagStopFlying = 43,
+        InputFlagVerticalCollision = 50; // gophertunnel packet/player_auth_input.go
+    private bool _onGround, _flying;
 
     /// <summary>Holding sneak: right clicks place against containers and doors instead of using them.</summary>
     public bool Sneaking { get; private set; }
 
     private const int StartBreak = 0, AbortBreak = 1, StopBreak = 2, CreativeDestroyBlock = 13, PredictDestroyBlock = 26,
         ContinueDestroyBlock = 27;
-    private const int LevelEventStartCracking = 3600, LevelEventStopCracking = 3601, LevelEventDestroyParticles = 2001;
+    private const int LevelEventStartCracking = 3600, LevelEventStopCracking = 3601, LevelEventBreakSpeed = 3602,
+        LevelEventDestroyParticles = 2001, LevelEventPunchBlock = 2014;
     private (int X, int Y, int Z)? _breaking;
+    private int _breakFace, _breakFxTicker;
+    private float _breakSpeed, _breakProgress; // per tick, as PocketMine's SurvivalBlockBreakHandler
 
     // As PocketMine (InGamePacketHandler, SurvivalBlockBreakHandler): everyone who sees the block, the breaker included
     // (its client only draws the cracks it is told about), gets the crack speed, once per block: the client also
@@ -768,12 +789,20 @@ public sealed partial class BedrockConnection
             {
                 if (_breaking == (x, y, z))
                     return;
+                if (_breaking is { } previous) // holding the button onto the next block: the old cracks go
+                    _server.BroadcastIn(World, Packets.LevelEvent(LevelEventStopCracking, previous.X, previous.Y, previous.Z, 0));
                 _breaking = (x, y, z);
+                _breakFace = face;
+                _breakFxTicker = 0;
+                _breakProgress = 0;
+                _breakSpeed = 0;
+                if (action == StartBreak && PutOutFire(x, y, z, face))
+                    return;
                 if (GameMode == GameMode.Creative || World.GetBlock(x, y, z) is not { IsAir: false } block)
                     return;
-                var ticks = DropRules.BreakTicks(block, Inventory.Held);
-                if (ticks > 0)
-                    _server.BroadcastIn(World, Packets.LevelEvent(LevelEventStartCracking, x, y, z, 65535 / ticks));
+                _breakSpeed = BreakProgressPerTick(block);
+                if (_breakSpeed is > 0 and < 1)
+                    _server.BroadcastIn(World, Packets.LevelEvent(LevelEventStartCracking, x, y, z, (int)(65535 * _breakSpeed)));
                 break;
             }
             case AbortBreak or StopBreak:
@@ -789,6 +818,103 @@ public sealed partial class BedrockConnection
                 _server.BroadcastIn(World, Packets.LevelEvent(LevelEventStopCracking, x, y, z, 0));
                 BreakBlock(x, y, z);
                 break;
+        }
+    }
+
+    // PocketMine Player::attackBlock: punching the face of a block with fire on it puts the fire out.
+    private bool PutOutFire(int x, int y, int z, int face)
+    {
+        if (face is < 0 or > 5)
+            return false;
+        var (fx, fy, fz) = Side(x, y, z, face);
+        if (World.GetBlock(fx, fy, fz)?.Name is not ("minecraft:fire" or "minecraft:soul_fire") || SpawnProtected(fx, fz))
+            return false;
+        World.SetBlock(fx, fy, fz, Blocks.Air);
+        _server.BroadcastIn(World, Packets.UpdateBlock(fx, fy, fz, Blocks.Air.NetworkId));
+        _server.BroadcastIn(World, LevelSound("extinguish.fire", fx + 0.5f, fy + 0.5f, fz + 0.5f, -1));
+        return true;
+    }
+
+    private static (int X, int Y, int Z) Side(int x, int y, int z, int face) => face switch
+    {
+        0 => (x, y - 1, z),
+        1 => (x, y + 1, z),
+        2 => (x, y, z - 1),
+        3 => (x, y, z + 1),
+        4 => (x - 1, y, z),
+        5 => (x + 1, y, z),
+        _ => throw new InvalidDataException($"Invalid block face {face}."),
+    };
+
+    // PocketMine SurvivalBlockBreakHandler::calculateBreakProgressPerTick: 5 times slower in the air (unless flying)
+    // and with the head under water (unless aqua affinity), haste and mining fatigue.
+    internal float BreakProgressPerTick(BlockType block)
+    {
+        var ticks = (float)DropRules.BreakTicks(block, Inventory.Held);
+        if (ticks <= 0)
+            return 1;
+        // On the ground: the client's collision flag, or a solid block under the feet (in case the flag is missing).
+        if (!_onGround && !_flying && !Entities.BlockPhysics.IsSolid(World.GetBlock((int)MathF.Floor(Position.X),
+                (int)MathF.Floor(Position.Y - EyeHeight - 0.05f), (int)MathF.Floor(Position.Z))))
+            ticks *= 5;
+        if (World.GetBlock((int)MathF.Floor(Position.X), (int)MathF.Floor(Position.Y), (int)MathF.Floor(Position.Z))?.Name.EndsWith("water") == true
+            && Enchanting.Level(Inventory.Armour[0], "aqua_affinity") == 0)
+            ticks *= 5;
+        var progress = 1 / ticks;
+        if (_activeEffects.TryGetValue(EffectType.Haste, out var haste))
+            progress *= (1 + 0.2f * (haste.Amplifier + 1)) * MathF.Pow(1.2f, haste.Amplifier + 1);
+        if (_activeEffects.TryGetValue(EffectType.MiningFatigue, out var fatigue))
+            progress *= MathF.Pow(0.21f, fatigue.Amplifier + 1);
+        return progress;
+    }
+
+    // PocketMine SurvivalBlockBreakHandler::update, every tick while breaking: the crack speed follows the player
+    // (jumping, swimming, effects) and every 5 ticks the others see the punch particles and the arm, and hear it.
+    internal void TickBreaking()
+    {
+        if (_breaking is not { } at || _breakSpeed <= 0)
+            return;
+        var block = World.GetBlock(at.X, at.Y, at.Z);
+        var dx = at.X + 0.5 - Position.X;
+        var dy = at.Y + 0.5 - Position.Y;
+        var dz = at.Z + 0.5 - Position.Z;
+        if (block is not { IsAir: false } || dx * dx + dy * dy + dz * dz > MaxReach * MaxReach)
+        {
+            _breaking = null;
+            _server.BroadcastIn(World, Packets.LevelEvent(LevelEventStopCracking, at.X, at.Y, at.Z, 0));
+            return;
+        }
+        var speed = BreakProgressPerTick(block);
+        if (MathF.Abs(speed - _breakSpeed) > 0.0001f)
+        {
+            _breakSpeed = speed;
+            _server.BroadcastIn(World, Packets.LevelEvent(LevelEventBreakSpeed, at.X, at.Y, at.Z, (int)(65535 * speed)));
+        }
+        _breakProgress += _breakSpeed;
+        if (_breakFxTicker++ % 5 != 0 || _breakProgress >= 1)
+            return;
+        _server.BroadcastInExcept(World, this, Packets.LevelEvent(LevelEventPunchBlock, at.X, at.Y, at.Z, unchecked((int)block.NetworkId) | _breakFace << 24));
+        _server.BroadcastInExcept(World, this, LevelSound("hit", at.X + 0.5f, at.Y + 0.5f, at.Z + 0.5f, unchecked((int)block.NetworkId)));
+        _server.BroadcastInExcept(World, this, Entities.EntityPackets.Swing(EntityId));
+    }
+
+    // LevelSoundEvent: name, position, extra data, entity type, baby, global, actor id, ...
+    private static byte[] LevelSound(string name, float x, float y, float z, int data) =>
+        new BedrockWriter().VarUInt32(123).String(name).Vec3(x, y, z).VarInt32(data)
+            .String("").Bool(false).Bool(false).Int64(-1).Bool(false).ToArray();
+
+    // PocketMine InGamePacketHandler::syncBlocksNearby: after a refused action the client may have predicted more
+    // than one block (the other half of a door, a placed block's neighbours), so the block and its sides are resent.
+    private void ResyncAround(int x, int y, int z)
+    {
+        for (var face = -1; face < 6; face++)
+        {
+            var (bx, by, bz) = face < 0 ? (x, y, z) : Side(x, y, z, face);
+            if (World.GetBlock(bx, by, bz) is not { } block)
+                continue;
+            Send(Packets.UpdateBlock(bx, by, bz, block.NetworkId));
+            if (World.GetBlockEntity(bx, by, bz) is { } entity)
+                Send(BlockEntity.DataPacket(bx, by, bz, entity)); // a sign keeps its text
         }
     }
 
@@ -874,9 +1000,22 @@ public sealed partial class BedrockConnection
         var clickY = 0f;
         if (reader.Remaining > 0) // the short form used by tests stops after the held item
         {
-            clickY = System.Buffers.Binary.BinaryPrimitives.ReadSingleLittleEndian(reader.Bytes(24)[16..]); // player position, clicked position (x, y, z)
+            var positions = reader.Bytes(24); // player position, clicked position (x, y, z)
+            clickY = System.Buffers.Binary.BinaryPrimitives.ReadSingleLittleEndian(positions[16..]);
             reader.VarUInt32(); // clicked block runtime id
             reader.Bytes(2); // client prediction, cooldown state
+            // PocketMine's "client spam bug" filter: holding right click on a block resends the very same click
+            // (same block, face, player and click positions) within 100 ms; acting on it toggled doors twice.
+            if (action == clickBlock)
+            {
+                var now = Environment.TickCount64;
+                var spam = now - _lastClickAt < 100 && _lastClick == (bx, by, bz, face) && positions.SequenceEqual(_lastClickPositions);
+                _lastClickAt = now;
+                _lastClick = (bx, by, bz, face);
+                positions.CopyTo(_lastClickPositions);
+                if (spam)
+                    return;
+            }
         }
 
         if (action == clickAir)
@@ -931,18 +1070,13 @@ public sealed partial class BedrockConnection
             return; // not placing a block: interaction only
         // Clicking a replaceable block (tall grass, a thin snow layer...) puts the new block in its place, as the client
         // predicts it: placing next to it left a second, ghost block on the client.
-        var (px, py, pz) = World.GetBlock(bx, by, bz) is { IsAir: false } target && IsReplaceable(target) ? (bx, by, bz) : face switch
-        {
-            0 => (bx, by - 1, bz),
-            1 => (bx, by + 1, bz),
-            2 => (bx, by, bz - 1),
-            3 => (bx, by, bz + 1),
-            4 => (bx - 1, by, bz),
-            5 => (bx + 1, by, bz),
-            _ => throw new InvalidDataException($"Invalid block face {face}."),
-        };
+        var (px, py, pz) = World.GetBlock(bx, by, bz) is { IsAir: false } target && IsReplaceable(target) ? (bx, by, bz) : Side(bx, by, bz, face);
         PlaceBlock(px, py, pz, heldBlock, face, clickY - MathF.Floor(clickY));
     }
+
+    private long _lastClickAt;
+    private (int, int, int, byte) _lastClick;
+    private readonly byte[] _lastClickPositions = new byte[24];
 
     private static short BinaryPrimitivesReadInt16(ref BedrockReader reader) =>
         System.Buffers.Binary.BinaryPrimitives.ReadInt16LittleEndian(reader.Bytes(2));
@@ -1007,8 +1141,7 @@ public sealed partial class BedrockConnection
             || survival && PlacedBlock(held)?.Name != block.Name
             || !_server.Events.OnPlace(new BlockEvent(this, x, y, z, block))) // survival: the block must really be in hand
         {
-            if (current is not null)
-                Send(Packets.UpdateBlock(x, y, z, current.NetworkId));
+            ResyncAround(x, y, z);
             if (survival)
                 Send(InventoryPackets.InventorySlot(InventoryPackets.WindowInventory, Inventory.SelectedSlot, held));
             return;
@@ -1018,7 +1151,7 @@ public sealed partial class BedrockConnection
         // Like Dragonfly, a solid block cannot go where a player stands (no room for the door top either).
         if (parts.Count == 0 || parts.Any(p => Entities.BlockPhysics.IsSolid(p.Block) && OccupiedByPlayer(p.X, p.Y, p.Z)))
         {
-            Send(Packets.UpdateBlock(x, y, z, current.NetworkId)); // undo the client's prediction
+            ResyncAround(x, y, z); // undo the client's prediction
             if (survival)
                 Send(InventoryPackets.InventorySlot(InventoryPackets.WindowInventory, Inventory.SelectedSlot, held));
             return;
@@ -1074,9 +1207,7 @@ public sealed partial class BedrockConnection
         allowed = allowed && _server.Events.OnBreak(breakEvent);
         if (!allowed)
         {
-            // Undo the client's prediction.
-            if (current is not null)
-                Send(Packets.UpdateBlock(x, y, z, current.NetworkId));
+            ResyncAround(x, y, z); // undo the client's prediction
             return;
         }
         // Containers spill their contents (in every game mode, like vanilla) and close for their viewers.
@@ -1110,8 +1241,7 @@ public sealed partial class BedrockConnection
         _server.BroadcastInExcept(World, this, Packets.LevelEvent(LevelEventDestroyParticles, x, y, z, unchecked((int)current!.NetworkId)));
         if (GameMode == GameMode.Creative) // a creative client shows neither particles nor sound for an instant break
             Send(Packets.LevelEvent(LevelEventDestroyParticles, x, y, z, unchecked((int)current.NetworkId)),
-                new BedrockWriter().VarUInt32(123).String("break").Vec3(x + 0.5f, y + 0.5f, z + 0.5f).VarInt32(unchecked((int)current.NetworkId))
-                    .String("").Bool(false).Bool(false).Int64(-1).Bool(false).ToArray());
+                LevelSound("break", x + 0.5f, y + 0.5f, z + 0.5f, unchecked((int)current.NetworkId)));
         if (GameMode != GameMode.Survival)
             return;
         // Tools wear out on blocks that are not broken instantly (swords twice as fast).

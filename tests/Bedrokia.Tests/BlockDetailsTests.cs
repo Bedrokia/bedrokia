@@ -108,4 +108,14 @@ public class BlockDetailsTests
         Assert.Equal(0, bat.Flags & EntityPackets.FlagGravity);
         Assert.NotEqual(0, cow.Flags & EntityPackets.FlagGravity);
     }
+
+    [Fact]
+    public void Breaking_in_the_air_is_five_times_slower_as_in_PocketMine()
+    {
+        var (_, player) = Arena();
+        var dirt = Blocks.ByName("dirt")!;
+        var onGround = player.BreakProgressPerTick(dirt);
+        player.Position = (8f, Floor + 3 + BedrockConnection.EyeHeight, 2f); // jumping: air under the feet
+        Assert.Equal(onGround / 5, player.BreakProgressPerTick(dirt), 5);
+    }
 }

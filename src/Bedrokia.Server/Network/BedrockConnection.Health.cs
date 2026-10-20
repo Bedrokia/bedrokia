@@ -517,6 +517,7 @@ public sealed partial class BedrockConnection
             PruneExpiredForms(_server.CurrentTick);
         TickPortal();
         TickEffects();
+        TickBreaking();
 
         if (Dead || GameMode == GameMode.Creative)
             return;
