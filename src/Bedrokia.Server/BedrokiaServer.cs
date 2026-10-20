@@ -538,8 +538,10 @@ public sealed partial class BedrokiaServer
                     var item = candidateItems[i];
                     if (CurrentTick - item.SpawnTick < item.PickupDelay)
                         continue; // just dropped: not yet (the player who threw it would take it back at once)
-                    if (Math.Abs(player.Position.X - item.X) >= 1.5 || Math.Abs(player.Position.Z - item.Z) >= 1.5
-                        || Math.Abs(player.Position.Y - 1.62 - item.Y) >= 2)
+                    // Dragonfly checkNearby: the item's box (0.25) grown by 1 sideways and 0.5 up/down touches the player's (0.6 x 1.8).
+                    var feet = player.Position.Y - BedrockConnection.EyeHeight;
+                    if (Math.Abs(player.Position.X - item.X) >= 1.425 || Math.Abs(player.Position.Z - item.Z) >= 1.425
+                        || item.Y - 0.5 >= feet + 1.8 || item.Y + 0.75 <= feet)
                         continue;
                     var stack = item.Stack;
                     if (Events.HasPlayerPickupItem)

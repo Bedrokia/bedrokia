@@ -735,13 +735,13 @@ public sealed partial class BedrockConnection
         }
     }
 
-    // Thrown from the eyes in the look direction, like vanilla (Dragonfly player.Drop).
+    // Dragonfly player.Drop: from 1.4 above the feet, at 0.4 in the look direction, picked up after 2 s.
     private void DropFromHand(ItemStack stack)
     {
         var yaw = Yaw * MathF.PI / 180;
         var pitch = Pitch * MathF.PI / 180;
-        var velocity = (-MathF.Sin(yaw) * MathF.Cos(pitch) * 0.3f, -MathF.Sin(pitch) * 0.3f + 0.1f, MathF.Cos(yaw) * MathF.Cos(pitch) * 0.3f);
-        _server.DropItem(stack, Position.X, Position.Y - 0.3f, Position.Z, velocity, pickupDelay: 40, world: World);
+        var velocity = (-MathF.Sin(yaw) * MathF.Cos(pitch) * 0.4f, -MathF.Sin(pitch) * 0.4f, MathF.Cos(yaw) * MathF.Cos(pitch) * 0.4f);
+        _server.DropItem(stack, Position.X, Position.Y - EyeHeight + 1.4f, Position.Z, velocity, pickupDelay: 40, world: World);
     }
 
     // Player action ids (gophertunnel protocol/player.go).
