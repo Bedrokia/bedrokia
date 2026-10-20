@@ -169,6 +169,7 @@ public static class Packets
         .String(address)
         .UInt16(port)
         .Bool(false) // reload the world: false keeps the loading screen short
+        .Bool(false) // no gathering join info (optional)
         .ToArray();
 
     public static byte[] Disconnect(int reason, string message) => Begin(PacketId.Disconnect)
