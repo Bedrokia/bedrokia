@@ -17,10 +17,22 @@ using Bedrokia.Server.Network;
 
 namespace Bedrokia.Server.Entities;
 
+/// <summary>How a mob moves: walks, swims (fish, squids, guardians...) or flies (bats, ghasts, phantoms...).</summary>
+public enum MobMovement
+{
+    Ground,
+    Swim,
+    Fly,
+}
+
 /// <summary>A kind of mob with its vanilla (Bedrock) size, health, speed and loot.</summary>
 public sealed record MobKind(string Id, float Width, float Height, float MaxHealth, double Speed, bool Hostile, float Damage,
-    (string Item, int Min, int Max)[] Loot, bool BurnsInDaylight = false, bool Neutral = false)
+    (string Item, int Min, int Max)[] Loot, bool BurnsInDaylight = false, bool Neutral = false,
+    MobMovement Movement = MobMovement.Ground)
 {
+    /// <summary>A swimmer that also walks on land (drowned, axolotls).</summary>
+    public bool Amphibious => Id is "minecraft:drowned" or "minecraft:axolotl";
+
     /// <summary>Attacks players on sight (hostile and not neutral). Neutral mobs only attack the player who hit them.</summary>
     public bool Aggressive => Hostile && !Neutral;
 
@@ -37,26 +49,27 @@ public sealed record MobKind(string Id, float Width, float Height, float MaxHeal
     public static readonly MobKind Wolf = new("minecraft:wolf", 0.6f, 0.85f, 8, 0.3, false, 2, [], Neutral: true);
     public static readonly MobKind Cat = new("minecraft:cat", 0.6f, 0.7f, 10, 0.3, false, 0, [("string", 0, 2)]);
     public static readonly MobKind Ocelot = new("minecraft:ocelot", 0.6f, 0.7f, 10, 0.3, false, 0, []);
-    public static readonly MobKind Parrot = new("minecraft:parrot", 0.5f, 0.9f, 6, 0.2, false, 0, [("feather", 1, 2)]);
-    public static readonly MobKind Bat = new("minecraft:bat", 0.5f, 0.9f, 6, 0.25, false, 0, []);
+    public static readonly MobKind Parrot = new("minecraft:parrot", 0.5f, 0.9f, 6, 0.2, false, 0, [("feather", 1, 2)], Movement: MobMovement.Fly);
+    public static readonly MobKind Bat = new("minecraft:bat", 0.5f, 0.9f, 6, 0.25, false, 0, [], Movement: MobMovement.Fly);
     public static readonly MobKind Mooshroom = new("minecraft:mooshroom", 0.9f, 1.3f, 10, 0.2, false, 0, [("beef", 1, 3), ("leather", 0, 2)]);
-    public static readonly MobKind SquidGlow = new("minecraft:glow_squid", 0.8f, 0.8f, 10, 0.2, false, 0, [("glow_ink_sac", 1, 3)]);
-    public static readonly MobKind Squid = new("minecraft:squid", 0.8f, 0.8f, 10, 0.2, false, 0, [("ink_sac", 1, 3)]);
-    public static readonly MobKind Cod = new("minecraft:cod", 0.5f, 0.3f, 3, 0.2, false, 0, [("cod", 1, 1)]);
-    public static readonly MobKind Salmon = new("minecraft:salmon", 0.7f, 0.4f, 3, 0.2, false, 0, [("salmon", 1, 1)]);
-    public static readonly MobKind TropicalFish = new("minecraft:tropicalfish", 0.5f, 0.4f, 3, 0.2, false, 0, [("tropical_fish", 1, 1)]);
-    public static readonly MobKind Pufferfish = new("minecraft:pufferfish", 0.7f, 0.7f, 3, 0.2, false, 0, [("pufferfish", 1, 1)]);
+    public static readonly MobKind SquidGlow = new("minecraft:glow_squid", 0.8f, 0.8f, 10, 0.2, false, 0, [("glow_ink_sac", 1, 3)], Movement: MobMovement.Swim);
+    public static readonly MobKind Squid = new("minecraft:squid", 0.8f, 0.8f, 10, 0.2, false, 0, [("ink_sac", 1, 3)], Movement: MobMovement.Swim);
+    public static readonly MobKind Cod = new("minecraft:cod", 0.5f, 0.3f, 3, 0.2, false, 0, [("cod", 1, 1)], Movement: MobMovement.Swim);
+    public static readonly MobKind Salmon = new("minecraft:salmon", 0.7f, 0.4f, 3, 0.2, false, 0, [("salmon", 1, 1)], Movement: MobMovement.Swim);
+    public static readonly MobKind TropicalFish = new("minecraft:tropicalfish", 0.5f, 0.4f, 3, 0.2, false, 0, [("tropical_fish", 1, 1)], Movement: MobMovement.Swim);
+    public static readonly MobKind Pufferfish = new("minecraft:pufferfish", 0.7f, 0.7f, 3, 0.2, false, 0, [("pufferfish", 1, 1)], Movement: MobMovement.Swim);
+    public static readonly MobKind Dolphin = new("minecraft:dolphin", 0.9f, 0.6f, 10, 0.4, false, 3, [("cod", 0, 1)], Neutral: true, Movement: MobMovement.Swim);
     public static readonly MobKind Turtle = new("minecraft:turtle", 1.2f, 0.4f, 30, 0.1, false, 0, [("seagrass", 0, 2)]);
     public static readonly MobKind Panda = new("minecraft:panda", 1.3f, 1.25f, 20, 0.15, false, 6, [("bamboo", 0, 2)], Neutral: true);
     public static readonly MobKind PolarBear = new("minecraft:polar_bear", 1.3f, 1.4f, 30, 0.25, false, 6, [("cod", 0, 2), ("salmon", 0, 2)], Neutral: true);
     public static readonly MobKind Fox = new("minecraft:fox", 0.6f, 0.7f, 10, 0.3, false, 2, []);
-    public static readonly MobKind Bee = new("minecraft:bee", 0.7f, 0.6f, 10, 0.3, false, 2, [("honeycomb", 1, 3)], Neutral: true);
+    public static readonly MobKind Bee = new("minecraft:bee", 0.7f, 0.6f, 10, 0.3, false, 2, [("honeycomb", 1, 3)], Neutral: true, Movement: MobMovement.Fly);
     public static readonly MobKind Strider = new("minecraft:strider", 0.9f, 1.7f, 20, 0.16, false, 0, [("string", 2, 5)]);
-    public static readonly MobKind Axolotl = new("minecraft:axolotl", 0.75f, 0.42f, 14, 0.2, false, 2, []);
+    public static readonly MobKind Axolotl = new("minecraft:axolotl", 0.75f, 0.42f, 14, 0.2, false, 2, [], Movement: MobMovement.Swim);
     public static readonly MobKind Goat = new("minecraft:goat", 0.9f, 1.3f, 10, 0.25, false, 2, [("mutton", 1, 2)], Neutral: true);
     public static readonly MobKind Frog = new("minecraft:frog", 0.5f, 0.5f, 10, 0.2, false, 0, []);
     public static readonly MobKind Tadpole = new("minecraft:tadpole", 0.4f, 0.3f, 6, 0.2, false, 0, []);
-    public static readonly MobKind Allay = new("minecraft:allay", 0.35f, 0.6f, 20, 0.25, false, 0, []);
+    public static readonly MobKind Allay = new("minecraft:allay", 0.35f, 0.6f, 20, 0.25, false, 0, [], Movement: MobMovement.Fly);
     public static readonly MobKind Camel = new("minecraft:camel", 1.7f, 2.375f, 32, 0.09, false, 0, []);
     public static readonly MobKind Sniffer = new("minecraft:sniffer", 1.9f, 1.75f, 14, 0.1, false, 0, []);
     
@@ -72,7 +85,7 @@ public sealed record MobKind(string Id, float Width, float Height, float MaxHeal
     // Monstres hostiles - Overworld
     public static readonly MobKind Zombie = new("minecraft:zombie", 0.6f, 1.9f, 20, 0.23, true, 3, [("rotten_flesh", 0, 2)], BurnsInDaylight: true);
     public static readonly MobKind Husk = new("minecraft:husk", 0.6f, 1.9f, 20, 0.23, true, 3, [("rotten_flesh", 0, 2)], BurnsInDaylight: false);
-    public static readonly MobKind Drowned = new("minecraft:drowned", 0.6f, 1.95f, 20, 0.23, true, 3, [("rotten_flesh", 0, 2), ("copper_ingot", 0, 1)]);
+    public static readonly MobKind Drowned = new("minecraft:drowned", 0.6f, 1.95f, 20, 0.23, true, 3, [("rotten_flesh", 0, 2), ("copper_ingot", 0, 1)], Movement: MobMovement.Swim);
     public static readonly MobKind Skeleton = new("minecraft:skeleton", 0.6f, 1.99f, 20, 0.25, true, 3, [("bone", 0, 2), ("arrow", 0, 2)], BurnsInDaylight: true);
     public static readonly MobKind Stray = new("minecraft:stray", 0.6f, 1.99f, 20, 0.25, true, 3, [("bone", 0, 2), ("arrow", 0, 2)], BurnsInDaylight: true);
     public static readonly MobKind Creeper = new("minecraft:creeper", 0.6f, 1.7f, 20, 0.2, true, 0, [("gunpowder", 0, 2)]);
@@ -81,35 +94,35 @@ public sealed record MobKind(string Id, float Width, float Height, float MaxHeal
     public static readonly MobKind Enderman = new("minecraft:enderman", 0.6f, 2.9f, 40, 0.3, true, 7, [("ender_pearl", 0, 1)], Neutral: true);
     public static readonly MobKind Witch = new("minecraft:witch", 0.6f, 1.95f, 26, 0.25, true, 0, [("glowstone_dust", 0, 2), ("sugar", 0, 2), ("redstone", 0, 2), ("spider_eye", 0, 2)]);
     public static readonly MobKind Slime = new("minecraft:slime", 2.04f, 2.04f, 16, 0.2, true, 4, [("slime_ball", 0, 2)]);
-    public static readonly MobKind Phantom = new("minecraft:phantom", 0.9f, 0.5f, 20, 0.2, true, 2, [("phantom_membrane", 0, 1)]);
+    public static readonly MobKind Phantom = new("minecraft:phantom", 0.9f, 0.5f, 20, 0.2, true, 2, [("phantom_membrane", 0, 1)], BurnsInDaylight: true, Movement: MobMovement.Fly);
     public static readonly MobKind Silverfish = new("minecraft:silverfish", 0.4f, 0.3f, 8, 0.25, true, 1, []);
     public static readonly MobKind Endermite = new("minecraft:endermite", 0.4f, 0.3f, 8, 0.25, true, 2, []);
-    public static readonly MobKind Guardian = new("minecraft:guardian", 0.85f, 0.85f, 30, 0.2, true, 6, [("prismarine_shard", 0, 2), ("prismarine_crystals", 0, 1), ("cod", 0, 1)]);
-    public static readonly MobKind ElderGuardian = new("minecraft:elder_guardian", 1.9975f, 1.9975f, 80, 0.2, true, 8, [("prismarine_shard", 0, 2), ("prismarine_crystals", 0, 1), ("cod", 0, 1)]);
+    public static readonly MobKind Guardian = new("minecraft:guardian", 0.85f, 0.85f, 30, 0.2, true, 6, [("prismarine_shard", 0, 2), ("prismarine_crystals", 0, 1), ("cod", 0, 1)], Movement: MobMovement.Swim);
+    public static readonly MobKind ElderGuardian = new("minecraft:elder_guardian", 1.9975f, 1.9975f, 80, 0.2, true, 8, [("prismarine_shard", 0, 2), ("prismarine_crystals", 0, 1), ("cod", 0, 1)], Movement: MobMovement.Swim);
     public static readonly MobKind Shulker = new("minecraft:shulker", 1.0f, 1.0f, 30, 0.0, true, 4, [("shulker_shell", 0, 1)]);
     public static readonly MobKind Vindicator = new("minecraft:vindicator", 0.6f, 1.95f, 24, 0.35, true, 5, [("emerald", 0, 1)]);
     public static readonly MobKind Evoker = new("minecraft:evoker", 0.6f, 1.95f, 24, 0.2, true, 6, [("totem_of_undying", 1, 1), ("emerald", 0, 1)]);
     public static readonly MobKind Pillager = new("minecraft:pillager", 0.6f, 1.95f, 24, 0.35, true, 5, [("arrow", 0, 2)]);
     public static readonly MobKind Ravager = new("minecraft:ravager", 1.95f, 2.2f, 100, 0.3, true, 12, [("saddle", 1, 1)]);
-    public static readonly MobKind Vex = new("minecraft:vex", 0.4f, 0.8f, 14, 0.4, true, 3, []);
+    public static readonly MobKind Vex = new("minecraft:vex", 0.4f, 0.8f, 14, 0.4, true, 3, [], Movement: MobMovement.Fly);
     public static readonly MobKind Warden = new("minecraft:warden", 0.9f, 2.9f, 500, 0.3, true, 30, [("sculk_catalyst", 1, 1)]);
     
     // Monstres hostiles - Nether
-    public static readonly MobKind Ghast = new("minecraft:ghast", 4.0f, 4.0f, 10, 0.2, true, 0, [("ghast_tear", 0, 1), ("gunpowder", 0, 2)]);
+    public static readonly MobKind Ghast = new("minecraft:ghast", 4.0f, 4.0f, 10, 0.2, true, 0, [("ghast_tear", 0, 1), ("gunpowder", 0, 2)], Movement: MobMovement.Fly);
     public static readonly MobKind ZombiePigman = new("minecraft:zombie_pigman", 0.6f, 1.95f, 20, 0.23, true, 5, [("rotten_flesh", 0, 1), ("gold_nugget", 0, 1), ("gold_ingot", 0, 1)], Neutral: true);
     public static readonly MobKind Piglin = new("minecraft:piglin", 0.6f, 1.95f, 16, 0.35, true, 5, [("porkchop", 1, 3)]);
     public static readonly MobKind PiglinBrute = new("minecraft:piglin_brute", 0.6f, 1.95f, 50, 0.35, true, 7, []);
     public static readonly MobKind Hoglin = new("minecraft:hoglin", 1.4f, 1.4f, 40, 0.3, true, 6, [("porkchop", 2, 4), ("leather", 0, 1)]);
     public static readonly MobKind Zoglin = new("minecraft:zoglin", 1.4f, 1.4f, 40, 0.3, true, 6, [("rotten_flesh", 1, 3)]);
-    public static readonly MobKind Blaze = new("minecraft:blaze", 0.6f, 1.8f, 20, 0.23, true, 6, [("blaze_rod", 0, 1)]);
+    public static readonly MobKind Blaze = new("minecraft:blaze", 0.6f, 1.8f, 20, 0.23, true, 6, [("blaze_rod", 0, 1)], Movement: MobMovement.Fly);
     public static readonly MobKind MagmaCube = new("minecraft:magma_cube", 2.04f, 2.04f, 16, 0.2, true, 6, [("magma_cream", 0, 1)]);
     public static readonly MobKind WitherSkeleton = new("minecraft:wither_skeleton", 0.7f, 2.4f, 20, 0.25, true, 8, [("coal", 0, 1), ("bone", 0, 2), ("wither_skeleton_skull", 0, 1)]);
     
     // Monstres hostiles - End
-    public static readonly MobKind EnderDragon = new("minecraft:ender_dragon", 16.0f, 8.0f, 200, 0.2, true, 10, [("dragon_egg", 1, 1)]);
+    public static readonly MobKind EnderDragon = new("minecraft:ender_dragon", 16.0f, 8.0f, 200, 0.2, true, 10, [("dragon_egg", 1, 1)], Movement: MobMovement.Fly);
     
     // Boss
-    public static readonly MobKind Wither = new("minecraft:wither", 0.9f, 3.5f, 300, 0.25, true, 8, [("nether_star", 1, 1)]);
+    public static readonly MobKind Wither = new("minecraft:wither", 0.9f, 3.5f, 300, 0.25, true, 8, [("nether_star", 1, 1)], Movement: MobMovement.Fly);
 
     public static readonly MobKind[] Passive = [Cow, Pig, Sheep, Chicken, Rabbit, Horse, Donkey, Llama, Mooshroom, Panda, Fox, Bee, Goat, Camel];
     public static readonly MobKind[] HostileKinds = [Zombie, Zombie, Skeleton, Skeleton, Creeper, Spider, Enderman, Witch, Phantom, Husk, Drowned, Stray, CaveSpider];
@@ -121,7 +134,7 @@ public sealed record MobKind(string Id, float Width, float Height, float MaxHeal
         ["horse"] = Horse, ["donkey"] = Donkey, ["mule"] = Mule, ["llama"] = Llama,
         ["wolf"] = Wolf, ["cat"] = Cat, ["ocelot"] = Ocelot, ["parrot"] = Parrot, ["bat"] = Bat,
         ["mooshroom"] = Mooshroom, ["glow_squid"] = SquidGlow, ["squid"] = Squid,
-        ["cod"] = Cod, ["salmon"] = Salmon, ["tropical_fish"] = TropicalFish, ["pufferfish"] = Pufferfish,
+        ["cod"] = Cod, ["salmon"] = Salmon, ["tropical_fish"] = TropicalFish, ["pufferfish"] = Pufferfish, ["dolphin"] = Dolphin,
         ["turtle"] = Turtle, ["panda"] = Panda, ["polar_bear"] = PolarBear, ["fox"] = Fox,
         ["bee"] = Bee, ["strider"] = Strider, ["axolotl"] = Axolotl, ["goat"] = Goat,
         ["frog"] = Frog, ["tadpole"] = Tadpole, ["allay"] = Allay, ["camel"] = Camel, ["sniffer"] = Sniffer,
@@ -180,6 +193,9 @@ public sealed class Mob(long entityId, MobKind kind, double x, double y, double 
     internal (double X, double Z)? WanderTarget;
     internal (double X, double Z)? FleeFrom;
     internal List<(int X, int Y, int Z)>? Path;
+    internal (double X, double Y, double Z)? FlyTarget; // flyers and swimmers: where they head
+    internal int SwoopTicks, Burst, DryTicks;
+    internal double CircleAngle;
     internal int PathIndex;
     internal (int X, int Y, int Z) PathGoal;
     internal bool Burning;
@@ -219,7 +235,7 @@ public sealed class Mob(long entityId, MobKind kind, double x, double y, double 
 /// </remarks>
 public sealed class MobManager(BedrokiaServer server)
 {
-    public const int ViewDistance = 80, DespawnDistance = 128, PassiveCap = 12, HostileCap = 18;
+    public const int ViewDistance = 80, DespawnDistance = 128, PassiveCap = 12, HostileCap = 18, WaterCap = 8, AmbientCap = 4;
     private const int ActiveRange = 64, AdultAgeTicks = 24000, BreedCooldownTicks = 6000, LoveTicks = 600, AngerTicks = 600;
     private const int MaxPathNodes = 600;
 
@@ -282,7 +298,7 @@ public sealed class MobManager(BedrokiaServer server)
         {
             Yaw = _random.Next(360),
             World = world ?? server.World,
-            Persistent = !kind.Hostile,
+            Persistent = !kind.Hostile && kind.Movement == MobMovement.Ground,
             EggTicks = 6000 + _random.Next(6000),
         };
         if (kind == MobKind.Sheep)
@@ -410,20 +426,35 @@ public sealed class MobManager(BedrokiaServer server)
         var night = overworld && time is > 13000 and < 23000;
         foreach (var player in players)
         {
-            int passive = 0, hostile = 0;
+            int passive = 0, hostile = 0, water = 0, ambient = 0, phantoms = 0;
             foreach (var m in _mobs)
             {
                 if (m.World != world || Distance2(m, player) >= ActiveRange * ActiveRange)
                     continue;
                 if (m.Kind.Hostile)
                     hostile++;
+                else if (m.Kind == MobKind.Bat)
+                    ambient++;
+                else if (m.Kind.Movement == MobMovement.Swim)
+                    water++;
                 else
                     passive++;
+                if (m.Kind == MobKind.Phantom)
+                    phantoms++;
             }
             if (overworld && config.SpawnAnimals && passive < PassiveCap && _random.Next(4) == 0)
                 TrySpawnAnimals(world, player);
+            if (overworld && config.SpawnAnimals && water < WaterCap && _random.Next(2) == 0)
+                TrySpawnWater(world, player);
+            if (overworld && config.SpawnAnimals && ambient < AmbientCap && _random.Next(4) == 0)
+                TrySpawnBat(world, player);
             if (config.SpawnMonsters && config.Difficulty != Difficulty.Peaceful && hostile < HostileCap)
+            {
                 TrySpawnMonsters(world, player, night);
+                // Phantoms: at night after three days, above a player under the open sky.
+                if (night && world.Time >= 72000 && phantoms < 3 && _random.Next(60) == 0)
+                    TrySpawnPhantoms(world, player);
+            }
         }
     }
 
@@ -546,6 +577,16 @@ public sealed class MobManager(BedrokiaServer server)
         var nether = world.Dimension == 1;
         var (x, z) = RandomColumn(player);
         var biome = BiomeAt(world, x, z);
+        if (nether && Tagged(biome, "spawn_ghast") && _random.Next(20) == 0)
+        {
+            TrySpawnGhast(world, player, x, z);
+            return;
+        }
+        if (!nether && (Tagged(biome, "ocean") || Tagged(biome, "river")) && _random.Next(Tagged(biome, "river") ? 2 : 4) == 0)
+        {
+            TrySpawnDrowned(world, player, x, z, night);
+            return;
+        }
         if (Pick(MonstersOf(biome, nether)) is not { } kind)
             return;
         var feet = (int)Math.Floor(player.Position.Y - BedrockConnection.EyeHeight);
@@ -695,6 +736,16 @@ public sealed class MobManager(BedrokiaServer server)
         var speed = mob.Kind.Speed * 0.45;
         var world = mob.World!;
         var day = world.Dimension == 0 && world.Time % 24000 is < 12500 or > 23500;
+        if (mob.Kind.Movement == MobMovement.Fly)
+        {
+            ThinkFlying(mob, player, distance, speed, day);
+            return;
+        }
+        if (mob.Kind.Movement == MobMovement.Swim && (InWater(mob) || !mob.Kind.Amphibious))
+        {
+            ThinkSwimming(mob, player, distance, speed, day);
+            return;
+        }
 
         var target = Target(mob, player, distance, day);
         if (target is not null)
@@ -710,8 +761,7 @@ public sealed class MobManager(BedrokiaServer server)
                 {
                     mob.AttackCooldown = 40;
                     Broadcast(mob, EntityPackets.Swing(mob.EntityId));
-                    if (_random.NextDouble() < 0.7)
-                        Hit(mob, target, Scaled(2 + _random.Next(3)));
+                    ShootArrow(mob, target);
                 }
             }
             else if (mob.Kind == MobKind.Creeper)
@@ -1000,6 +1050,356 @@ public sealed class MobManager(BedrokiaServer server)
         return drop;
     }
 
+    // --- Ranged attacks ---
+
+    // A real arrow with vanilla's aim (a third of the target's height), arc (+20 % of the distance) and spread (less in hard).
+    private void ShootArrow(Mob mob, BedrockConnection target)
+    {
+        var from = new System.Numerics.Vector3((float)mob.X, (float)(mob.Y + mob.Height * 0.85), (float)mob.Z);
+        float dx = target.Position.X - from.X, dz = target.Position.Z - from.Z;
+        var dy = target.Position.Y - BedrockConnection.EyeHeight + 0.6f - from.Y; // a third of the height: the arc lifts it to the chest
+        var horizontal = MathF.Sqrt(dx * dx + dz * dz);
+        var direction = System.Numerics.Vector3.Normalize(new(dx, dy + horizontal * 0.2f, dz));
+        var spread = 0.0075f * (14 - 4 * (int)server.Config.Difficulty);
+        direction += new System.Numerics.Vector3(Gaussian(), Gaussian(), Gaussian()) * spread;
+        server.Projectiles.Shoot(mob, ProjectileManager.Arrow, from + direction * 0.5f, direction * 1.6f, Scaled(2 + _random.Next(3)));
+        server.PlaySound("random.bow", mob.X, mob.Y, mob.Z, mob.World);
+    }
+
+    private void ShootFireball(Mob mob, BedrockConnection target, string identifier, float speed, float damage, float spread)
+    {
+        var from = new System.Numerics.Vector3((float)mob.X, (float)(mob.Y + mob.Height / 2), (float)mob.Z);
+        var to = new System.Numerics.Vector3(target.Position.X, target.Position.Y - 0.6f, target.Position.Z);
+        var direction = System.Numerics.Vector3.Normalize(to - from)
+                        + new System.Numerics.Vector3(Gaussian(), Gaussian(), Gaussian()) * spread;
+        direction = System.Numerics.Vector3.Normalize(direction);
+        server.Projectiles.Shoot(mob, identifier, from + direction * (mob.Width / 2 + 0.6f), direction * speed, damage);
+        server.PlaySound(identifier == ProjectileManager.Fireball ? "mob.ghast.fireball" : "mob.blaze.shoot", mob.X, mob.Y, mob.Z, mob.World);
+    }
+
+    private float Gaussian() => (float)(_random.NextDouble() + _random.NextDouble() + _random.NextDouble() - 1.5);
+
+    // --- Flying mobs: bats, phantoms, ghasts, blazes, bees, allays, vexes ---
+
+    private void ThinkFlying(Mob mob, BedrockConnection? player, double distance, double speed, bool day)
+    {
+        var survival = player is not null && player.GameMode is not (GameMode.Creative or GameMode.Spectator) && !player.Dead;
+        if (mob.Kind == MobKind.Bat)
+        {
+            // Erratic flight in caves.
+            if (mob.FlyTarget is null || _random.Next(30) == 0 || Reached(mob, mob.FlyTarget.Value))
+                mob.FlyTarget = RandomAir(mob, 6, 3);
+            if (mob.FlyTarget is { } bat)
+                HeadTo(mob, bat.X, bat.Y, bat.Z, 0.12);
+            return;
+        }
+        if (mob.Kind == MobKind.Phantom)
+        {
+            ThinkPhantom(mob, survival && distance < 64 && SkyAccess(mob.World!, (int)Math.Floor(player!.Position.X),
+                (int)Math.Floor(player.Position.Y), (int)Math.Floor(player.Position.Z)) ? player : null);
+            return;
+        }
+        if (mob.Kind == MobKind.Ghast)
+        {
+            if (survival && distance < 64 && LineOfSight(mob, player!))
+            {
+                Look(mob, player!.Position.X, player.Position.Z);
+                if (mob.AttackCooldown == 0)
+                {
+                    mob.AttackCooldown = 60;
+                    ShootFireball(mob, player, ProjectileManager.Fireball, 0.9f, 6, 0.02f);
+                }
+            }
+            if (mob.FlyTarget is null || _random.Next(80) == 0 || Reached(mob, mob.FlyTarget.Value))
+                mob.FlyTarget = RandomAir(mob, 16, 6);
+            if (mob.FlyTarget is { } ghast)
+                HeadTo(mob, ghast.X, ghast.Y, ghast.Z, 0.05, look: !(survival && distance < 64));
+            return;
+        }
+
+        var target = Target(mob, player, distance, day);
+        if (target is not null)
+        {
+            var feet = target.Position.Y - BedrockConnection.EyeHeight;
+            var dist = Math.Sqrt(Distance2(mob, target));
+            if (mob.Kind == MobKind.Blaze)
+            {
+                // Hovers two blocks above the player's feet and fires three small fireballs every five seconds.
+                if (dist > 6)
+                    HeadTo(mob, target.Position.X, feet + 2, target.Position.Z, speed);
+                else
+                {
+                    HeadTo(mob, mob.X, feet + 2, mob.Z, speed * 0.5, look: false);
+                    Look(mob, target.Position.X, target.Position.Z);
+                }
+                if (mob.AttackCooldown == 0 && LineOfSight(mob, target))
+                {
+                    if (mob.Burst == 0)
+                        mob.Burst = 3;
+                    ShootFireball(mob, target, ProjectileManager.SmallFireball, 0.8f, Scaled(5), 0.08f);
+                    mob.AttackCooldown = --mob.Burst > 0 ? 6 : 100;
+                }
+                return;
+            }
+            HeadTo(mob, target.Position.X, target.Position.Y - 0.6, target.Position.Z, speed * 1.4);
+            if (dist < 1.2 + mob.Width && mob.AttackCooldown == 0)
+            {
+                mob.AttackCooldown = 20;
+                Hit(mob, target, Scaled(mob.Kind.Damage));
+            }
+            return;
+        }
+        // Bees, allays, parrots...: hover around, close to the ground.
+        if (mob.FlyTarget is null || _random.Next(60) == 0 || Reached(mob, mob.FlyTarget.Value))
+            mob.FlyTarget = RandomAir(mob, 8, 2);
+        if (mob.FlyTarget is { } around)
+            HeadTo(mob, around.X, around.Y, around.Z, speed * 0.6);
+    }
+
+    // Phantoms circle high above their target, then swoop down to bite and climb back.
+    private void ThinkPhantom(Mob mob, BedrockConnection? target)
+    {
+        if (target is null)
+        {
+            mob.SwoopTicks = 0;
+            mob.CircleAngle += 0.04;
+            HeadTo(mob, mob.X + Math.Cos(mob.CircleAngle) * 4, mob.Y + (_random.NextDouble() - 0.5) * 0.5, mob.Z + Math.Sin(mob.CircleAngle) * 4, 0.15);
+            return;
+        }
+        var (px, py, pz) = target.Position;
+        if (mob.SwoopTicks > 0)
+        {
+            mob.SwoopTicks--;
+            HeadTo(mob, px, py - 0.8, pz, 0.35);
+            if (Math.Sqrt(Distance2(mob, target)) < 1.6)
+            {
+                Hit(mob, target, Scaled(mob.Kind.Damage));
+                mob.SwoopTicks = 0;
+                mob.AttackCooldown = 80 + _random.Next(60);
+            }
+            return;
+        }
+        mob.CircleAngle += 0.05;
+        HeadTo(mob, px + Math.Cos(mob.CircleAngle) * 12, py + 10, pz + Math.Sin(mob.CircleAngle) * 12, 0.22);
+        if (mob.AttackCooldown == 0 && _random.Next(40) == 0)
+            mob.SwoopTicks = 60;
+    }
+
+    // --- Swimming mobs: fish, squids, dolphins, guardians, drowned ---
+
+    private void ThinkSwimming(Mob mob, BedrockConnection? player, double distance, double speed, bool day)
+    {
+        var target = Target(mob, player, distance, day);
+        if (target is not null)
+        {
+            var dist = Math.Sqrt(Distance2(mob, target));
+            if (mob.Kind == MobKind.Guardian || mob.Kind == MobKind.ElderGuardian)
+            {
+                // Laser beam: hits after the charge when the player stays in sight.
+                Look(mob, target.Position.X, target.Position.Z);
+                if (dist < 15 && mob.AttackCooldown == 0 && LineOfSight(mob, target))
+                {
+                    mob.AttackCooldown = 60;
+                    Hit(mob, target, Scaled(mob.Kind == MobKind.ElderGuardian ? 8 : 6));
+                }
+                if (dist > 8)
+                    HeadTo(mob, target.Position.X, target.Position.Y - 1, target.Position.Z, speed, water: true);
+                return;
+            }
+            HeadTo(mob, target.Position.X, target.Position.Y - 1, target.Position.Z, speed * 1.3, water: !mob.Kind.Amphibious);
+            if (dist < 1.2 + mob.Width && mob.AttackCooldown == 0)
+            {
+                mob.AttackCooldown = 20;
+                Broadcast(mob, EntityPackets.Swing(mob.EntityId));
+                Hit(mob, target, Scaled(mob.Kind.Damage));
+            }
+            return;
+        }
+        if (mob.PanicTicks > 0 && mob.FleeFrom is { } from)
+        {
+            mob.PanicTicks--;
+            HeadTo(mob, mob.X + (mob.X - from.X), mob.Y, mob.Z + (mob.Z - from.Z), speed * 1.6, water: true);
+            return;
+        }
+        if (mob.FlyTarget is null || _random.Next(80) == 0 || Reached(mob, mob.FlyTarget.Value))
+            mob.FlyTarget = RandomWater(mob, 7, 3);
+        if (mob.FlyTarget is { } swim)
+            HeadTo(mob, swim.X, swim.Y, swim.Z, speed * 0.7, water: true);
+        else
+            mob.Vx = mob.Vy = mob.Vz = 0;
+    }
+
+    private static bool InWater(Mob mob) => WaterAt(mob.World!, mob.X, mob.Y + mob.Height / 2, mob.Z);
+
+    private static bool WaterAt(World world, double x, double y, double z) =>
+        world.GetBlock((int)Math.Floor(x), (int)Math.Floor(y), (int)Math.Floor(z)) is { } b
+        && (b == Blocks.Water || b.Name == "minecraft:flowing_water");
+
+    private static bool Reached(Mob mob, (double X, double Y, double Z) at) =>
+        Math.Abs(at.X - mob.X) < 0.6 && Math.Abs(at.Y - mob.Y) < 0.6 && Math.Abs(at.Z - mob.Z) < 0.6;
+
+    private (double X, double Y, double Z)? RandomAir(Mob mob, int horizontal, int vertical)
+    {
+        for (var attempt = 0; attempt < 6; attempt++)
+        {
+            double x = mob.X + _random.Next(-horizontal, horizontal + 1), y = mob.Y + _random.Next(-vertical, vertical + 2),
+                z = mob.Z + _random.Next(-horizontal, horizontal + 1);
+            if (!Collides(mob, x, y, z) && !WaterAt(mob.World!, x, y, z) && y > Chunk.MinY + 2)
+                return (x, y, z);
+        }
+        return null;
+    }
+
+    private (double X, double Y, double Z)? RandomWater(Mob mob, int horizontal, int vertical)
+    {
+        for (var attempt = 0; attempt < 6; attempt++)
+        {
+            double x = mob.X + _random.Next(-horizontal, horizontal + 1), y = mob.Y + _random.Next(-vertical, vertical + 1),
+                z = mob.Z + _random.Next(-horizontal, horizontal + 1);
+            if (WaterAt(mob.World!, x, y, z) && WaterAt(mob.World!, x, y + mob.Height, z) && !Collides(mob, x, y, z))
+                return (x, y, z);
+        }
+        return null;
+    }
+
+    private static void Look(Mob mob, double x, double z) => mob.Yaw = (float)(Math.Atan2(-(x - mob.X), z - mob.Z) * 180 / Math.PI);
+
+    // Flyers and swimmers steer in three dimensions; a swimmer (not amphibious) never leaves the water upwards.
+    private static void HeadTo(Mob mob, double x, double y, double z, double speed, bool water = false, bool look = true)
+    {
+        double dx = x - mob.X, dy = y - mob.Y, dz = z - mob.Z;
+        var length = Math.Sqrt(dx * dx + dy * dy + dz * dz);
+        if (length < 0.05)
+        {
+            mob.Vx = mob.Vy = mob.Vz = 0;
+            return;
+        }
+        // Turn smoothly instead of snapping.
+        mob.Vx = mob.Vx * 0.6 + dx / length * speed * 0.4;
+        mob.Vy = mob.Vy * 0.6 + dy / length * speed * 0.4;
+        mob.Vz = mob.Vz * 0.6 + dz / length * speed * 0.4;
+        if (water && !WaterAt(mob.World!, mob.X + mob.Vx, mob.Y + mob.Height + mob.Vy, mob.Z + mob.Vz))
+            mob.Vy = Math.Min(mob.Vy, 0);
+        if (look && Math.Abs(dx) + Math.Abs(dz) > 0.05)
+            Look(mob, x, z);
+    }
+
+    // No gravity: flyers and swimmers in water keep their speed (with drag) and stop against blocks.
+    private void FreePhysics(Mob mob)
+    {
+        if (!Collides(mob, mob.X + mob.Vx, mob.Y, mob.Z))
+            mob.X += mob.Vx;
+        else
+            (mob.Vx, mob.FlyTarget) = (0, null);
+        if (!Collides(mob, mob.X, mob.Y + mob.Vy, mob.Z))
+            mob.Y += mob.Vy;
+        else
+            (mob.Vy, mob.FlyTarget) = (0, null);
+        if (!Collides(mob, mob.X, mob.Y, mob.Z + mob.Vz))
+            mob.Z += mob.Vz;
+        else
+            (mob.Vz, mob.FlyTarget) = (0, null);
+        mob.Vx *= 0.91;
+        mob.Vy *= 0.91;
+        mob.Vz *= 0.91;
+        mob.FallDistance = 0;
+        mob.OnGround = Collides(mob, mob.X, mob.Y - 0.05, mob.Z);
+        if (mob.Y < Chunk.MinY - 32)
+            Damage(mob, 1000, null, source: DamageSource.Void());
+    }
+
+    // --- Spawning of water, flying and Nether mobs ---
+
+    private void TrySpawnWater(World world, BedrockConnection player)
+    {
+        var (x, z) = RandomColumn(player);
+        var biome = BiomeAt(world, x, z);
+        var feet = (int)Math.Floor(player.Position.Y - BedrockConnection.EyeHeight);
+        // A water block: under the surface around the player's height, or in an underground lake.
+        int? found = null;
+        for (var y = Math.Min(feet + 12, Chunk.MaxY - 2); y > Math.Max(feet - 24, Chunk.MinY + 1) && found is null; y--)
+            if (WaterAt(world, x, y, z) && WaterAt(world, x, y + 1, z))
+                found = y - _random.Next(3);
+        if (found is not { } wy || !WaterAt(world, x, wy, z))
+            return;
+
+        List<(MobKind, int)> table;
+        if (wy < 30 && !SkyAccess(world, x, wy + 1, z))
+            table = [(MobKind.SquidGlow, 10)]; // glow squids live in dark underground water
+        else if (Tagged(biome, "ocean"))
+        {
+            var warm = Tagged(biome, "warm") || Tagged(biome, "lukewarm");
+            var cold = Tagged(biome, "cold") || Tagged(biome, "frozen");
+            table = warm
+                ? [(MobKind.TropicalFish, 25), (MobKind.Pufferfish, 3), (MobKind.Dolphin, 2)]
+                : cold
+                    ? [(MobKind.Salmon, 15), (MobKind.Cod, 5), (MobKind.Squid, 3)]
+                    : [(MobKind.Cod, 10), (MobKind.Squid, 4), (MobKind.Dolphin, 1)];
+        }
+        else if (Tagged(biome, "river"))
+            table = [(MobKind.Salmon, 5), (MobKind.Squid, 2)];
+        else
+            return;
+        if (Pick(table) is not { } kind)
+            return;
+        var group = kind == MobKind.Dolphin ? 1 + _random.Next(2) : 2 + _random.Next(3);
+        for (var i = 0; i < group; i++)
+        {
+            int sx = x + _random.Next(5) - 2, sz = z + _random.Next(5) - 2;
+            if (WaterAt(world, sx, wy, sz) && WaterAt(world, sx, wy + Math.Ceiling(kind.Height), sz))
+                Spawn(kind, sx + 0.5, wy, sz + 0.5, world);
+        }
+    }
+
+    private void TrySpawnBat(World world, BedrockConnection player)
+    {
+        var (x, z) = RandomColumn(player);
+        var y = (int)Math.Floor(player.Position.Y) + _random.Next(-16, 9);
+        if (y >= 63 || world.GetBlock(x, y, z) is not { IsAir: true } || world.GetBlock(x, y + 1, z) is not { IsAir: true })
+            return; // bats live in caves, below sea level
+        if (SkyAccess(world, x, y, z) || !Dark(world, x, y, z, night: true, nether: false))
+            return;
+        for (var i = 0; i < 1 + _random.Next(2); i++)
+            Spawn(MobKind.Bat, x + 0.5, y, z + 0.5, world);
+    }
+
+    private void TrySpawnPhantoms(World world, BedrockConnection player)
+    {
+        var (px, py, pz) = player.Position;
+        if (player.GameMode is GameMode.Creative or GameMode.Spectator || !SkyAccess(world, (int)Math.Floor(px), (int)Math.Floor(py), (int)Math.Floor(pz)))
+            return;
+        var height = py + 20 + _random.Next(15);
+        for (var i = 0; i < 1 + _random.Next(3); i++)
+            Spawn(MobKind.Phantom, px + _random.Next(-4, 5), Math.Min(height, Chunk.MaxY - 2), pz + _random.Next(-4, 5), world);
+    }
+
+    // Ghasts need room: open air all around the spot.
+    private void TrySpawnGhast(World world, BedrockConnection player, int x, int z)
+    {
+        var y = 20 + _random.Next(90);
+        for (var dx = -2; dx <= 2; dx += 2)
+        for (var dy = 0; dy <= 4; dy += 2)
+        for (var dz = -2; dz <= 2; dz += 2)
+            if (world.GetBlock(x + dx, y + dy, z + dz) is not { IsAir: true })
+                return;
+        if (_mobs.Count(m => m.Kind == MobKind.Ghast && m.World == world && Distance2(m, player) < ActiveRange * ActiveRange) < 2)
+            Spawn(MobKind.Ghast, x + 0.5, y, z + 0.5, world);
+    }
+
+    private void TrySpawnDrowned(World world, BedrockConnection player, int x, int z, bool night)
+    {
+        var feet = (int)Math.Floor(player.Position.Y - BedrockConnection.EyeHeight);
+        for (var y = Math.Min(feet + 8, Chunk.MaxY - 3); y > Math.Max(feet - 24, Chunk.MinY + 1); y--)
+        {
+            // Two blocks of water over a floor, in the dark (at night or deep enough to be out of the sun).
+            if (!BlockPhysics.IsSolid(world.GetBlock(x, y - 1, z)) || !WaterAt(world, x, y, z) || !WaterAt(world, x, y + 1, z))
+                continue;
+            if (Dark(world, x, y, z, night, nether: false) || !night && !SkyAccess(world, x, y + 2, z))
+                Spawn(MobKind.Drowned, x + 0.5, y, z + 0.5, world);
+            return;
+        }
+    }
+
     // --- Breeding and interactions ---
 
     private static bool Eats(MobKind kind, ItemStack? item) =>
@@ -1098,6 +1498,22 @@ public sealed class MobManager(BedrokiaServer server)
         Environment(mob, feet, inWater, tick);
         if (mob.Dead)
             return;
+        if (mob.Kind.Movement == MobMovement.Fly || mob.Kind.Movement == MobMovement.Swim && InWater(mob))
+        {
+            mob.DryTicks = 0;
+            FreePhysics(mob);
+            return;
+        }
+        // Fish, squids and dolphins out of water: they flop and suffocate.
+        if (mob.Kind.Movement == MobMovement.Swim && !mob.Kind.Amphibious)
+        {
+            if (++mob.DryTicks > 60 && mob.DryTicks % 20 == 0)
+                Damage(mob, 1, null, source: DamageSource.Drowning());
+            if (mob.OnGround && _random.Next(10) == 0)
+                (mob.Vx, mob.Vy, mob.Vz) = ((_random.NextDouble() - 0.5) * 0.2, 0.3, (_random.NextDouble() - 0.5) * 0.2);
+            if (mob.Dead)
+                return;
+        }
         if (inWater)
             mob.Vy = Math.Min(mob.Vy + 0.06, 0.12);
         else

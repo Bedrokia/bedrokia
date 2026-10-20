@@ -38,7 +38,15 @@ Le Nether est le monde `worlds/<level-name>/nether/`, créé au premier démarra
 - **Monstres** : ils apparaissent dans le noir, la nuit dehors ou à toute heure dans les grottes, mais jamais près
   d'une torche ou d'une autre source de lumière. Ce sont des husks dans le désert et des strays dans la neige. Dans
   le Nether apparaissent piglins zombifiés, piglins, hoglins, cubes de magma et endermen, selon le biome.
-- Comme en vanilla, les monstres disparaissent loin des joueurs.
+- **Mobs aquatiques** : morues, saumons, poissons tropicaux, poissons-globes, calamars et dauphins dans les océans
+  et les rivières, selon la température de l'eau ; calamars luisants dans l'eau des grottes ; noyés dans l'eau sombre.
+  Les poissons nagent sans sortir de l'eau et étouffent sur la terre ferme.
+- **Mobs volants** : chauves-souris dans les grottes ; phantoms la nuit au-dessus des joueurs à découvert, à partir
+  du troisième jour du monde (ils tournent en l'air puis plongent pour mordre) ; ghasts dans les grands espaces du
+  Nether.
+- **Attaques à distance** : les squelettes, strays et pillards tirent de vraies flèches, qu'on voit voler et qui
+  peuvent rater. Les ghasts lancent des boules de feu qui explosent, les blazes des rafales de petites boules de feu.
+- Comme en vanilla, les monstres disparaissent loin des joueurs, ainsi que les poissons et les chauves-souris.
 - **Comportement** :
     - les monstres trouvent leur chemin autour des murs (pathfinding) et ne voient pas à travers les blocs ;
     - les mobs neutres n'attaquent que le joueur qui les frappe : piglins zombifiés (tout le groupe), endermen,
@@ -50,8 +58,7 @@ Le Nether est le monde `worlds/<level-name>/nether/`, créé au premier démarra
   les poules pondent des œufs.
 - Les mobs subissent les dégâts de chute, de feu et de lave. Ceux qui meurent en brûlant lâchent leur viande cuite.
 
-> Il n'y a pas encore de mobs aquatiques ni volants en apparition naturelle, de dressage, de commerce avec les
-> villageois ni de raids.
+> Il n'y a pas encore de dressage, de commerce avec les villageois ni de raids. Les joueurs n'ont pas encore d'arc.
 
 ### Importer un monde Bedrock
 

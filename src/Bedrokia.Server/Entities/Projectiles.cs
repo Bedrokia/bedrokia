@@ -16,7 +16,7 @@ using Bedrokia.Server.Network;
 
 namespace Bedrokia.Server.Entities;
 
-/// <summary>A thrown snowball, egg, ender pearl or splash potion.</summary>
+/// <summary>A thrown snowball, egg, ender pearl or splash potion, or an arrow or fireball shot by a mob.</summary>
 public sealed class Projectile
 {
     internal Projectile(long entityId, string identifier, World world, BedrockConnection? owner, Vector3 position, Vector3 velocity, short potion)
@@ -40,20 +40,29 @@ public sealed class Projectile
     /// <summary>The potion id (item meta) of a splash potion.</summary>
     public short Potion { get; }
 
+    /// <summary>The mob that shot it (skeleton arrow, ghast or blaze fireball), or null.</summary>
+    public Mob? Shooter { get; internal init; }
+
+    /// <summary>Damage done to what it hits (arrows, small fireballs).</summary>
+    public float Damage { get; internal init; }
+
     internal int Ticks;
 }
 
 /// <summary>
-/// Thrown projectiles (<see cref="BedrokiaServer.Projectiles"/>): players throw snowballs, eggs, ender pearls and splash
-/// potions with a right click, plugins with <see cref="Launch"/>. Gravity and drag as vanilla throwables (0.03, 0.01).
-/// ponytail: no chickens from eggs and no potion effects on mobs.
+/// Projectiles (<see cref="BedrokiaServer.Projectiles"/>): players throw snowballs, eggs, ender pearls and splash
+/// potions with a right click, plugins with <see cref="Launch"/>; skeletons shoot arrows, ghasts fireballs (they explode)
+/// and blazes small fireballs (<see cref="Shoot"/>). Gravity and drag as vanilla: throwables 0.03, arrows 0.05,
+/// fireballs none; drag 0.01.
+/// ponytail: no chickens from eggs, no potion effects on mobs, arrows do not stay stuck in blocks.
 /// </summary>
 public sealed class ProjectileManager(BedrokiaServer server)
 {
     public const string Snowball = "minecraft:snowball", Egg = "minecraft:egg", EnderPearl = "minecraft:ender_pearl",
-        SplashPotion = "minecraft:splash_potion";
+        SplashPotion = "minecraft:splash_potion", Arrow = "minecraft:arrow", Fireball = "minecraft:fireball",
+        SmallFireball = "minecraft:small_fireball";
 
-    private const float Gravity = 0.03f, Drag = 0.99f, SplashRadius = 4;
+    private const float Gravity = 0.03f, ArrowGravity = 0.05f, Drag = 0.99f, SplashRadius = 4;
     private const int MaxTicks = 1200;
 
     private readonly List<Projectile> _projectiles = [];
@@ -86,16 +95,33 @@ public sealed class ProjectileManager(BedrokiaServer server)
     }
 
     /// <summary>A projectile from anywhere (a dispenser, a trap...), with its velocity in blocks per tick.</summary>
-    public Projectile Spawn(string identifier, World world, Vector3 position, Vector3 velocity, BedrockConnection? owner = null, short potion = 0)
+    public Projectile Spawn(string identifier, World world, Vector3 position, Vector3 velocity, BedrockConnection? owner = null, short potion = 0) =>
+        Add(new Projectile(server.NextEntityId(), identifier, world, owner, position, velocity, potion));
+
+    /// <summary>A mob shoots: an <see cref="Arrow"/>, a <see cref="Fireball"/> (explodes) or a <see cref="SmallFireball"/>.</summary>
+    public Projectile Shoot(Mob shooter, string identifier, Vector3 position, Vector3 velocity, float damage) =>
+        Add(new Projectile(server.NextEntityId(), identifier, shooter.World!, null, position, velocity, 0) { Shooter = shooter, Damage = damage });
+
+    private Projectile Add(Projectile projectile)
     {
-        var projectile = new Projectile(server.NextEntityId(), identifier, world, owner, position, velocity, potion);
         _projectiles.Add(projectile);
-        server.BroadcastIn(world,
-            EntityPackets.AddActor(projectile.EntityId, identifier, position.X, position.Y, position.Z, 0,
-                1, 1, 0, 0.25f, 0.25f, EntityPackets.FlagGravity, variant: identifier == SplashPotion ? potion : null));
-        server.BroadcastIn(world, EntityPackets.Motion(projectile.EntityId, velocity.X, velocity.Y, velocity.Z));
+        var (position, velocity, identifier) = (projectile.Position, projectile.Velocity, projectile.Identifier);
+        var size = identifier == Fireball ? 1f : 0.25f;
+        var yaw = MathF.Atan2(-velocity.X, velocity.Z) * 180 / MathF.PI;
+        server.BroadcastIn(projectile.World,
+            EntityPackets.AddActor(projectile.EntityId, identifier, position.X, position.Y, position.Z, yaw,
+                1, 1, 0, size, size, GravityOf(identifier) > 0 ? EntityPackets.FlagGravity : 0,
+                variant: identifier == SplashPotion ? projectile.Potion : null));
+        server.BroadcastIn(projectile.World, EntityPackets.Motion(projectile.EntityId, velocity.X, velocity.Y, velocity.Z));
         return projectile;
     }
+
+    private static float GravityOf(string identifier) => identifier switch
+    {
+        Arrow => ArrowGravity,
+        Fireball or SmallFireball => 0,
+        _ => Gravity,
+    };
 
     internal void Tick()
     {
@@ -117,9 +143,13 @@ public sealed class ProjectileManager(BedrokiaServer server)
                 continue;
             }
             p.Position = to;
-            p.Velocity = p.Velocity * Drag - new Vector3(0, Gravity, 0);
+            p.Velocity = p.Identifier is Fireball or SmallFireball ? p.Velocity : p.Velocity * Drag - new Vector3(0, GravityOf(p.Identifier), 0);
             if (p.Ticks % 2 == 0)
-                server.BroadcastIn(p.World, EntityPackets.MoveAbsolute(p.EntityId, to.X, to.Y, to.Z, 0, 0, false));
+            {
+                var v = p.Velocity;
+                var pitch = -MathF.Atan2(v.Y, MathF.Sqrt(v.X * v.X + v.Z * v.Z)) * 180 / MathF.PI;
+                server.BroadcastIn(p.World, EntityPackets.MoveAbsolute(p.EntityId, to.X, to.Y, to.Z, pitch, MathF.Atan2(-v.X, v.Z) * 180 / MathF.PI, false));
+            }
         }
     }
 
@@ -139,7 +169,7 @@ public sealed class ProjectileManager(BedrokiaServer server)
                     return (at, player, null);
             }
             foreach (var mob in server.Mobs.All)
-                if (!mob.Dead && mob.World == p.World && Math.Abs(at.X - mob.X) < mob.Width / 2 + 0.15 && Math.Abs(at.Z - mob.Z) < mob.Width / 2 + 0.15
+                if (!mob.Dead && mob.World == p.World && (mob != p.Shooter || p.Ticks > 20) && Math.Abs(at.X - mob.X) < mob.Width / 2 + 0.15 && Math.Abs(at.Z - mob.Z) < mob.Width / 2 + 0.15
                     && at.Y >= mob.Y && at.Y <= mob.Y + mob.Height)
                     return (at, null, mob);
             if (BlockPhysics.IsSolid(p.World.GetBlock((int)MathF.Floor(at.X), (int)MathF.Floor(at.Y), (int)MathF.Floor(at.Z))))
@@ -152,10 +182,24 @@ public sealed class ProjectileManager(BedrokiaServer server)
     {
         var target = player?.EntityId ?? mob?.EntityId ?? 0;
         if (server.Events.HasProjectileHit
-            && !server.Events.OnProjectileHit(new ProjectileHitEvent((ulong)p.EntityId, p.Identifier, (ulong)(p.Owner?.EntityId ?? 0), (ulong)target, at, 0)))
+            && !server.Events.OnProjectileHit(new ProjectileHitEvent((ulong)p.EntityId, p.Identifier, (ulong)(p.Owner?.EntityId ?? p.Shooter?.EntityId ?? 0), (ulong)target, at, 0)))
             return;
+        var source = p.Shooter is { } shooter ? DamageSource.EntityAttack(shooter) : DamageSource.Custom(p.Identifier);
         switch (p.Identifier)
         {
+            case Arrow or SmallFireball:
+                player?.Damage(p.Damage, p.Position.X, p.Position.Z, source: source);
+                if (mob is not null)
+                    server.Mobs.Damage(mob, p.Damage, (p.Position.X, p.Position.Z), source: source);
+                if (p.Identifier == SmallFireball && mob is not null && mob.Kind != MobKind.Blaze)
+                    mob.FireTicks = Math.Max(mob.FireTicks, 100);
+                if (p.Identifier == Arrow)
+                    server.PlaySound("random.bowhit", at.X, at.Y, at.Z, p.World);
+                break;
+            case Fireball:
+                player?.Damage(6, p.Position.X, p.Position.Z, source: source);
+                server.Explode(at.X, at.Y, at.Z, 1, p.World);
+                break;
             case Snowball or Egg:
                 // No damage, only the knockback (vanilla); a snowball does 3 to blazes.
                 player?.Damage(0, p.Position.X, p.Position.Z, source: p.Owner is { } thrower ? DamageSource.PlayerAttack(thrower) : null);

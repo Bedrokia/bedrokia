@@ -25,7 +25,7 @@ title: Feuille de route
 - Propagation du feu, terre labourée qui sèche, feuilles qui disparaissent
 - Grottes, lacs, structures (villages...)
 - Structures du Nether, l'End
-- Mobs aquatiques et volants, dressage, commerce avec les villageois
+- Arc et arbalète pour les joueurs, dressage, commerce avec les villageois
 - Redstone
 
 Les idées et contributions sont les bienvenues : voir [Le projet et l'IA](ia.md).

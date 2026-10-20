@@ -39,7 +39,14 @@ The Nether is the world `worlds/<level-name>/nether/`, created on first start wi
 - **Monsters** spawn in the dark, outside at night or at any time in caves, but never near a torch or another light
   source. They are husks in deserts and strays in snow. The Nether has zombified piglins, piglins, hoglins, magma
   cubes and endermen, depending on the biome.
-- As in vanilla, monsters despawn far from players.
+- **Water mobs**: cod, salmon, tropical fish, pufferfish, squids and dolphins in oceans and rivers, by water
+  temperature; glow squids in cave water; drowned in dark water. Fish swim without leaving the water and suffocate on
+  land.
+- **Flying mobs**: bats in caves; phantoms at night above players under the open sky, from the third day of the
+  world (they circle, then swoop down to bite); ghasts in the open spaces of the Nether.
+- **Ranged attacks**: skeletons, strays and pillagers shoot real arrows, which you see flying and which can miss.
+  Ghasts throw exploding fireballs, blazes bursts of small fireballs.
+- As in vanilla, monsters despawn far from players, and so do fish and bats.
 - **Behaviour**:
     - monsters find their way around walls (pathfinding) and do not see through blocks;
     - neutral mobs only attack the player who hits them: zombified piglins (the whole group), endermen, wolves,
@@ -51,7 +58,7 @@ The Nether is the world `worlds/<level-name>/nether/`, created on first start wi
 - Mobs take fall, fire and lava damage. Those that die burning drop cooked meat.
 
 !!! note
-    There are no naturally spawning water or flying mobs yet, no taming, villager trading or raids.
+    There is no taming, villager trading or raids yet. Players have no bow yet.
 
 ### Import a Bedrock world
 
