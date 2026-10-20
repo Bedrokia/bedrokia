@@ -152,10 +152,29 @@ public sealed class PermissionManager
         }
     }
 
+    private readonly List<Func<string, string, bool>> _providers = [];
+
+    /// <summary>
+    /// Grants permissions from a plugin (a rank system...): asked before the groups of permissions.json, with the player
+    /// name and the permission; true grants it. Never cached, so a rank change applies at once.
+    /// </summary>
+    public void AddProvider(Func<string, string, bool> provider)
+    {
+        lock (_providers)
+            _providers.Add(provider);
+    }
+
     public bool HasPermission(string playerName, string? permission, bool isOp = false)
     {
         if (string.IsNullOrWhiteSpace(permission))
             return true;
+
+        Func<string, string, bool>[] providers;
+        lock (_providers)
+            providers = [.. _providers];
+        foreach (var provider in providers)
+            if (provider(playerName, permission))
+                return true;
 
         var key = $"{playerName}|{permission}|{isOp}";
         if (_permCache.TryGetValue(key, out var cached))

@@ -126,6 +126,7 @@ messages (`/f create <name> | invite <player> | ...`).
 | `Log`, `LogWarning`, `LogError` | writes to the console, prefixed with the plugin name |
 | `RegisterCommand(name, description, usage, opOnly, action)` | adds a command from code |
 | `RegisterCommand(name, description, usage, permission, action)` | command needing a permission node (`""` for everyone, `"op"`, or `"myplugin.fly"`) |
+| `Server.Permissions.AddProvider((player, permission) => ...)` | grants permissions from the plugin (a rank system...): `true` grants, asked on every check |
 | `UnregisterCommand(name)` | removes a command, for example a server command the plugin replaces |
 | `RunNextTick(action)` / `ScheduleDelayed(ticks, action)` / `ScheduleRepeating(delay, period, action)` | scheduled tasks (20 ticks = 1 s), cancel with `.Cancel()`, stopped when the plugin is disabled |
 

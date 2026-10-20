@@ -33,6 +33,19 @@ public class PermissionManagerTests : IDisposable
     }
 
     [Fact]
+    public void A_provider_grants_permissions_and_is_asked_every_time()
+    {
+        var manager = new PermissionManager(_filePath);
+        var rank = "Joueur";
+        manager.AddProvider((player, permission) => player == "steve" && permission == "setrank.cmd" && rank == "Fondateur");
+
+        Assert.False(manager.HasPermission("steve", "setrank.cmd"));
+        rank = "Fondateur"; // a rank change applies at once (no cache)
+        Assert.True(manager.HasPermission("steve", "setrank.cmd"));
+        Assert.False(manager.HasPermission("alex", "setrank.cmd"));
+    }
+
+    [Fact]
     public void Group_inheritance_resolves_correctly()
     {
         var manager = new PermissionManager(_filePath);
