@@ -257,7 +257,7 @@ public sealed partial class BedrockConnection
     /// Hurts the player (survival/adventure only) with knockback away from (fromX, fromZ). Attacks are reduced by
     /// armour points (4 % each, up to 80 %) and Protection enchantments (4 % per level, up to 80 %).
     /// </summary>
-    public void Damage(float amount, double fromX, double fromZ, bool armour = true, DamageSource? source = null)
+    public void Damage(float amount, double fromX, double fromZ, bool armour = true, DamageSource? source = null, float knockback = 0.4f)
     {
         if (Dead || GameMode is GameMode.Creative or GameMode.Spectator || _god || _hurtTicks > 0 || amount <= 0)
             return;
@@ -268,7 +268,7 @@ public sealed partial class BedrockConnection
         if ((source.Cause is DamageCause.Fire or DamageCause.Lava) && _activeEffects.ContainsKey(EffectType.FireResistance))
             return;
 
-        var ev = new PlayerDamageEvent(this, source, amount, (fromX, fromZ));
+        var ev = new PlayerDamageEvent(this, source, amount, (fromX, fromZ)) { Knockback = knockback };
         if (!_server.Events.OnPlayerDamage(ev))
             return;
 
@@ -303,7 +303,8 @@ public sealed partial class BedrockConnection
             var dx = Position.X - ev.KnockbackOrigin.X;
             var dz = Position.Z - ev.KnockbackOrigin.Z;
             var length = Math.Max(0.01, Math.Sqrt(dx * dx + dz * dz));
-            Send(EntityPackets.Motion(EntityId, dx / length * 0.4, 0.36, dz / length * 0.4));
+            // PocketMine Living::knockBack: force away from the hitter, the same force upward but at most 0.4.
+            Send(EntityPackets.Motion(EntityId, dx / length * ev.Knockback, Math.Min(ev.Knockback, 0.4f), dz / length * ev.Knockback));
         }
         if (Health <= 0 && !UseTotem(source))
             Die();
@@ -804,7 +805,17 @@ public sealed partial class BedrockConnection
             var dz = victim.Position.Z - Position.Z;
             if (dx * dx + dz * dz <= 6 * 6)
             {
-                victim.Damage(damage + 1.25f * Enchanting.Level(Inventory.Held, "sharpness"), Position.X, Position.Z, source: DamageSource.PlayerAttack(this));
+                damage += 1.25f * Enchanting.Level(Inventory.Held, "sharpness");
+                // Critical hit (PocketMine/vanilla): falling, not in water, not riding, not blind: x1.5 and stars.
+                var critical = !float.IsNaN(_fallPeak) && _fallPeak > Position.Y && Riding is null && !_activeEffects.ContainsKey(EffectType.Blindness)
+                               && World.GetBlock((int)Math.Floor(Position.X), (int)Math.Floor(Position.Y - EyeHeight), (int)Math.Floor(Position.Z)) != Blocks.Water;
+                if (critical)
+                    damage *= 1.5f;
+                var health = victim.Health;
+                victim.Damage(damage, Position.X, Position.Z, source: DamageSource.PlayerAttack(this),
+                    knockback: 0.4f + 0.5f * Enchanting.Level(Inventory.Held, "knockback"));
+                if (critical && victim.Health < health)
+                    _server.BroadcastIn(World, EntityPackets.CriticalHit(victim.EntityId));
                 WearWeapon();
             }
         }
