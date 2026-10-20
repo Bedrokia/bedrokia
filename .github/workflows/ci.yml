@@ -54,8 +54,7 @@ jobs:
           echo "Version: $version"
 
   publish:
-    # Built at the same time as the tests; the release still waits for both.
-    needs: [version]
+    needs: [test, version]
     strategy:
       matrix:
         rid: [linux-x64, win-x64]
