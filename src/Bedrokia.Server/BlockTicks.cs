@@ -42,8 +42,11 @@ public sealed partial class BedrokiaServer
     public void SetBlockAndUpdate(int x, int y, int z, BlockType block, World? world = null)
     {
         world ??= World;
+        var old = world.GetBlock(x, y, z);
         if (!world.SetBlock(x, y, z, block))
             return;
+        if (old is not null)
+            LeafSupportChanged(world, x, y, z, old, block);
         BroadcastIn(world, Packets.UpdateBlock(x, y, z, block.NetworkId));
         world.Fluids.Wake(x, y, z);
         UpdateShapes(x, y, z, world);
@@ -104,6 +107,7 @@ public sealed partial class BedrokiaServer
             RandomTicks(world);
         }
         TickTnt();
+        TickLeafDecay();
     }
 
     // --- Random ticks: 3 random blocks per sub-chunk per tick, in chunks near players (vanilla randomTickSpeed 3) ---
@@ -128,15 +132,81 @@ public sealed partial class BedrokiaServer
             if (world.LoadedChunk(cx, cz) is not { } chunk)
                 continue;
             for (var section = 0; section < Chunk.Sections; section++)
-            for (var i = 0; i < 3; i++)
             {
-                var r = _blockRandom.Next(4096);
-                int x = r & 15, y = Chunk.MinY + section * 16 + (r >> 8), z = r >> 4 & 15;
-                var block = chunk.GetBlock(x, y, z);
-                if (!block.IsAir && !RandomTickBlock(world, cx * 16 + x, y, cz * 16 + z, block))
-                    Grow(cx * 16 + x, y, cz * 16 + z, boneMeal: false, world);
+                if (chunk.SectionEmpty(section))
+                    continue;
+                for (var i = 0; i < 3; i++)
+                {
+                    var r = _blockRandom.Next(4096);
+                    int x = r & 15, y = Chunk.MinY + section * 16 + (r >> 8), z = r >> 4 & 15;
+                    var block = chunk.GetBlock(x, y, z);
+                    if (!RandomlyTicked(block))
+                        continue; // stone, dirt, air...: nearly every pick
+                    if (!RandomTickBlock(world, cx * 16 + x, y, cz * 16 + z, block))
+                        Grow(cx * 16 + x, y, cz * 16 + z, boneMeal: false, world);
+                }
             }
         }
+    }
+
+    // --- Leaves decay (Bedrock: only after a block near them changed, not on every random tick) ---
+
+    private readonly List<(World World, int X, int Y, int Z, long Due)> _leafChecks = [];
+    private readonly HashSet<(World, int, int, int)> _leafQueued = [];
+
+    /// <summary>A log or a leaf at (x, y, z) went away: the natural leaves around check, a little later, whether they still hold to a log.</summary>
+    internal void LeafSupportChanged(World world, int x, int y, int z, BlockType old, BlockType now)
+    {
+        var wasWood = old.Name.Contains("leaves") || IsLog(old.Name);
+        if (!wasWood || now.Name == old.Name)
+            return;
+        for (var dx = -4; dx <= 4; dx++)
+        for (var dy = -4; dy <= 4; dy++)
+        for (var dz = -4; dz <= 4; dz++)
+        {
+            int lx = x + dx, ly = y + dy, lz = z + dz;
+            if (world.GetBlock(lx, ly, lz) is not { } leaf || !leaf.Name.Contains("leaves")
+                || leaf.States.GetValueOrDefault("persistent_bit") is not (byte and 0) || !_leafQueued.Add((world, lx, ly, lz)))
+                continue;
+            _leafChecks.Add((world, lx, ly, lz, CurrentTick + 20 + _blockRandom.Next(200))); // they fall one by one
+        }
+    }
+
+    // At most 64 checks a tick, the due ones.
+    private void TickLeafDecay()
+    {
+        var done = 0;
+        for (var i = _leafChecks.Count - 1; i >= 0 && done < 64; i--)
+        {
+            var (world, x, y, z, due) = _leafChecks[i];
+            if (due > CurrentTick)
+                continue;
+            _leafChecks.RemoveAt(i);
+            _leafQueued.Remove((world, x, y, z));
+            done++;
+            if (world.GetBlock(x, y, z) is { } leaf && leaf.Name.Contains("leaves") && !LogNearby(world, x, y, z))
+                DecayLeaves(world, x, y, z, leaf);
+        }
+    }
+
+    // Per block state: does a random tick do anything to it? Worked out once per state (0 unknown, 1 no, 2 yes).
+    private static byte[] _randomlyTicked = [];
+
+    private static bool RandomlyTicked(BlockType block)
+    {
+        if (block.Id >= _randomlyTicked.Length)
+            Array.Resize(ref _randomlyTicked, Math.Max(Blocks.Count, block.Id + 1));
+        ref var known = ref _randomlyTicked[block.Id];
+        if (known == 0)
+        {
+            var name = block.Name;
+            var ticked = name is "minecraft:farmland" or "minecraft:grass_block" or "minecraft:mycelium" or "minecraft:nether_wart"
+                             or "minecraft:fire" or "minecraft:wheat" or "minecraft:carrots" or "minecraft:potatoes" or "minecraft:beetroot"
+                             or "minecraft:pumpkin_stem" or "minecraft:melon_stem" or "minecraft:reeds" or "minecraft:cactus"
+                         || name.EndsWith("_sapling");
+            known = ticked ? (byte)2 : (byte)1;
+        }
+        return known == 2;
     }
 
     /// <summary>One growth step (random tick) or a bone meal use; returns true if something grew.</summary>

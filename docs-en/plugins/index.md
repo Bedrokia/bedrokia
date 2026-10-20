@@ -233,6 +233,7 @@ server keep running.
 |---|---|
 | `Server.Players` | connected players (filter with `IsInGame`) |
 | `Server.BroadcastMessage(text)` | message to everyone |
+| `Server.BroadcastTip(text)` / `BroadcastPopup(text)` / `BroadcastActionBar(text)` / `BroadcastTitle(title, subtitle)` | tip, popup, action bar or title to everyone |
 | `Server.World.GetBlock(x, y, z)` | block at a position |
 | `Server.SetBlockAndUpdate(x, y, z, block)` | places a block and tells the players |
 | `Server.SpawnParticle(name, x, y, z)` | particles (`minecraft:heart_particle`, `minecraft:villager_happy`, `minecraft:basic_flame_particle`...) |

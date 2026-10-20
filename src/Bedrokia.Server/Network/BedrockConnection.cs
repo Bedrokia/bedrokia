@@ -1080,6 +1080,7 @@ public sealed partial class BedrockConnection
                 }
         }
         world.SetBlock(x, y, z, Blocks.Air);
+        _server.LeafSupportChanged(world, x, y, z, current!, Blocks.Air);
         AddExhaustion(0.005f);
         World.Fluids.Wake(x, y, z);
         _server.BroadcastIn(World, Packets.UpdateBlock(x, y, z, Blocks.Air.NetworkId));

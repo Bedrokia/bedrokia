@@ -310,6 +310,22 @@ public sealed partial class BedrokiaServer
 
     public void BroadcastMessage(string message) => Broadcast(Packets.Text(TextType.Raw, message), StripFormatting(message));
 
+    public void BroadcastTip(string text) => Broadcast(Packets.Text(TextType.Tip, text));
+
+    public void BroadcastPopup(string text) => Broadcast(Packets.Text(TextType.Popup, text));
+
+    public void BroadcastActionBar(string text) => ForEachInGame(p => p.SendActionBar(text));
+
+    public void BroadcastTitle(string title, string subtitle = "", int fadeIn = 10, int stay = 60, int fadeOut = 20) =>
+        ForEachInGame(p => p.SendTitle(title, subtitle, fadeIn, stay, fadeOut));
+
+    private void ForEachInGame(Action<BedrockConnection> action)
+    {
+        foreach (var player in _players)
+            if (player.IsInGame)
+                action(player);
+    }
+
     // Broadcasts go into each player's batch of the tick (one compressed message per player per tick). Encoding a
     // packet once and sending it on its own to everyone flushed each player's batch and multiplied the messages.
 
