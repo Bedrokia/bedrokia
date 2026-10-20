@@ -81,6 +81,13 @@ public static class DropRules
         }
         var name = block.Name["minecraft:".Length..];
 
+        // Shears collect leaves and plants themselves.
+        if (tool?.Type.Name == "minecraft:shears" && (name.EndsWith("_leaves") || ShearedPlants.Contains(name)))
+        {
+            Add(drops, name is "tall_grass" ? "short_grass" : name is "large_fern" ? "fern" : name, name is "tall_grass" or "large_fern" ? 2 : 1);
+            return drops;
+        }
+
         if (PickaxeTier.TryGetValue(name, out var tier) && PickaxeLevel(tool) < tier)
             return drops; // wrong or no tool: vanilla drops nothing
 
@@ -126,6 +133,15 @@ public static class DropRules
     }
 
     private static readonly FrozenDictionary<string, float> Hardness = LoadHardness().ToFrozenDictionary();
+
+    private static readonly FrozenSet<string> ShearedPlants = new[]
+    {
+        "short_grass", "tall_grass", "fern", "large_fern", "deadbush", "vine", "seagrass", "glow_lichen", "web",
+        "hanging_roots", "nether_sprouts", "twisting_vines", "weeping_vines", "cave_vines",
+    }.ToFrozenSet();
+
+    /// <summary>How long a block takes to break (0: at once), Bedrock values.</summary>
+    public static float HardnessOf(BlockType block) => Hardness.GetValueOrDefault(block.Name, 1.5f);
 
     /// <summary>
     /// Ticks needed to break <paramref name="block"/> with <paramref name="tool"/> (0 = instant).

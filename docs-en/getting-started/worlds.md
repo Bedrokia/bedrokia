@@ -58,7 +58,36 @@ The Nether is the world `worlds/<level-name>/nether/`, created on first start wi
 - Mobs take fall, fire and lava damage. Those that die burning drop cooked meat.
 
 !!! note
-    There is no taming, villager trading or raids yet. Players have no bow yet.
+    There is no taming, villager trading or raids yet.
+
+### Items
+
+Every Minecraft item exists: they are in the creative inventory, can be given with `/give` and crafted. Besides
+food, armour, buckets, flint and steel and bone meal, these have their vanilla use:
+
+- **Wear**: tools, weapons and armour wear out (durability bar) and break. Unbreaking spares them.
+- **Bow**: draw it (full power in 1 s); it uses an arrow (not with Infinity or in creative). Power, Punch and Flame
+  work. Stuck arrows can be picked up.
+- **Crossbow**: charged in 1.25 s (less with Quick Charge), it shoots hard; Multishot fires three arrows.
+- **Trident**: thrown (8 damage), it stays where it lands or comes back with Loyalty. In melee: 9 damage.
+- **Fishing rod**: cast it into water, wait for the bobber to dip, and reel in right then to catch a fish, junk or a
+  treasure (Lure and Luck of the Sea work).
+- **Shield**: while sneaking it blocks attacks and explosions from the front.
+- **Totem of undying**: in a hand, it saves from death once (Regeneration, Absorption, Fire Resistance).
+- **Mace**: hitting while falling adds damage from the fall height and cancels the fall damage.
+- **Axe**: strips logs, stems and wood.
+- **Shears**: shear sheep, carve pumpkins, and collect leaves, grass and vines.
+- **Name tag** (renamed on an anvil): names a mob, which then never despawns.
+- **Water bucket on a fish**: scoops it up; the fish bucket lets it out again.
+- **Glass bottle**: fills with water. **Fire charge**: like flint and steel.
+- **Bottle o' enchanting**, **wind charge** (pushes everything around away) and **lingering potion** can be thrown.
+- **Egg**: a chick hatches one time in eight.
+- **Firework rocket**: launched from a block, or boosts a player flying with an elytra.
+- **Goat horn**: sounds, with a 7-second cooldown.
+
+!!! note
+    Not yet: boats, minecarts, saddles, leads, maps, bundles and the spyglass (the crossbow fires as soon as it is
+    charged instead of staying loaded).
 
 ### Import a Bedrock world
 

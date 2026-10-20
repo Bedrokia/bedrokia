@@ -58,7 +58,36 @@ Le Nether est le monde `worlds/<level-name>/nether/`, créé au premier démarra
   les poules pondent des œufs.
 - Les mobs subissent les dégâts de chute, de feu et de lave. Ceux qui meurent en brûlant lâchent leur viande cuite.
 
-> Il n'y a pas encore de dressage, de commerce avec les villageois ni de raids. Les joueurs n'ont pas encore d'arc.
+> Il n'y a pas encore de dressage, de commerce avec les villageois ni de raids.
+
+### Les items
+
+Tous les items de Minecraft existent : ils sont dans l'inventaire créatif, s'obtiennent avec `/give` et
+s'artisanent. En plus de la nourriture, des armures, des seaux, du briquet et de la poudre d'os, ceux-ci ont leur
+usage vanilla :
+
+- **Usure** : les outils, armes et armures s'usent (barre de durabilité) et se cassent. Solidité les ménage.
+- **Arc** : on le tend (pleine puissance en 1 s), il consomme une flèche (pas avec Infinité ni en créatif). Puissance,
+  Frappe et Flamme marchent. Les flèches plantées se ramassent.
+- **Arbalète** : chargée en 1,25 s (moins avec Charge rapide), elle tire fort ; Tir multiple tire trois flèches.
+- **Trident** : on le lance (8 dégâts) ; il reste là où il tombe, ou revient avec Loyauté. En mêlée : 9 dégâts.
+- **Canne à pêche** : on la lance dans l'eau, on attend que le bouchon plonge, et on la ramène à ce moment-là pour
+  attraper un poisson, un déchet ou un trésor (Appât et Chance de la mer marchent).
+- **Bouclier** : accroupi, il bloque les attaques et les explosions qui viennent de face.
+- **Totem d'immortalité** : dans une main, il évite la mort une fois (Régénération, Absorption, Résistance au feu).
+- **Masse** : frapper en tombant ajoute des dégâts selon la hauteur de chute, et annule les dégâts de chute.
+- **Hache** : écorce les bûches, les tiges et le bois.
+- **Cisailles** : tondent les moutons, sculptent les citrouilles, et récoltent feuilles, herbes et lianes.
+- **Étiquette** (renommée à l'enclume) : nomme un mob, qui ne disparaît plus.
+- **Seau d'eau sur un poisson** : on l'attrape dans le seau ; le seau de poisson le relâche.
+- **Fiole vide** : se remplit d'eau. **Boule de feu** : comme le briquet.
+- **Fiole d'expérience**, **charge de vent** (repousse tout autour) et **potion persistante** se lancent.
+- **Œuf** : un poussin sort une fois sur huit.
+- **Feu d'artifice** : lancé depuis un bloc, ou propulse le joueur qui vole en élytres.
+- **Corne de chèvre** : sonne, avec 7 secondes de recharge.
+
+> Pas encore : bateaux, wagonnets, selles, laisses, cartes, ballots et longue-vue (l'arbalète tire dès qu'elle est
+> chargée, sans rester armée).
 
 ### Importer un monde Bedrock
 
