@@ -50,8 +50,8 @@ The console shows the loading summary.
 Just **replace one file**:
 
 1. download `bedrokia` from the [release you want](https://github.com/Nexiumpvp2/bedrokia/releases);
+2. in the panel: *Files* → delete the old `bedrokia` → *Upload* the new one;
 3. wait for the upload to reach 100 %, then restart.
-3. restart.
 
 No reinstall needed: the egg runs a copy (`.bedrokia-run`), so the file can be replaced even while the server runs, and worlds, players, plugins and settings are
 kept. (*Settings → Reinstall Server* works too: it downloads the version in `VERSION`.)
