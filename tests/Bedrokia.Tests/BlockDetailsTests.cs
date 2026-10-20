@@ -138,6 +138,18 @@ public class BlockDetailsTests
     }
 
     [Fact]
+    public void Water_flows_from_the_source_towards_its_spread()
+    {
+        var (server, _) = Arena();
+        var flowing = Blocks.ByKey(new BlockType(0, "minecraft:flowing_water", new OrderedDictionary<string, object> { ["liquid_depth"] = 2 }).Key)!;
+        server.World.SetBlock(4, Floor, 4, Fluids.Source("water"));
+        server.World.SetBlock(5, Floor, 4, flowing);
+        var (x, _, z) = Fluids.Flow(server.World, 4, Floor, 4);
+        Assert.True(x > 0.9 && Math.Abs(z) < 0.1, $"flow {x} {z}");
+        Assert.Equal((0, 0, 0), Fluids.Flow(server.World, 8, Floor, 8)); // no water
+    }
+
+    [Fact]
     public void Obsidian_breaks_after_obsidian_durability_explosions()
     {
         var (server, _) = Arena();
