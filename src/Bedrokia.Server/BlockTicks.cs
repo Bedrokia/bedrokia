@@ -351,7 +351,7 @@ public sealed partial class BedrokiaServer
     /// <summary>
     /// A lit TNT: falls, slides, and is thrown by the other explosions (TNT cannons), as vanilla (Java PrimedTnt:
     /// gravity 0.04, drag 0.98, ground friction 0.7, a small random kick when lit).
-    /// ponytail: flowing water does not push it (water cannons still work: TNT in water is launched by the others).
+    /// Flowing water pushes it (0.014 a tick along the stream, as Java): cannons bring their TNT into place with it.
     /// </summary>
     private sealed class PrimedTnt(long id, World world, double x, double y, double z, long explodes)
     {
@@ -412,6 +412,10 @@ public sealed partial class BedrokiaServer
         if (world.LoadedChunk((int)Math.Floor(t.X) >> 4, (int)Math.Floor(t.Z) >> 4) is null)
             return; // frozen in unloaded chunks
         var (oldX, oldY, oldZ) = (t.X, t.Y, t.Z);
+        var (flowX, flowY, flowZ) = Fluids.Flow(world, (int)Math.Floor(t.X), (int)Math.Floor(t.Y + TntHeight / 2), (int)Math.Floor(t.Z));
+        t.Vx += flowX * 0.014;
+        t.Vy += flowY * 0.014;
+        t.Vz += flowZ * 0.014;
         t.Vy -= 0.04;
         // Steps of at most half a block: a cannon throws TNT several blocks a tick, it must not cross walls.
         var steps = (int)Math.Clamp(Math.Ceiling(Math.Max(Math.Abs(t.Vx), Math.Max(Math.Abs(t.Vy), Math.Abs(t.Vz))) / 0.5), 1, 40);
