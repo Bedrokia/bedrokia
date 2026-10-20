@@ -101,7 +101,11 @@ public sealed class World
 
     /// <summary>Returns the chunk, loading it from disk or generating it in the background if needed.</summary>
     public Task<Chunk> GetChunkAsync(int x, int z) =>
-        _chunks.GetOrAdd(ChunkKey(x, z), _ => new Lazy<Task<Chunk>>(() => Task.Run(() => LoadOrGenerate(x, z)))).Value;
+        _chunks.GetOrAdd(ChunkKey(x, z), _ => new Lazy<Task<Chunk>>(() => Task.Run(() => LoadOrGenerateAsync(x, z)))).Value;
+
+    // A player who joins asks for hundreds of chunks at once: generating them all in parallel took every core.
+    // Half the cores generate; the rest keep the game running (disk loads are not limited).
+    private static readonly SemaphoreSlim GenerationSlots = new(Math.Max(1, Environment.ProcessorCount / 2));
 
     /// <summary>The chunk if it is already in memory and ready, otherwise null.</summary>
     public Chunk? LoadedChunk(int x, int z) =>
@@ -128,7 +132,7 @@ public sealed class World
 
     public void SetBlockEntity(int x, int y, int z, BlockEntity? entity) => LoadedChunk(x >> 4, z >> 4)?.SetBlockEntity(x & 15, y, z & 15, entity);
 
-    private Chunk LoadOrGenerate(int x, int z)
+    private async Task<Chunk> LoadOrGenerateAsync(int x, int z)
     {
         var file = ChunkFile(x, z);
         if (File.Exists(file))
@@ -143,7 +147,15 @@ public sealed class World
                 File.Move(file, file + ".corrupt", overwrite: true);
             }
         }
-        return Generator.Generate(x, z);
+        await GenerationSlots.WaitAsync();
+        try
+        {
+            return Generator.Generate(x, z);
+        }
+        finally
+        {
+            GenerationSlots.Release();
+        }
     }
 
     private string ChunkFile(int x, int z) => Path.Combine(ChunkDirectory, $"{x}.{z}.nxc");
