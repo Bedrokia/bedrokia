@@ -165,6 +165,67 @@ public class MobSystemTests
         Assert.False(Dark(server.World, 8, Floor, 8, night: false, nether));
     }
 
+    [Fact]
+    public void Skeletons_shoot_real_arrows()
+    {
+        var (server, player) = Arena();
+        var skeleton = server.Mobs.Spawn(MobKind.Skeleton, 8.5, Floor, 4.5)!;
+        Run(server, 3);
+        var arrow = Assert.Single(server.Projectiles.All);
+        Assert.Equal(ProjectileManager.Arrow, arrow.Identifier);
+        Assert.Same(skeleton, arrow.Shooter);
+        Assert.True(arrow.Velocity.Z > 1, "flies towards the player"); // the player is at z 14
+        var health = player.Health;
+        for (var i = 0; i < 40 && server.Projectiles.All.Count > 0; i++)
+            server.Projectiles.Tick();
+        Assert.True(player.Health < health, "the arrow hit the player");
+    }
+
+    [Fact]
+    public void Fish_swim_in_water_and_suffocate_out_of_it()
+    {
+        var (server, _) = Arena();
+        for (var x = 2; x <= 6; x++)
+        for (var z = 2; z <= 6; z++)
+        for (var y = Floor; y <= Floor + 2; y++)
+            server.World.SetBlock(x, y, z, Blocks.Water);
+        var fish = server.Mobs.Spawn(MobKind.Cod, 4.5, Floor + 1, 4.5)!;
+        var dry = server.Mobs.Spawn(MobKind.Cod, 11.5, Floor, 11.5)!;
+
+        Run(server, 300);
+
+        Assert.InRange(fish.X, 2, 7);
+        Assert.InRange(fish.Z, 2, 7);
+        Assert.InRange(fish.Y, Floor, Floor + 2.5); // never jumped out
+        Assert.Equal(fish.Kind.MaxHealth, fish.Health);
+        Assert.True(dry.Health < dry.Kind.MaxHealth, "a fish on land suffocates");
+    }
+
+    [Fact]
+    public void Flying_mobs_ignore_gravity()
+    {
+        var (server, player) = Arena();
+        player.IsInGame = false; // no AI: only physics
+        var bat = server.Mobs.Spawn(MobKind.Bat, 8.5, Floor + 3, 8.5)!;
+        var cow = server.Mobs.Spawn(MobKind.Cow, 4.5, Floor + 3, 4.5)!;
+        Run(server, 40);
+        Assert.Equal(Floor + 3, bat.Y, 3);
+        Assert.True(cow.OnGround);
+    }
+
+    [Fact]
+    public void Ghast_fireballs_explode()
+    {
+        var (server, _) = Arena();
+        var ghast = server.Mobs.Spawn(MobKind.Ghast, 8.5, Floor + 1, 2.5)!;
+        server.World.SetBlock(8, Floor + 1, 12, Blocks.Stone);
+        server.Projectiles.Shoot(ghast, ProjectileManager.Fireball, new(8.5f, Floor + 1.5f, 6f), new(0, 0, 0.9f), 6);
+        for (var i = 0; i < 20 && server.Projectiles.All.Count > 0; i++)
+            server.Projectiles.Tick();
+        Assert.Empty(server.Projectiles.All);
+        Assert.True(server.World.GetBlock(8, Floor + 1, 12)!.IsAir, "the wall was blown up");
+    }
+
     private static bool Dark(World world, int x, int y, int z, bool night, bool nether) =>
         (bool)typeof(MobManager).GetMethod("Dark", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!
             .Invoke(null, [world, x, y, z, night, nether])!;
