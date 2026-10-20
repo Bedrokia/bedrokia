@@ -136,6 +136,9 @@ public sealed partial class BedrockConnection
         SyncInventory();
     }
 
+    /// <summary>Moves the player to another server; plugins save what must follow them before calling this.</summary>
+    public void Transfer(string address, ushort port = 19132) => Send(Packets.Transfer(address, port));
+
     /// <summary>Sends the whole inventory again, after a plugin changed slots directly.</summary>
     public void SyncInventory() => Send([.. Inventory.ContentPackets()]);
 

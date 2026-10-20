@@ -220,6 +220,7 @@ server keep running.
 | `NameTag` / `NameTagVisible` / `PlaySound(sound)` / `Server.PlaySound(sound, x, y, z, world)` | text above the head, hiding it; play a sound (`random.pop`, `random.totem`...) |
 | `CanFly`, `God`, `Frozen`, `Vanished` | flying in survival, invincible, unable to move, invisible to the other players |
 | `ClearInventory(armour)` / `SyncInventory()` | empty the inventory; resend the inventory after changing slots |
+| `Transfer(address, port)` | send the player to another server (save first what must follow them) |
 | `ChangeDimension(world, x, y, z)` | send to another world (`Server.World`, `Server.Nether`) |
 | `SetMotion(vx, vy, vz)` | pushes the player |
 | `GiveItem(stack)` | gives an item (what does not fit drops on the ground) |
