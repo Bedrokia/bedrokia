@@ -220,6 +220,7 @@ autres plugins et le serveur continuent.
 | `NameTag` / `NameTagVisible` / `PlaySound(son)` / `Server.PlaySound(son, x, y, z, monde)` | texte au-dessus de la tête, le cacher ; jouer un son (`random.pop`, `random.totem`...) |
 | `CanFly`, `God`, `Frozen`, `Vanished` | vol en survie, invincible, immobile, invisible pour les autres joueurs |
 | `ClearInventory(armure)` / `SyncInventory()` | vider l'inventaire ; renvoyer l'inventaire après avoir changé des cases |
+| `Transfer(adresse, port)` | envoyer le joueur sur un autre serveur (sauvegardez avant ce qui doit le suivre) |
 | `ChangeDimension(monde, x, y, z)` | envoyer dans un autre monde (`Server.World`, `Server.Nether`) |
 | `SetMotion(vx, vy, vz)` | pousse le joueur |
 | `GiveItem(stack)` | donne un objet (le surplus tombe au sol) |

@@ -45,6 +45,7 @@ public static class PacketId
     public const uint Animate = 44;
     public const uint Respawn = 45;
     public const uint ContainerClose = 47;
+    public const uint Transfer = 85;
     public const uint AdventureSettings = 55;
     public const uint BlockActorData = 56;
     public const uint LevelChunk = 58;
@@ -162,6 +163,13 @@ public static class Packets
 
     public static byte[] ServerToClientHandshake(string jwt) =>
         Begin(PacketId.ServerToClientHandshake).ByteArray(System.Text.Encoding.UTF8.GetBytes(jwt)).ToArray();
+
+    /// <summary>Sends the client to another server (address and port), like typing it in the server list.</summary>
+    public static byte[] Transfer(string address, ushort port) => Begin(PacketId.Transfer)
+        .String(address)
+        .UInt16(port)
+        .Bool(false) // reload the world: false keeps the loading screen short
+        .ToArray();
 
     public static byte[] Disconnect(int reason, string message) => Begin(PacketId.Disconnect)
         .VarInt32(reason)
