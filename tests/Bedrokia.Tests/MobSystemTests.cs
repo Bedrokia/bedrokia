@@ -169,6 +169,7 @@ public class MobSystemTests
     public void Skeletons_shoot_real_arrows()
     {
         var (server, player) = Arena();
+        server.Config.Difficulty = Difficulty.Hard; // little spread: this arrow cannot miss
         var skeleton = server.Mobs.Spawn(MobKind.Skeleton, 8.5, Floor, 4.5)!;
         Run(server, 3);
         var arrow = Assert.Single(server.Projectiles.All);

@@ -182,6 +182,9 @@ public sealed class Mob(long entityId, MobKind kind, double x, double y, double 
     /// <summary>A sheared sheep: no wool until it has eaten grass.</summary>
     public bool Sheared { get; internal set; }
 
+    /// <summary>Name given with a name tag, shown above it; a named mob never despawns.</summary>
+    public string? NameTag { get; set; }
+
     /// <summary>Kept when its chunk unloads and saved with the world (animals and other non-hostile mobs).</summary>
     public bool Persistent { get; set; }
 
@@ -217,9 +220,9 @@ public sealed class Mob(long entityId, MobKind kind, double x, double y, double 
 
     public byte[] AddPacket() =>
         EntityPackets.AddActor(EntityId, Kind.Id, X, Y, Z, Yaw, Health, Kind.MaxHealth, (float)Kind.Speed, Width, Height, Flags, Colour,
-            scale: Baby ? 0.5f : 1);
+            scale: Baby ? 0.5f : 1, nameTag: NameTag);
 
-    internal byte[] DataPacket() => EntityPackets.SetData(EntityId, Flags, Width, Height, Colour, Baby ? 0.5f : 1);
+    internal byte[] DataPacket() => EntityPackets.SetData(EntityId, Flags, Width, Height, Colour, Baby ? 0.5f : 1, NameTag);
 }
 
 /// <summary>
@@ -283,7 +286,8 @@ public sealed class MobManager(BedrokiaServer server)
     }.ToFrozenDictionary();
 
     /// <summary>A mob kept on disk or while its chunk is unloaded.</summary>
-    private sealed record SavedMob(string Kind, double X, double Y, double Z, float Yaw, float Health, int? Colour, bool Baby, int Age, bool Sheared);
+    private sealed record SavedMob(string Kind, double X, double Y, double Z, float Yaw, float Health, int? Colour, bool Baby, int Age, bool Sheared,
+        string? NameTag = null);
 
     public IReadOnlyList<Mob> All => _mobs;
 
@@ -379,7 +383,7 @@ public sealed class MobManager(BedrokiaServer server)
             }
 
             // Vanilla despawning: monsters far from every player go away, at once beyond 128 blocks, randomly beyond 32.
-            if (!mob.Persistent && playersHere > 0
+            if (!mob.Persistent && mob.NameTag is null && playersHere > 0
                 && (nearestDist2 > DespawnDistance * DespawnDistance || nearestDist2 > 32 * 32 && _random.Next(800) == 0))
             {
                 Remove(mob, EntityDespawnReason.Distance);
@@ -1402,6 +1406,10 @@ public sealed class MobManager(BedrokiaServer server)
 
     // --- Breeding and interactions ---
 
+    private static string? BucketFor(MobKind kind) =>
+        kind == MobKind.Cod ? "cod_bucket" : kind == MobKind.Salmon ? "salmon_bucket" : kind == MobKind.TropicalFish ? "tropical_fish_bucket"
+        : kind == MobKind.Pufferfish ? "pufferfish_bucket" : kind == MobKind.Axolotl ? "axolotl_bucket" : kind == MobKind.Tadpole ? "tadpole_bucket" : null;
+
     private static bool Eats(MobKind kind, ItemStack? item) =>
         item is not null && Food.TryGetValue(kind.Id, out var food) && food.Contains(item.Type.Name["minecraft:".Length..]);
 
@@ -1452,8 +1460,28 @@ public sealed class MobManager(BedrokiaServer server)
         var name = held?.Type.Name;
         var creative = player.GameMode == GameMode.Creative;
 
+        // A name tag renamed on an anvil names the mob, which then stays in the world.
+        if (name == "minecraft:name_tag" && held!.CustomName is { Length: > 0 } tag)
+        {
+            mob.NameTag = tag;
+            mob.Persistent = true;
+            Broadcast(mob, mob.DataPacket());
+            if (!creative)
+                player.Send(player.Inventory.ConsumeHeld());
+            return true;
+        }
+        // A water bucket scoops up a fish (or an axolotl, a tadpole).
+        if (name == "minecraft:water_bucket" && BucketFor(mob.Kind) is { } bucketName && ItemStack.Of(bucketName) is { } bucket)
+        {
+            Remove(mob, EntityDespawnReason.Removed);
+            if (!creative)
+                player.Send(player.Inventory.ConsumeHeld());
+            player.GiveItem(bucket);
+            return true;
+        }
         if (name == "minecraft:shears" && mob.Kind == MobKind.Sheep && !mob.Sheared && !mob.Baby)
         {
+            player.WearHeld(1);
             mob.Sheared = true;
             Broadcast(mob, mob.DataPacket());
             if (ItemStack.Of(WoolColour(mob.Colour ?? 0), 1 + _random.Next(3)) is { } wool)
@@ -1777,7 +1805,7 @@ public sealed class MobManager(BedrokiaServer server)
     private List<SavedMob> Dormant(World world) =>
         _dormant.TryGetValue(world, out var list) ? list : _dormant[world] = [];
 
-    private static SavedMob Snapshot(Mob m) => new(m.Kind.Id, m.X, m.Y, m.Z, m.Yaw, m.Health, m.Colour, m.Baby, m.AgeTicks, m.Sheared);
+    private static SavedMob Snapshot(Mob m) => new(m.Kind.Id, m.X, m.Y, m.Z, m.Yaw, m.Health, m.Colour, m.Baby, m.AgeTicks, m.Sheared, m.NameTag);
 
     // Out of the simulation: persistent mobs wait on the side (and in entities.json), the others are gone.
     private void Sleep(Mob mob)
@@ -1800,7 +1828,7 @@ public sealed class MobManager(BedrokiaServer server)
             list.RemoveAt(i);
             _mobs.Add(new Mob(server.NextEntityId(), ByFullId[s.Kind], s.X, s.Y, s.Z)
             {
-                World = world, Yaw = s.Yaw, Health = s.Health, Colour = s.Colour, Baby = s.Baby, AgeTicks = s.Age, Sheared = s.Sheared,
+                World = world, Yaw = s.Yaw, Health = s.Health, Colour = s.Colour, Baby = s.Baby, AgeTicks = s.Age, Sheared = s.Sheared, NameTag = s.NameTag,
                 Persistent = true, EggTicks = 6000 + _random.Next(6000),
             });
         }

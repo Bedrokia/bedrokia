@@ -25,7 +25,7 @@ title: Roadmap
 - Fire spread, farmland drying, leaf decay
 - Caves, lakes, structures (villages...)
 - Nether structures, the End
-- Bow and crossbow for players, taming, villager trading
+- Boats, minecarts, saddles, leads, maps, bundles; taming, villager trading
 - Redstone
 
 Ideas and contributions are welcome: see [The project and AI](ai.md).

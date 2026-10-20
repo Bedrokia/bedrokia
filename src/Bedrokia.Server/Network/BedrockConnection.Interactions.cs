@@ -102,16 +102,20 @@ public sealed partial class BedrockConnection
         var (fx, fy, fz) = FaceOffset(face);
         var world = World;
         var survival = GameMode != GameMode.Creative;
+        if (UseSpecialItemOn(item, clicked, x, y, z, face))
+            return true;
 
         if (item.EndsWith("_hoe") && clicked.Name is "minecraft:grass_block" or "minecraft:dirt" or "minecraft:dirt_path"
             && face != 0 && world.GetBlock(x, y + 1, z) is { IsAir: true })
         {
             _server.SetBlockAndUpdate(x, y, z, Blocks.ByName("farmland")!, World);
+            WearHeld(1);
             return true;
         }
         if (item.EndsWith("_shovel") && clicked.Name == "minecraft:grass_block" && face != 0 && world.GetBlock(x, y + 1, z) is { IsAir: true })
         {
             _server.SetBlockAndUpdate(x, y, z, Blocks.ByName("grass_path") ?? Blocks.ByName("dirt_path") ?? clicked, World);
+            WearHeld(1);
             return true;
         }
         if (item == "bone_meal")
@@ -138,6 +142,7 @@ public sealed partial class BedrockConnection
             else
                 return false;
             _server.BroadcastIn(World, Packets.LevelEvent(LevelEventFizz, x, y, z, 0));
+            WearHeld(1);
             return true;
         }
         if (item == "bucket")

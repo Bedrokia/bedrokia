@@ -815,8 +815,11 @@ public sealed partial class BedrockConnection
             OnDropTransaction(ref reader);
             return;
         }
-        if (type == 4) // release item: stopped eating (or drawing a bow)
+        if (type == 4) // release item: stopped eating, or a drawn bow, crossbow or trident is let go
+        {
             _eatingSince = -1;
+            OnReleaseItem();
+        }
         if (type is not (useItem or useItemOnEntity))
             return; // ponytail: normal, mismatch and release transactions are not used
         SkipInventoryActions(ref reader);
@@ -862,6 +865,8 @@ public sealed partial class BedrockConnection
                 Send(InventoryPackets.InventorySlot(InventoryPackets.WindowInventory, Inventory.SelectedSlot, Inventory.Held));
                 return;
             }
+            if (UseHeldInAir())
+                return;
             if (Entities.ProjectileManager.IsThrowable(Inventory.Held))
             {
                 var held = Inventory.Held!;
@@ -1081,6 +1086,9 @@ public sealed partial class BedrockConnection
                     .String("").Bool(false).Bool(false).Int64(-1).Bool(false).ToArray());
         if (GameMode != GameMode.Survival)
             return;
+        // Tools wear out on blocks that are not broken instantly (swords twice as fast).
+        if (DropRules.HardnessOf(current) > 0)
+            WearHeld(Inventory.Held?.Type.Name.EndsWith("_sword") == true ? 2 : 1);
         if (breakEvent.Xp > 0)
             AddExperience(breakEvent.Xp);
         foreach (var drop in breakEvent.Drops)

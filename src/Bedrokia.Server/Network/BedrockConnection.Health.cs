@@ -275,6 +275,8 @@ public sealed partial class BedrockConnection
         amount = ev.Damage;
         if (amount <= 0)
             return;
+        if (BlockedByShield(source, amount, fromX, fromZ))
+            return;
 
         // Resistance reduces damage by 20% * (amplifier + 1) (except void/starvation)
         if (source.Cause is not (DamageCause.Void or DamageCause.Starvation) && _activeEffects.TryGetValue(EffectType.Resistance, out var resistance))
@@ -287,6 +289,7 @@ public sealed partial class BedrockConnection
 
         if (armour)
         {
+            WearArmour(amount);
             amount *= 1 - Math.Min(ArmourPoints(), 20) / 25f;
             amount *= 1 - Math.Min(ProtectionPoints(), 20) * 0.04f;
         }
@@ -302,7 +305,7 @@ public sealed partial class BedrockConnection
             var length = Math.Max(0.01, Math.Sqrt(dx * dx + dz * dz));
             Send(EntityPackets.Motion(EntityId, dx / length * 0.4, 0.36, dz / length * 0.4));
         }
-        if (Health <= 0)
+        if (Health <= 0 && !UseTotem(source))
             Die();
     }
 
@@ -755,7 +758,7 @@ public sealed partial class BedrockConnection
         }
         if (action != 1 || Dead)
             return;
-        var damage = AttackDamage(Inventory.Held);
+        var damage = AttackDamage(Inventory.Held) + MaceBonus(Inventory.Held);
         if (_activeEffects.TryGetValue(EffectType.Strength, out var str))
             damage += 3f * (str.Amplifier + 1);
         if (_activeEffects.TryGetValue(EffectType.Weakness, out var weak))
@@ -775,7 +778,10 @@ public sealed partial class BedrockConnection
             if (mob.Kind == MobKind.Spider)
                 damage += 2.5f * Enchanting.Level(held, "bane_of_arthropods");
             if (_server.Mobs.Damage(mob, damage, (Position.X, Position.Z), this, Enchanting.Level(held, "knockback"), Enchanting.Level(held, "looting"), source: DamageSource.PlayerAttack(this)))
+            {
                 mob.FireTicks = Math.Max(mob.FireTicks, 80 * Enchanting.Level(held, "fire_aspect"));
+                WearWeapon();
+            }
             return;
         }
         if (_server.Config.Pvp && _server.Players.FirstOrDefault(p => p.EntityId == target && p.IsInGame) is { } victim && victim != this)
@@ -783,7 +789,10 @@ public sealed partial class BedrockConnection
             var dx = victim.Position.X - Position.X;
             var dz = victim.Position.Z - Position.Z;
             if (dx * dx + dz * dz <= 6 * 6)
+            {
                 victim.Damage(damage + 1.25f * Enchanting.Level(Inventory.Held, "sharpness"), Position.X, Position.Z, source: DamageSource.PlayerAttack(this));
+                WearWeapon();
+            }
         }
     }
 
@@ -793,6 +802,10 @@ public sealed partial class BedrockConnection
         var name = held?.Type.Name ?? "";
         if (CustomItemRegistry.Get(name)?.GetProperty<DamageItemProperty>() is { } customDamage)
             return customDamage.Damage;
+        if (name == "minecraft:trident")
+            return 9;
+        if (name == "minecraft:mace")
+            return 6;
         var tier = name.Split(':')[^1].Split('_')[0] switch
         {
             "wooden" or "golden" => 0,

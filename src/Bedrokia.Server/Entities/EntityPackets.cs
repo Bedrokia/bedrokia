@@ -26,7 +26,7 @@ internal static class EntityPackets
         FlagSheared = 1L << 31, FlagBreathing = 1L << 35, FlagHasCollision = 1L << 48, FlagGravity = 1L << 49;
 
     public static byte[] AddActor(long entityId, string type, double x, double y, double z, float yaw, float health,
-        float maxHealth, float speed, float width, float height, long flags, int? colour = null, int? variant = null, float scale = 1)
+        float maxHealth, float speed, float width, float height, long flags, int? colour = null, int? variant = null, float scale = 1, string? nameTag = null)
     {
         var w = new BedrockWriter().VarUInt32(AddActorId).VarInt64(entityId).VarUInt64((ulong)entityId).String(type)
             .Vec3((float)x, (float)y, (float)z).Vec3(0, 0, 0)
@@ -34,28 +34,36 @@ internal static class EntityPackets
         w.VarUInt32(2); // attributes: name, min, value, max
         w.String("minecraft:health").Float32(0).Float32(health).Float32(maxHealth);
         w.String("minecraft:movement").Float32(0).Float32(speed).Float32(float.MaxValue);
-        Metadata(w, flags, width, height, colour, variant, scale);
+        Metadata(w, flags, width, height, colour, variant, scale, nameTag);
         return w.VarUInt32(0).VarUInt32(0) // entity properties (ints, floats)
             .VarUInt32(0) // links
             .ToArray();
     }
 
-    public static byte[] SetData(long entityId, long flags, float width, float height, int? colour = null, float scale = 1)
+    public static byte[] SetData(long entityId, long flags, float width, float height, int? colour = null, float scale = 1, string? nameTag = null)
     {
         var w = new BedrockWriter().VarUInt32(SetActorDataId).VarUInt64((ulong)entityId);
-        Metadata(w, flags, width, height, colour, scale: scale);
+        Metadata(w, flags, width, height, colour, scale: scale, nameTag: nameTag);
         return w.VarUInt32(0).VarUInt32(0).VarUInt64(0).ToArray();
     }
 
     // Key, type (+ legacy type byte), value; keys from gophertunnel entity_metadata.go.
-    private static void Metadata(BedrockWriter w, long flags, float width, float height, int? colour, int? variant = null, float scale = 1)
+    private static void Metadata(BedrockWriter w, long flags, float width, float height, int? colour, int? variant = null, float scale = 1,
+        string? nameTag = null)
     {
+        const uint typeString = 4;
+        if (nameTag is not null)
+            flags |= (1L << 14) | (1L << 15); // show name, always show name
         const uint typeByte = 0, typeInt16 = 1, typeInt32 = 2, typeFloat = 3, typeInt64 = 7;
         void Key(uint key, uint type) => w.VarUInt32(key).VarUInt32(type).Byte((byte)type);
-        w.VarUInt32(6u + (colour is null ? 0u : 1u) + (variant is null ? 0u : 1u));
+        w.VarUInt32(6u + (colour is null ? 0u : 1u) + (variant is null ? 0u : 1u) + (nameTag is null ? 0u : 1u));
         Key(0, typeInt64); w.VarInt64(flags);
         Key(7, typeInt16); w.Int16(300); // air supply
         Key(42, typeInt16); w.Int16(300); // max air supply
+        if (nameTag is not null)
+        {
+            Key(4, typeString); w.String(nameTag);
+        }
         Key(38, typeFloat); w.Float32(scale); // 0.5 for babies
         Key(53, typeFloat); w.Float32(width);
         Key(54, typeFloat); w.Float32(height);
