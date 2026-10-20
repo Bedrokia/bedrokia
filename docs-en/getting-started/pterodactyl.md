@@ -21,7 +21,7 @@ No extra allocation is needed with `WEBRTC_PORTS` on `auto`.
 (With a `first-last` range in `WEBRTC_PORTS`, each player gets a port of their own: then the whole range must be allocated.)
 
 In Docker the server only knows its internal address (172.x), so the egg writes the allocation's IP into `public-ip`.
-If the allocation is on `0.0.0.0`, set the public IP in `public-ip` yourself, otherwise the console shows *WebRTC connection failed*.
+If the allocation is on `0.0.0.0`, the server finds its public IP by itself (STUN) and logs it at startup; `public-ip` still wins.
 
 If players stay stuck on "Connecting to server…", check `public-ip` and that the port is open in UDP.
 

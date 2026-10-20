@@ -210,7 +210,7 @@ public sealed partial class BedrokiaServer
                     sharedUdpPort: Config.SharesWebRtcPort ? Config.Port : null)
             {
                 // Pterodactyl gives 0.0.0.0 for an allocation on every address: not one players can reach.
-                PublicAddress = IPAddress.TryParse(Config.PublicIp, out var publicIp) && !publicIp.Equals(IPAddress.Any) ? publicIp : null,
+                PublicAddress = IPAddress.TryParse(Config.PublicIp, out var publicIp) && !publicIp.Equals(IPAddress.Any) ? publicIp : DetectPublicIp(),
             };
         }
         catch (Exception e)
@@ -698,6 +698,30 @@ public sealed partial class BedrokiaServer
     }
 
     // Signaling thread. Online: token signed by the authorization service; offline: unverified.
+    /// <summary>
+    /// In Docker (Pterodactyl) without public-ip, the container's 172.x address would be sent to players and WebRTC
+    /// fails: ask a STUN server for the public address instead. Outside Docker the local addresses work.
+    /// </summary>
+    private IPAddress? DetectPublicIp()
+    {
+        if (!File.Exists("/.dockerenv") && Environment.GetEnvironmentVariable("P_SERVER_UUID") is null)
+            return null;
+        try
+        {
+            if (SIPSorcery.Net.STUNClient.GetPublicIPAddress("stun.l.google.com", 19302) is { } ip)
+            {
+                Logger.Info($"public-ip is empty: players will connect to {ip} (found with STUN). Set public-ip in server.properties to choose it.");
+                return ip;
+            }
+        }
+        catch (Exception e)
+        {
+            Logger.Debug($"STUN failed: {e.Message}");
+        }
+        Logger.Warn("public-ip is empty and the public address could not be found: set public-ip in server.properties, or players will get \"WebRTC connection failed\".");
+        return null;
+    }
+
     private ECDsa VerifyNetherNetToken(string token)
     {
         var keys = AuthKeys;
