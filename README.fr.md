@@ -67,13 +67,13 @@ lisible, c'est cool. 😎
 |---|---|
 | **Connexion** | Bedrock 26.50, NetherNet (WebRTC) sur un seul port TCP + une plage UDP, authentification Xbox Live, chiffrement |
 | **Monde** | Génération vanilla (biomes, relief, arbres, minerais), monde plat ou vide, sauvegarde, import de mondes Bedrock (`.mcworld` / LevelDB) |
-| **Blocs** | Pose orientée (escaliers, bûches, portes, lits…), coffres, coffre de l'Ender, tonneaux, fours / hauts fourneaux / fumoirs, portes, trappes, leviers, boutons, lits (réapparition, nuit sautée), murets connectés, gravité (sable, gravier), eau et lave qui coulent, cultures, arbres, TNT et explosions |
-| **Joueurs** | Inventaire complet, artisanat (toutes les recettes vanilla), enchantements, expérience, faim, dégâts, chute, mort, armure, objets lâchés et ramassés |
+| **Blocs** | Pose orientée (escaliers, bûches, portes, lits…), coffres, coffre de l'Ender, tonneaux, fours / hauts fourneaux / fumoirs, enclumes (réparation, renommage, fusion d'enchantements, dégâts de chute), meule (désenchantement, restitution d'XP), tailleur de pierre, table d'enchantement, portes, trappes, leviers, boutons, lits (réapparition, nuit sautée), murets connectés, gravité (sable, gravier, enclumes), eau et lave qui coulent, cultures, arbres, TNT et explosions |
+| **Joueurs** | Inventaire complet, artisanat (toutes les recettes vanilla), écosystème d'enchantements complet (table d'enchantement, enclume, meule, raccommodage, solidité, formules de combat et protections), expérience, faim, dégâts, chute, mort, armure, objets lâchés et ramassés |
 | **Mobs** | Animaux et monstres qui apparaissent, se déplacent, attaquent, lâchent des objets ; creepers qui explosent |
 | **Serveur** | `server.properties` comme PocketMine-MP, ops, liste blanche, bannissements, permissions et groupes, ~35 commandes, packs de ressources, annonce des nouvelles versions dans la console |
 | **Plugins** | Plugins C# organisés comme Bukkit / PocketMine (`plugin.yml`, `src/`, `resources/config.yml`), **compilés automatiquement au démarrage**, événements annulables, commandes, titres, scoreboard, effets, particules |
 
-Ce qui manque encore : coffres doubles, panneaux éditables, enclume, tailleur de pierre, meule, Nether et End,
+Ce qui manque encore : coffres doubles, panneaux éditables, Nether et End,
 redstone, grottes et structures. Voir la [feuille de route](https://nexiumpvp2.github.io/bedrokia/projet/roadmap/).
 
 ## 🚀 Démarrage rapide

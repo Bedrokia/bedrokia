@@ -29,8 +29,8 @@ internal static class InventoryPackets
     public const uint ContainerCloseId = 47;
 
     public const byte InteractOpenInventory = 6;
-    public const byte ContainerTypeInventory = 0xFF, ContainerTypeWorkbench = 1;
-    public const byte WindowCraftingTable = 1;
+    public const byte ContainerTypeInventory = 0xFF, ContainerTypeWorkbench = 1, ContainerTypeAnvil = 5, ContainerTypeGrindstone = 26, ContainerTypeStonecutter = 29;
+    public const byte WindowCraftingTable = 1, WindowAnvil = 4, WindowGrindstone = 5, WindowStonecutter = 6;
 
     public static byte[] ContainerOpen(byte windowId, byte type, int x, int y, int z) =>
         new BedrockWriter().VarUInt32(ContainerOpenId).Byte(windowId).Byte(type)

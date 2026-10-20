@@ -24,6 +24,15 @@ public sealed class PlayerInventory
     // Container ids (gophertunnel protocol/container.go).
     private const byte ContainerArmor = 6, ContainerCombined = 12, ContainerCraftingInput = 13, ContainerHotBar = 28,
         ContainerInventory = 29, ContainerOffhand = 34, ContainerCursor = 59, ContainerCreatedOutput = 60;
+    private const byte ContainerAnvilInput = 0, ContainerAnvilMaterial = 1, ContainerAnvilResultPreview = 2;
+    public const int AnvilInputSlot = 1, AnvilMaterialSlot = 2;
+
+    private const byte ContainerGrindstoneInput = 50, ContainerGrindstoneAdditional = 51, ContainerGrindstoneResultPreview = 52;
+    public const int GrindstoneFirstInputSlot = 16, GrindstoneSecondInputSlot = 17;
+
+    private const byte ContainerStonecutterInput = 53, ContainerStonecutterResultPreview = 54;
+    public const int StonecutterInputSlot = 3;
+
     private const int CreatedOutputSlot = 50;
     private const int RememberedRequests = 64;
 
@@ -76,12 +85,26 @@ public sealed class PlayerInventory
     private sealed record CreativeCraft(uint CreativeId) : Op;
     private sealed record Craft(uint RecipeId, int Times, bool Auto) : Op;
     private sealed record Create(int ResultSlot) : Op;
+    private sealed record AnvilCraft(uint RecipeId, int FilterTextIndex) : Op;
+    private sealed record GrindstoneCraft(int RecipeId, byte Times, int Xp) : Op;
 
     // Crafting grid in the UI inventory (Dragonfly session/player.go): 2x2 at 28, 3x3 (crafting table) at 32.
     private const int SmallGridOffset = 28, SmallGridSize = 4, LargeGridOffset = 32, LargeGridSize = 9;
 
     /// <summary>True while a crafting table is open (3x3 grid).</summary>
     public bool CraftingTableOpen { get; set; }
+
+    /// <summary>True while an anvil is open.</summary>
+    public bool AnvilOpen { get; set; }
+    public (int X, int Y, int Z)? AnvilPos { get; set; }
+
+    /// <summary>True while a grindstone is open.</summary>
+    public bool GrindstoneOpen { get; set; }
+    public (int X, int Y, int Z)? GrindstonePos { get; set; }
+
+    /// <summary>True while a stonecutter is open.</summary>
+    public bool StonecutterOpen { get; set; }
+    public (int X, int Y, int Z)? StonecutterPos { get; set; }
 
     private const byte ContainerEnchantingInput = 22, ContainerEnchantingMaterial = 23;
     public const int EnchantInputSlot = 14, EnchantLapisSlot = 15;
@@ -136,11 +159,12 @@ public sealed class PlayerInventory
             actions.Add(action);
         }
         var filters = reader.VarUInt32();
+        var filterStrings = new string[filters];
         for (var f = 0; f < filters; f++)
-            reader.String();
+            filterStrings[f] = reader.String();
         reader.Int32(); // filter cause
 
-        responses.Add(Process(requestId, actions, mode, drop, out var ok));
+        responses.Add(Process(requestId, actions, filterStrings, mode, drop, out var ok));
         if (!ok)
             responses.AddRange(ContentPackets());
         return true;
@@ -223,14 +247,9 @@ public sealed class PlayerInventory
                 return new CreativeCraft(creativeId);
             }
             case 15:
-                r.VarUInt32();
-                r.Int32();
-                return new Unsupported("anvil");
+                return new AnvilCraft(r.VarUInt32(), r.Int32());
             case 16:
-                r.Int32();
-                r.Byte();
-                r.VarInt32();
-                return new Unsupported("grindstone");
+                return new GrindstoneCraft(r.Int32(), r.Byte(), r.VarInt32());
             case 17:
                 r.String();
                 r.Byte();
@@ -275,7 +294,10 @@ public sealed class PlayerInventory
         ContainerHotBar or ContainerInventory or ContainerCombined => (Main, slot.Slot),
         ContainerArmor => (Armour, slot.Slot),
         ContainerOffhand => (Offhand, 0),
-        ContainerCursor or ContainerCreatedOutput or ContainerCraftingInput or ContainerEnchantingInput or ContainerEnchantingMaterial => (Ui, slot.Slot),
+        ContainerCursor or ContainerCreatedOutput or ContainerCraftingInput or ContainerEnchantingInput or ContainerEnchantingMaterial
+            or ContainerAnvilInput or ContainerAnvilMaterial or ContainerAnvilResultPreview
+            or ContainerGrindstoneInput or ContainerGrindstoneAdditional or ContainerGrindstoneResultPreview
+            or ContainerStonecutterInput or ContainerStonecutterResultPreview => (Ui, slot.Slot),
         // The open chest, barrel or ender chest; furnaces: ingredient 0, fuel 1, result 2.
         ContainerLevelEntity or ContainerBarrel when OpenContainer is { } open => (open.Items, slot.Slot),
         ContainerFurnaceIngredient or ContainerBlastFurnaceIngredient or ContainerSmokerIngredient when OpenContainer is { } open => (open.Items, 0),
@@ -284,7 +306,7 @@ public sealed class PlayerInventory
         _ => null,
     };
 
-    private byte[] Process(int requestId, List<Op> actions, GameMode mode, Action<ItemStack> drop, out bool ok)
+    private byte[] Process(int requestId, List<Op> actions, string[] filters, GameMode mode, Action<ItemStack> drop, out bool ok)
     {
         var before = new Dictionary<(Inventory, int), (ItemStack? Stack, int Count)>();
         var changes = new Dictionary<(byte, byte), (Inventory Inventory, int Slot)>();
@@ -525,6 +547,111 @@ public sealed class PlayerInventory
                         CreateResult(Enchanting.With(input, options[c.RecipeId]));
                         break;
                     }
+                    case AnvilCraft ac:
+                    {
+                        if (!AnvilOpen)
+                            throw new InvalidOperationException("anvil is not open");
+                        var input = Ui[AnvilInputSlot] ?? throw new InvalidOperationException("nothing in anvil input slot");
+                        var material = Ui[AnvilMaterialSlot];
+                        string? newName = (ac.FilterTextIndex >= 0 && ac.FilterTextIndex < filters.Length) ? filters[ac.FilterTextIndex] : null;
+
+                        var calc = Anvil.Calculate(input, material, newName, mode == GameMode.Creative)
+                            ?? throw new InvalidOperationException("invalid anvil craft");
+
+                        if (mode != GameMode.Creative)
+                        {
+                            if (Player is not null && Player.ExperienceLevel < calc.Cost)
+                                throw new InvalidOperationException("not enough experience levels");
+                            Player?.SetExperienceLevel(Player.ExperienceLevel - calc.Cost);
+                        }
+
+                        if (Player is not null && Player.Server.Events.HasAnvilUse)
+                        {
+                            var ev = new AnvilUseEvent(Player, calc.Result, newName ?? "", calc.Cost);
+                            if (!Player.Server.Events.OnAnvilUse(ev))
+                                throw new InvalidOperationException("anvil use cancelled");
+                        }
+
+                        Remember((Ui, AnvilInputSlot));
+                        Set(new SlotRef(ContainerAnvilInput, AnvilInputSlot, 0), (Ui, AnvilInputSlot), null);
+                        if (calc.MaterialConsumed > 0 && material is not null)
+                        {
+                            Take(ContainerAnvilMaterial, Ui, AnvilMaterialSlot, calc.MaterialConsumed);
+                        }
+
+                        if (mode != GameMode.Creative && Player is not null && AnvilPos is { } apos && Random.Shared.NextDouble() < 0.12)
+                        {
+                            var curBlock = Player.World.GetBlock(apos.X, apos.Y, apos.Z);
+                            if (curBlock is not null && Anvil.NextDamageState(curBlock) is { } nextBlock)
+                            {
+                                Player.Server.SetBlockAndUpdate(apos.X, apos.Y, apos.Z, nextBlock, Player.World);
+                                if (nextBlock.IsAir)
+                                    Player.Server.PlaySound("random.anvil_break", apos.X, apos.Y, apos.Z, Player.World);
+                                else
+                                    Player.Server.PlaySound("random.anvil_use", apos.X, apos.Y, apos.Z, Player.World);
+                            }
+                        }
+                        else if (Player is not null && AnvilPos is { } apos2)
+                        {
+                            Player.Server.PlaySound("random.anvil_use", apos2.X, apos2.Y, apos2.Z, Player.World);
+                        }
+
+                        CreateResult(calc.Result);
+                        break;
+                    }
+                    case GrindstoneCraft:
+                    {
+                        if (!GrindstoneOpen)
+                            throw new InvalidOperationException("grindstone is not open");
+                        var first = Ui[GrindstoneFirstInputSlot];
+                        var second = Ui[GrindstoneSecondInputSlot];
+
+                        var calc = Grindstone.Calculate(first, second)
+                            ?? throw new InvalidOperationException("invalid grindstone craft");
+
+                        if (calc.ExperienceRefund > 0 && Player is not null)
+                            Player.AddExperience(calc.ExperienceRefund);
+
+                        if (first is not null)
+                        {
+                            Remember((Ui, GrindstoneFirstInputSlot));
+                            Set(new SlotRef(ContainerGrindstoneInput, GrindstoneFirstInputSlot, 0), (Ui, GrindstoneFirstInputSlot), null);
+                        }
+                        if (second is not null)
+                        {
+                            Remember((Ui, GrindstoneSecondInputSlot));
+                            Set(new SlotRef(ContainerGrindstoneAdditional, GrindstoneSecondInputSlot, 0), (Ui, GrindstoneSecondInputSlot), null);
+                        }
+
+                        if (Player is not null && GrindstonePos is { } gpos)
+                            Player.Server.PlaySound("grindstone.use", gpos.X, gpos.Y, gpos.Z, Player.World);
+
+                        CreateResult(calc.Result);
+                        break;
+                    }
+                    case Craft c when StonecutterOpen && Recipes.ByNetworkId(c.RecipeId) is { Block: "stonecutter" } recipe && c.Times >= 1:
+                    {
+                        var input = Ui[StonecutterInputSlot] ?? throw new InvalidOperationException("nothing in stonecutter input");
+                        var expectedInput = recipe.Inputs.FirstOrDefault(i => !i.Empty);
+                        if (expectedInput is null || !expectedInput.Matches(input) || input.Count < c.Times)
+                            throw new InvalidOperationException("missing stonecutter ingredient");
+
+                        if (Player is not null)
+                        {
+                            var tx = new InventoryTransactionEvent(Player, InventoryTransactionType.Craft, recipe.Outputs.FirstOrDefault(), c.Times, (0, 0));
+                            if (!Player.Server.Events.OnInventoryTransaction(tx))
+                                throw new InvalidOperationException("stonecutter craft cancelled");
+                        }
+
+                        Take(ContainerStonecutterInput, Ui, StonecutterInputSlot, c.Times);
+                        pending = [.. Enumerable.Repeat(recipe.Outputs, c.Times).SelectMany(o => o).Select(o => o.Split(o.Count))];
+                        if (pending.Count == 1)
+                        {
+                            CreateResult(pending[0]);
+                            pending.Clear();
+                        }
+                        break;
+                    }
                     case Craft c:
                     {
                         // Crafting table and inventory crafting
@@ -615,8 +742,19 @@ public sealed class PlayerInventory
         var leftover = new List<ItemStack>();
         CraftingTableOpen = false;
         Enchanter = null;
+        AnvilOpen = false;
+        AnvilPos = null;
+        GrindstoneOpen = false;
+        GrindstonePos = null;
+        StonecutterOpen = false;
+        StonecutterPos = null;
         Ui[CreatedOutputSlot] = null;
-        foreach (var slot in Enumerable.Range(SmallGridOffset, LargeGridOffset + LargeGridSize - SmallGridOffset).Prepend(0).Append(EnchantInputSlot).Append(EnchantLapisSlot))
+        foreach (var slot in Enumerable.Range(SmallGridOffset, LargeGridOffset + LargeGridSize - SmallGridOffset)
+            .Prepend(0)
+            .Append(EnchantInputSlot).Append(EnchantLapisSlot)
+            .Append(AnvilInputSlot).Append(AnvilMaterialSlot)
+            .Append(GrindstoneFirstInputSlot).Append(GrindstoneSecondInputSlot)
+            .Append(StonecutterInputSlot))
         {
             if (Ui[slot] is not { } stack)
                 continue;

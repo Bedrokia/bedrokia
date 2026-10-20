@@ -89,6 +89,14 @@ public sealed partial class BedrockConnection
             Send(InventoryPackets.ContainerClose(WindowContainer, 0));
         OpenContainerAt = null;
         Inventory.OpenContainer = null;
+        Inventory.CraftingTableOpen = false;
+        Inventory.Enchanter = null;
+        Inventory.AnvilOpen = false;
+        Inventory.AnvilPos = null;
+        Inventory.GrindstoneOpen = false;
+        Inventory.GrindstonePos = null;
+        Inventory.StonecutterOpen = false;
+        Inventory.StonecutterPos = null;
         CloseMenu();
     }
 
