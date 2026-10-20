@@ -755,8 +755,10 @@ public sealed partial class BedrockConnection
     private const int LevelEventStartCracking = 3600, LevelEventStopCracking = 3601, LevelEventDestroyParticles = 2001;
     private (int X, int Y, int Z)? _breaking;
 
-    // The others see the block crack (the breaker's client animates it itself: sending it too restarted its
-    // animation, which looked like lag). Once per block: "continue" actions repeat while breaking.
+    // As PocketMine (InGamePacketHandler, SurvivalBlockBreakHandler): everyone who sees the block, the breaker included
+    // (its client only draws the cracks it is told about), gets the crack speed, once per block: the client also
+    // sends "continue" for the block it is already breaking. Releasing the button only stops the cracks; the block
+    // breaks on "predict destroy" (or the break transaction).
     private void OnBlockAction(int action, int x, int y, int z, int face)
     {
         _ = face;
@@ -771,21 +773,22 @@ public sealed partial class BedrockConnection
                     return;
                 var ticks = DropRules.BreakTicks(block, Inventory.Held);
                 if (ticks > 0)
-                    _server.BroadcastInExcept(World, this, Packets.LevelEvent(LevelEventStartCracking, x, y, z, 65535 / ticks));
+                    _server.BroadcastIn(World, Packets.LevelEvent(LevelEventStartCracking, x, y, z, 65535 / ticks));
                 break;
             }
-            case AbortBreak:
-                _breaking = null;
-                _server.BroadcastInExcept(World, this, Packets.LevelEvent(LevelEventStopCracking, x, y, z, 0));
-                break;
-            case PredictDestroyBlock or StopBreak or CreativeDestroyBlock:
+            case AbortBreak or StopBreak:
             {
-                var target = action == StopBreak && _breaking is { } breaking ? breaking : (x, y, z);
+                if (_breaking is not { } cracking)
+                    return;
                 _breaking = null;
-                _server.BroadcastInExcept(World, this, Packets.LevelEvent(LevelEventStopCracking, target.Item1, target.Item2, target.Item3, 0));
-                BreakBlock(target.Item1, target.Item2, target.Item3);
+                _server.BroadcastIn(World, Packets.LevelEvent(LevelEventStopCracking, cracking.X, cracking.Y, cracking.Z, 0));
                 break;
             }
+            case PredictDestroyBlock or CreativeDestroyBlock:
+                _breaking = null;
+                _server.BroadcastIn(World, Packets.LevelEvent(LevelEventStopCracking, x, y, z, 0));
+                BreakBlock(x, y, z);
+                break;
         }
     }
 
