@@ -65,7 +65,7 @@ lisible, c'est cool. 😎
 
 | Domaine | Détails |
 |---|---|
-| **Connexion** | Bedrock 26.50, NetherNet (WebRTC) sur un seul port TCP + une plage UDP, authentification Xbox Live, chiffrement |
+| **Connexion** | Bedrock 26.50, NetherNet (WebRTC) sur un seul port (TCP + UDP) pour tous les joueurs, authentification Xbox Live, chiffrement |
 | **Monde** | Génération vanilla (biomes, relief, arbres, minerais), monde plat ou vide, sauvegarde, import de mondes Bedrock (`.mcworld` / LevelDB) |
 | **Blocs** | Pose orientée (escaliers, bûches, portes, lits…), coffres, coffre de l'Ender, tonneaux, fours / hauts fourneaux / fumoirs, portes, trappes, leviers, boutons, lits (réapparition, nuit sautée), murets connectés, gravité (sable, gravier), eau et lave qui coulent, cultures, arbres, TNT et explosions |
 | **Joueurs** | Inventaire complet, artisanat (toutes les recettes vanilla), enchantements, expérience, faim, dégâts, chute, mort, armure, objets lâchés et ramassés |
@@ -86,7 +86,7 @@ redstone, grottes et structures. Voir la [feuille de route](https://nexiumpvp2.g
 chmod +x bedrokia && ./bedrokia
 ```
 
-3. Ouvrir les ports : **TCP 19132** et **UDP 19132 à 19156** (port du serveur + nombre de joueurs + 5).
+3. Ouvrir le port **19132** en **TCP et UDP**.
 4. Dans Minecraft : *Jouer → Serveurs → Ajouter un serveur*, adresse de la machine, port 19132.
 
 **Mettre à jour = remplacer un seul fichier** (comme le `.phar` de PocketMine-MP) : télécharger le nouveau `bedrokia`,
@@ -107,8 +107,7 @@ resource_packs/     packs de ressources (dossiers ou .mcpack)
 ## 🦖 Pterodactyl
 
 Un egg est fourni : [`deploy/pterodactyl/egg-bedrokia.json`](deploy/pterodactyl/egg-bedrokia.json).
-*Admin → Nests → Import Egg*, puis créer un serveur avec. Le serveur a besoin de son port principal **et** d'une plage
-de ports UDP (ajouter des allocations, ou régler la variable `WEBRTC_PORTS`). Détails :
+*Admin → Nests → Import Egg*, puis créer un serveur avec. Le serveur n'a besoin que de son port principal (TCP et UDP). Détails :
 [doc Pterodactyl](https://nexiumpvp2.github.io/bedrokia/demarrer/pterodactyl/).
 
 ## 🧩 Plugins en 30 secondes

@@ -33,10 +33,10 @@ Players connect through **NetherNet** (WebRTC), like recent Bedrock servers:
 | Port | Protocol | Role |
 |---|---|---|
 | `server-port` (19132) | TCP | connection (signalling) |
-| `server-port` to `server-port + max-players + 4` | UDP | player traffic |
+| `server-port` (19132) | UDP | every player's traffic |
 
-With 20 players: TCP 19132 and UDP 19132-19156. The range can be changed with `webrtc-ports` in
-[server.properties](configuration.md).
+One port number, open in TCP and UDP. To give each player a port instead (the old way), put a range in `webrtc-ports`
+([server.properties](configuration.md)).
 
 ```bash
 sudo ufw allow 19132/tcp && sudo ufw allow 19132:19156/udp

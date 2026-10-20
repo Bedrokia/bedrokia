@@ -68,25 +68,27 @@ public sealed class ServerConfig
     public int ViewDistance { get; set; } = 8;
 
     /// <summary>
-    /// UDP ports of the players' WebRTC (NetherNet) connections, "first-last", or "auto": the same number as
-    /// <see cref="Port"/> and the next ones, one per player slot. Open them in the firewall.
+    /// UDP ports of the players' WebRTC (NetherNet) connections: "auto" (default), every player on the UDP port with
+    /// the same number as <see cref="Port"/>; or "first-last", one port of the range per player (the old way).
     /// </summary>
-    /// <remarks>WebRTC gives each connected player its own UDP port, so a single port cannot serve several players.</remarks>
     public string WebRtcPorts { get; set; } = "auto";
+
+    /// <summary>Every player shares the UDP port <see cref="Port"/> ("auto").</summary>
+    public bool SharesWebRtcPort => WebRtcPorts.Equals("auto", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>IPv4 address players reach the server at, given to WebRTC; empty = the machine's own (set it behind Docker/NAT).</summary>
     public string PublicIp { get; set; } = "";
 
     public (int First, int Last) WebRtcPortRange() =>
-        WebRtcPorts.Equals("auto", StringComparison.OrdinalIgnoreCase)
-            ? Port == 0 ? (0, 0) : (Port, Math.Min(65535, Port + MaxPlayers + 4))
+        SharesWebRtcPort
+            ? (Port, Port)
             : ParsePortRange(WebRtcPorts) ?? throw new InvalidDataException("webrtc-ports must be auto or look like 19132-19160.");
 
-    /// <summary>The range for the WebRTC library; null with server-port 0 (tests): any free port.</summary>
+    /// <summary>The range for the WebRTC library; null when the port is shared or with server-port 0 (tests).</summary>
     internal SIPSorcery.Sys.PortRange? ParseWebRtcPorts()
     {
         var (first, last) = WebRtcPortRange();
-        if (first == 0)
+        if (SharesWebRtcPort || first == 0)
             return null;
         first += first & 1; // SIPSorcery needs an even first port (RTP/RTCP pairs); an odd server-port crashed at startup
         return new SIPSorcery.Sys.PortRange(first, Math.Max(first + 1, last));
@@ -150,7 +152,7 @@ public sealed class ServerConfig
         ("keep-inventory", "on/off: players keep their items when they die", c => OnOff(c.KeepInventory), (c, v) => c.KeepInventory = ParseBool(v)),
         ("force-resources", "on/off: players must accept the server's resource packs to join", c => OnOff(c.ForceResourcePacks), (c, v) => c.ForceResourcePacks = ParseBool(v)),
         ("autosave-interval", "Seconds between automatic saves", c => c.AutosaveInterval.ToString(), (c, v) => c.AutosaveInterval = int.Parse(v)),
-        ("webrtc-ports", "UDP ports for players: auto = server-port and the next ones (one per slot), or first-last", c => c.WebRtcPorts, (c, v) => c.WebRtcPorts = v),
+        ("webrtc-ports", "UDP port(s) for players: auto = all on the UDP port of server-port, or first-last = one port per player", c => c.WebRtcPorts, (c, v) => c.WebRtcPorts = v),
         ("public-ip", "IPv4 players connect to, for a server in Docker or behind NAT (Pterodactyl); empty = this machine's addresses", c => c.PublicIp, (c, v) => c.PublicIp = v),
         ("check-updates", "on/off: tell in the console when a new Bedrokia version is released", c => OnOff(c.CheckUpdates), (c, v) => c.CheckUpdates = ParseBool(v)),
         ("log-level", "debug, info, warn or error", c => c.LogLevel.ToString().ToLowerInvariant(), (c, v) => c.LogLevel = Enum.Parse<LogLevel>(v, ignoreCase: true)),

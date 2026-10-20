@@ -41,17 +41,21 @@ public sealed class NetherNetListener : IDisposable
     private readonly Func<string, ECDsa> _verifyToken;
     private readonly bool _allowAnonymous;
     private readonly PortRange? _udpPorts;
+    private readonly UdpMux? _mux;
     private readonly SemaphoreSlim _requestSlots = new(MaxConcurrentRequests);
 
     /// <param name="bind">TCP address for signaling (normally the game port, 19132).</param>
     /// <param name="serverKey">Long-lived P-384 key presented to clients (trust on first use).</param>
     /// <param name="verifyToken">Checks a client multiplayer token and returns its key; throws <see cref="LoginException"/>.</param>
     /// <param name="allowAnonymous">Accept offers without an identity (offline mode only).</param>
-    /// <param name="udpPorts">UDP ports for WebRTC, or null for any free port.</param>
-    /// <exception cref="SocketException">The TCP port cannot be bound.</exception>
+    /// <param name="udpPorts">UDP ports for WebRTC, one per player, or null for any free port.</param>
+    /// <param name="sharedUdpPort">One UDP port for every player instead (0: any free port); then <paramref name="udpPorts"/> is unused.</param>
+    /// <exception cref="SocketException">The TCP or UDP port cannot be bound.</exception>
     public NetherNetListener(IPEndPoint bind, ECDsa serverKey, Func<string, ECDsa> verifyToken,
-        bool allowAnonymous, PortRange? udpPorts)
+        bool allowAnonymous, PortRange? udpPorts, int? sharedUdpPort = null)
     {
+        if (sharedUdpPort is { } shared)
+            _mux = new UdpMux(new IPEndPoint(IPAddress.Any, shared));
         _tcp = new TcpListener(bind);
         _tcp.Start();
         _serverKey = serverKey;
@@ -62,14 +66,20 @@ public sealed class NetherNetListener : IDisposable
 
     public IPEndPoint LocalEndPoint => (IPEndPoint)_tcp.LocalEndpoint;
 
+    /// <summary>The UDP port every player shares, or null when each player gets a port of the range.</summary>
+    public int? SharedUdpPort => _mux?.Port;
+
     /// <summary>
     /// IPv4 address announced in the WebRTC candidates instead of the machine's own ones, for a server behind Docker
     /// or NAT (Pterodactyl): players cannot reach a container's 172.x address. Null: the local addresses.
     /// </summary>
     public IPAddress? PublicAddress { get; init; }
 
-    /// <summary>Puts <paramref name="address"/> in every IPv4 host candidate of an SDP, dropping the duplicates this makes.</summary>
-    internal static string WithPublicAddress(string sdp, IPAddress address)
+    /// <summary>
+    /// Puts <paramref name="address"/> (if any) and <paramref name="port"/> (if any) in every IPv4 host candidate of an SDP,
+    /// dropping the duplicates this makes.
+    /// </summary>
+    internal static string WithPublicAddress(string sdp, IPAddress? address, int? port = null)
     {
         var lines = new List<string>();
         var seen = new HashSet<string>();
@@ -80,11 +90,16 @@ public sealed class NetherNetListener : IDisposable
             if (line.StartsWith("a=candidate:", StringComparison.Ordinal) && fields.Length > 7 && fields[7] == "host"
                 && IPAddress.TryParse(fields[4], out var ip) && ip.AddressFamily == AddressFamily.InterNetwork)
             {
-                fields[4] = address.ToString();
+                if (address is not null)
+                    fields[4] = address.ToString();
+                if (port is not null)
+                    fields[5] = port.Value.ToString();
                 if (!seen.Add(fields[4] + ":" + fields[5]))
                     continue;
                 lines.Add(string.Join(' ', fields));
             }
+            else if (port is not null && line.StartsWith("a=candidate:", StringComparison.Ordinal))
+                continue; // shared port: IPv4 only, other candidates would lead to a port of their own
             else
                 lines.Add(line);
         }
@@ -212,7 +227,7 @@ public sealed class NetherNetListener : IDisposable
             throw new LoginException("An Xbox Live identity is required to join this server.");
 
         var config = new RTCConfiguration { certificates2 = [CreateDtlsCertificate()] };
-        var peer = new RTCPeerConnection(config, 0, _udpPorts);
+        var peer = _mux is null ? new RTCPeerConnection(config, 0, _udpPorts) : MuxPeerConnection.Create(config, _mux);
         var session = new NetherNetSession(peer, remote, peerKey);
         peer.ondatachannel += session.Attach;
         peer.oniceconnectionstatechange += state => Trace?.Invoke($"nethernet: {remote} ICE {state}");
@@ -223,8 +238,15 @@ public sealed class NetherNetListener : IDisposable
         {
             // The guide asks to strip the identity before handing the offer to WebRTC.
             answer = await WhipWhepServer.AnswerAsync(peer, SdpIdentity.WithoutIdentity(offer), true);
-            if (PublicAddress is not null)
-                answer = WithPublicAddress(answer, PublicAddress);
+            if (_mux is not null && peer is MuxPeerConnection muxed)
+            {
+                // Its checks reach the shared port: route them to this connection by its ufrag.
+                var ufrag = answer.Split("\r\n").FirstOrDefault(l => l.StartsWith("a=ice-ufrag:", StringComparison.Ordinal))?["a=ice-ufrag:".Length..]
+                    ?? throw new InvalidOperationException("The answer has no ICE ufrag.");
+                _mux.Register(ufrag, muxed.Channel);
+            }
+            if (PublicAddress is not null || _mux is not null)
+                answer = WithPublicAddress(answer, PublicAddress, _mux?.Port);
         }
         catch
         {
@@ -246,6 +268,7 @@ public sealed class NetherNetListener : IDisposable
     public void Dispose()
     {
         _tcp.Stop();
+        _mux?.Dispose();
         _requestSlots.Dispose();
     }
 }

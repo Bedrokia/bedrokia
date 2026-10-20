@@ -15,19 +15,15 @@ installs the latest Bedrokia release and sets `server.properties` from the panel
 
 ## Ports (important)
 
-Bedrokia uses **NetherNet**: one TCP port to connect, then one UDP port per player.
+Bedrokia uses **NetherNet**: every player goes through **the server's main allocation**, in TCP and UDP.
+No extra allocation is needed with `WEBRTC_PORTS` on `auto`.
 
-- The server's main allocation gives the **TCP port** (and the first UDP port).
-- It **also** needs UDP ports for the players. Two ways:
-  1. **Consecutive allocations**: give the server the ports *main* to *main + players + 4*
-     (e.g. 25600 to 25624 for 20 players) and leave `WEBRTC_PORTS` on `auto`.
-  2. **Chosen range**: reserve a range of allocations and set `WEBRTC_PORTS` to `first-last`
-     (e.g. `25700-25730`).
+(With a `first-last` range in `WEBRTC_PORTS`, each player gets a port of their own: then the whole range must be allocated.)
 
 In Docker the server only knows its internal address (172.x), so the egg writes the allocation's IP into `public-ip`.
 If the allocation is on `0.0.0.0`, set the public IP in `public-ip` yourself, otherwise the console shows *WebRTC connection failed*.
 
-If players stay stuck on "Connecting to server…", the UDP range is almost always what is not open.
+If players stay stuck on "Connecting to server…", check `public-ip` and that the port is open in UDP.
 
 ## Variables
 

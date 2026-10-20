@@ -206,7 +206,8 @@ public sealed partial class BedrokiaServer
             Logger.Info($"World '{Config.LevelName}': seed {World.Generator.Seed}, spawn {World.Spawn}.");
             _netherNet = new NetherNetListener(new IPEndPoint(IPAddress.Any, Config.Port),
                     ServerIdentityKey.LoadOrCreate(Path.Combine("data", "nethernet-identity.pem")),
-                    VerifyNetherNetToken, allowAnonymous: !Config.OnlineMode, Config.ParseWebRtcPorts())
+                    VerifyNetherNetToken, allowAnonymous: !Config.OnlineMode, Config.ParseWebRtcPorts(),
+                    sharedUdpPort: Config.SharesWebRtcPort ? Config.Port : null)
             {
                 // Pterodactyl gives 0.0.0.0 for an allocation on every address: not one players can reach.
                 PublicAddress = IPAddress.TryParse(Config.PublicIp, out var publicIp) && !publicIp.Equals(IPAddress.Any) ? publicIp : null,
@@ -229,7 +230,9 @@ public sealed partial class BedrokiaServer
             if (!Config.OnlineMode)
                 Logger.Warn("OnlineMode is off: player identities are NOT verified. Anyone can join under any name.");
             var (firstUdp, lastUdp) = Config.WebRtcPortRange();
-            Logger.Info($"Listening on port {_netherNet.LocalEndPoint.Port}: TCP (join) + UDP {firstUdp}-{lastUdp} (players). Type 'help' for commands.");
+            Logger.Info(_netherNet.SharedUdpPort is { } udp
+                ? $"Listening on port {_netherNet.LocalEndPoint.Port}: TCP (join) + UDP {udp} (every player). Type 'help' for commands."
+                : $"Listening on port {_netherNet.LocalEndPoint.Port}: TCP (join) + UDP {firstUdp}-{lastUdp} (players). Type 'help' for commands.");
             _started.TrySetResult();
 
             using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1.0 / TicksPerSecond));

@@ -172,6 +172,65 @@ public sealed class NetherNetTests : IDisposable
     }
 
     [Fact]
+    public async Task Two_peers_share_one_udp_port()
+    {
+        _listener = new NetherNetListener(new IPEndPoint(IPAddress.Loopback, 0), _serverKey,
+            token => LoginRequest.VerifyMultiplayerToken(token, null, DateTimeOffset.UtcNow).ClientKey, true, null, sharedUdpPort: 0);
+        _ = _listener.RunAsync(_stop.Token);
+        var port = _listener.SharedUdpPort!.Value;
+        var sessions = new List<NetherNetSession>();
+        var received = new Dictionary<NetherNetSession, TaskCompletionSource<byte[]>>();
+        var bothConnected = new TaskCompletionSource();
+        _listener.SessionOpened += session =>
+        {
+            var got = new TaskCompletionSource<byte[]>();
+            lock (sessions)
+                received[session] = got;
+            session.PacketReceived += (_, data) => got.TrySetResult(data);
+            session.Connected += s =>
+            {
+                lock (sessions)
+                {
+                    sessions.Add(s);
+                    if (sessions.Count == 2)
+                        bothConnected.TrySetResult();
+                }
+            };
+        };
+
+        var first = await ConnectAsync(_listener.LocalEndPoint, null);
+        var second = await ConnectAsync(_listener.LocalEndPoint, null);
+        foreach (var answer in new[] { await first.Response.Content.ReadAsStringAsync(), await second.Response.Content.ReadAsStringAsync() })
+        {
+            var candidates = answer.Split("\r\n").Where(l => l.StartsWith("a=candidate:") && l.Contains(" typ host")).ToList();
+            Assert.NotEmpty(candidates);
+            Assert.All(candidates, c => Assert.Equal(port.ToString(), c.Split(' ')[5])); // every player on the one port
+        }
+        await bothConnected.Task.WaitAsync(Timeout);
+
+        // Each client's data reaches its own session only.
+        first.Reliable.send([0, 1, 1, 1]);
+        second.Reliable.send([0, 2, 2, 2]);
+        var payloads = new List<byte[]>();
+        foreach (var session in sessions)
+            payloads.Add(await received[session].Task.WaitAsync(Timeout));
+        Assert.Contains(payloads, p => p.SequenceEqual(new byte[] { 1, 1, 1 }));
+        Assert.Contains(payloads, p => p.SequenceEqual(new byte[] { 2, 2, 2 }));
+
+        first.Peer.close();
+        second.Peer.close();
+    }
+
+    [Fact]
+    public void Stun_ufrag_is_read_from_the_username()
+    {
+        // Binding request, USERNAME "srv1:cli2" (9 bytes, padded to 12).
+        byte[] packet = [0x00, 0x01, 0x00, 0x10, 0x21, 0x12, 0xA4, 0x42, .. new byte[12], 0x00, 0x06, 0x00, 0x09, .. "srv1:cli2"u8, 0, 0, 0];
+        Assert.Equal("srv1", UdpMux.StunUfrag(packet));
+        Assert.Null(UdpMux.StunUfrag([0x17, 0xFE, 0xFD, .. new byte[20]])); // DTLS: not STUN
+    }
+
+    [Fact]
     public async Task Anonymous_peer_is_refused_when_identity_is_required()
     {
         var listener = Start(allowAnonymous: false);

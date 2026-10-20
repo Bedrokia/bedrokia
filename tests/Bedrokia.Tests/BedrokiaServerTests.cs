@@ -47,10 +47,15 @@ public class BedrokiaServerTests
     }
 
     [Fact]
-    public void Auto_webrtc_ports_start_at_the_server_port()
+    public void Auto_webrtc_ports_share_the_server_port_and_a_range_is_one_port_per_player()
     {
         var config = new ServerConfig { Port = 19132, MaxPlayers = 20 };
-        Assert.Equal((19132, 19156), config.WebRtcPortRange());
+        Assert.True(config.SharesWebRtcPort);
+        Assert.Equal((19132, 19132), config.WebRtcPortRange());
+        Assert.Null(config.ParseWebRtcPorts());
+        config.WebRtcPorts = "25600-25630";
+        Assert.False(config.SharesWebRtcPort);
+        Assert.Equal((25600, 25630), config.WebRtcPortRange());
     }
 
     [Fact]

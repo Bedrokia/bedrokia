@@ -26,7 +26,7 @@ server.log            journal
 | Clé | Défaut | Rôle |
 |---|---|---|
 | `motd` | `Bedrokia Server` | nom dans la liste des serveurs |
-| `server-port` | `19132` | port de connexion (TCP), et premier port UDP |
+| `server-port` | `19132` | port de connexion (TCP) et des joueurs (UDP, même numéro) |
 | `max-players` | `20` | joueurs maximum |
 | `gamemode` | `survival` | `survival`, `creative`, `adventure` (nouveaux joueurs) |
 | `force-gamemode` | `off` | `on` : tout le monde rejoint dans ce mode |
@@ -43,7 +43,7 @@ server.log            journal
 | `keep-inventory` | `off` | garder ses objets à la mort |
 | `force-resources` | `off` | obliger les joueurs à accepter les packs de ressources |
 | `autosave-interval` | `60` | secondes entre deux sauvegardes automatiques |
-| `webrtc-ports` | `auto` | ports UDP des joueurs : `auto` (port du serveur + `max-players` + 5) ou `premier-dernier` |
+| `webrtc-ports` | `auto` | ports UDP des joueurs : `auto` (tous sur le port UDP de `server-port`) ou `premier-dernier` (un port par joueur) |
 | `public-ip` | *(vide)* | IPv4 utilisée par les joueurs, à remplir si le serveur tourne dans Docker ou derrière un NAT (l'egg Pterodactyl la remplit) |
 | `check-updates` | `on` | vérifie toutes les 6 h s'il existe une nouvelle version, et l'annonce dans la console avec son lien |
 | `log-level` | `info` | `debug`, `info`, `warn`, `error` |

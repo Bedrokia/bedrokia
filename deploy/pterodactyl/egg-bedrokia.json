@@ -7,7 +7,7 @@
     "exported_at": "2026-10-18T00:00:00+00:00",
     "name": "Bedrokia",
     "author": "nexiumpvp2@users.noreply.github.com",
-    "description": "Bedrokia: a Minecraft Bedrock Edition server engine written in C# / .NET 10, mostly by AI. Supports plugins (C# source, no compilation needed), resource packs and imported Bedrock worlds. Players join through NetherNet (WebRTC): the server needs its main port (TCP + UDP) and a range of UDP ports, see the WEBRTC_PORTS variable.",
+    "description": "Bedrokia: a Minecraft Bedrock Edition server engine written in C# / .NET 10, mostly by AI. Supports plugins (C# source, no compilation needed), resource packs and imported Bedrock worlds. Players join through NetherNet (WebRTC), every one on the server's main port (TCP + UDP): no extra allocation needed.",
     "features": null,
     "docker_images": {
         "Debian": "ghcr.io/parkervcp/yolks:debian"
@@ -50,7 +50,7 @@
         },
         {
             "name": "Max players",
-            "description": "Maximum number of players. With WEBRTC_PORTS=auto the server also needs this many UDP ports + 5 after the main port.",
+            "description": "Maximum number of players.",
             "env_variable": "MAX_PLAYERS",
             "default_value": "20",
             "user_viewable": true,
@@ -100,7 +100,7 @@
         },
         {
             "name": "WebRTC UDP ports",
-            "description": "UDP ports used by players (NetherNet). auto = the main port and the following ones (max players + 5). Or a range like 25600-25630 matching extra allocations of this server.",
+            "description": "auto = every player on the main port (TCP + UDP). Or a range like 25600-25630 to give each player a port of its own (all of them must then be allocations of this server).",
             "env_variable": "WEBRTC_PORTS",
             "default_value": "auto",
             "user_viewable": true,
