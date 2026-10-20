@@ -219,7 +219,8 @@ public sealed class Mob(long entityId, MobKind kind, double x, double y, double 
     public float Width => Baby ? Kind.Width / 2 : Kind.Width;
     public float Height => Baby ? Kind.Height / 2 : Kind.Height;
 
-    public long Flags => EntityPackets.FlagHasCollision | EntityPackets.FlagGravity | EntityPackets.FlagBreathing
+    // Flying mobs have no gravity: with it the client made them drop between two position updates.
+    public long Flags => EntityPackets.FlagHasCollision | (Kind.Movement == MobMovement.Fly ? 0 : EntityPackets.FlagGravity) | EntityPackets.FlagBreathing
                          | (Burning ? EntityPackets.FlagOnFire : 0)
                          | (Baby ? EntityPackets.FlagBaby : 0)
                          | (LoveTicks > 0 ? EntityPackets.FlagInLove : 0)
@@ -2104,8 +2105,11 @@ public sealed class MobManager(BedrokiaServer server)
         MoveTowards(mob, mob.X - Math.Sin(rad) * 4, mob.Y, mob.Z + Math.Cos(rad) * 4, mob.Kind.Speed * 0.45 * 1.2, pathfind: false);
     }
 
-    private static double Distance2(Mob mob, BedrockConnection player) => Distance2(mob, player.Position.X, player.Position.Z)
-        + Math.Pow(player.Position.Y - BedrockConnection.EyeHeight - mob.Y, 2);
+    private static double Distance2(Mob mob, BedrockConnection player)
+    {
+        var dy = player.Position.Y - BedrockConnection.EyeHeight - mob.Y;
+        return Distance2(mob, player.Position.X, player.Position.Z) + dy * dy;
+    }
 
     private static double Distance2(Mob mob, double x, double z) => (mob.X - x) * (mob.X - x) + (mob.Z - z) * (mob.Z - z);
 }

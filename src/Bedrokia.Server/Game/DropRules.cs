@@ -110,6 +110,19 @@ public static class DropRules
             return drops;
         }
 
+        if (Crop(block, name, random) is { } harvest)
+        {
+            foreach (var (item, count) in harvest)
+                if (count > 0)
+                    Add(drops, item, count);
+            return drops;
+        }
+        if (Alias(name) is { } alias)
+        {
+            if (alias.Length > 0)
+                Add(drops, alias, 1);
+            return drops;
+        }
         if (Special.TryGetValue(name, out var rule))
         {
             if (rule.Item.Length > 0)
@@ -139,6 +152,51 @@ public static class DropRules
         "short_grass", "tall_grass", "fern", "large_fern", "deadbush", "vine", "seagrass", "glow_lichen", "web",
         "hanging_roots", "nether_sprouts", "twisting_vines", "weeping_vines", "cave_vines",
     }.ToFrozenSet();
+
+    private static int State(BlockType block, string key) => block.States.TryGetValue(key, out var v) ? Convert.ToInt32(v) : 0;
+
+    // Crops give their harvest when grown, their seed (or one crop) before.
+    private static (string Item, int Count)[]? Crop(BlockType block, string name, Random random) => name switch
+    {
+        "wheat" => State(block, "growth") >= 7 ? [("wheat", 1), ("wheat_seeds", random.Next(0, 4))] : [("wheat_seeds", 1)],
+        "carrots" => [("carrot", State(block, "growth") >= 7 ? random.Next(1, 5) : 1)],
+        "potatoes" => State(block, "growth") >= 7
+            ? [("potato", random.Next(1, 5)), ("poisonous_potato", random.NextDouble() < 0.02 ? 1 : 0)]
+            : [("potato", 1)],
+        "beetroot" => State(block, "growth") >= 7 ? [("beetroot", 1), ("beetroot_seeds", random.Next(1, 4))] : [("beetroot_seeds", 1)],
+        "nether_wart" => [("nether_wart", State(block, "age") >= 3 ? random.Next(2, 5) : 1)],
+        "cocoa" => [("cocoa_beans", State(block, "age") >= 2 ? random.Next(2, 4) : 1)],
+        "pumpkin_stem" or "attached_pumpkin_stem" => [("pumpkin_seeds", random.Next(0, 2))],
+        "melon_stem" or "attached_melon_stem" => [("melon_seeds", random.Next(0, 2))],
+        "sweet_berry_bush" => [("sweet_berries", State(block, "growth") >= 2 ? random.Next(1, 4) : 0)],
+        "torchflower_crop" => [("torchflower_seeds", 1)],
+        "pitcher_crop" => [("pitcher_pod", 1)],
+        "cave_vines_body_with_berries" or "cave_vines_head_with_berries" => [("glow_berries", 1)],
+        _ => null,
+    };
+
+    // Blocks whose item has another name; "" drops nothing.
+    private static string? Alias(string name) => name switch
+    {
+        "reeds" => "sugar_cane",
+        "standing_sign" or "wall_sign" => "oak_sign",
+        _ when name.EndsWith("_standing_sign") => name.Replace("_standing_sign", "_sign"),
+        _ when name.EndsWith("_wall_sign") => name.Replace("_wall_sign", "_sign"),
+        "standing_banner" or "wall_banner" => "banner",
+        "unpowered_repeater" or "powered_repeater" => "repeater",
+        "unpowered_comparator" or "powered_comparator" => "comparator",
+        "tripwire" => "string",
+        "lit_redstone_lamp" => "redstone_lamp",
+        "unlit_redstone_torch" => "redstone_torch",
+        "daylight_detector_inverted" => "daylight_detector",
+        "lit_blast_furnace" => "blast_furnace",
+        "lit_smoker" => "smoker",
+        "bamboo_sapling" => "bamboo",
+        "cake" or "frosted_ice" or "powder_snow" or "piston_arm_collision" or "sticky_piston_arm_collision" or "moving_block"
+            or "cave_vines" or "cave_vines_body_with_berries" or "cave_vines_head_with_berries" or "end_portal" or "portal" => "",
+        _ when name.EndsWith("_stained_glass") || name.EndsWith("_stained_glass_pane") => "",
+        _ => null,
+    };
 
     /// <summary>How long a block takes to break (0: at once), Bedrock values.</summary>
     public static float HardnessOf(BlockType block) => Hardness.GetValueOrDefault(block.Name, 1.5f);

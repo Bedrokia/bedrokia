@@ -310,90 +310,50 @@ public sealed partial class BedrokiaServer
 
     public void BroadcastMessage(string message) => Broadcast(Packets.Text(TextType.Raw, message), StripFormatting(message));
 
-    /// <summary>Sends <paramref name="packet"/> to every player in game (encoded once for all targets).</summary>
+    // Broadcasts go into each player's batch of the tick (one compressed message per player per tick). Encoding a
+    // packet once and sending it on its own to everyone flushed each player's batch and multiplied the messages.
+
+    /// <summary>Sends <paramref name="packet"/> to every player in game.</summary>
     public void Broadcast(byte[] packet)
     {
-        var targets = _players.Where(p => p.IsInGame).ToList();
-        if (targets.Count == 0)
-            return;
-        if (targets.Count == 1)
-        {
-            targets[0].Send(packet);
-            return;
-        }
-        var preEncoded = targets[0].Codec.Encode(packet);
-        foreach (var player in targets)
-            player.SendRawBatch(preEncoded);
+        foreach (var player in _players)
+            if (player.IsInGame)
+                player.Send(packet);
     }
 
     public void BroadcastExcept(BedrockConnection except, byte[] packet)
     {
-        var targets = _players.Where(p => p.IsInGame && p != except).ToList();
-        if (targets.Count == 0)
-            return;
-        if (targets.Count == 1)
-        {
-            targets[0].Send(packet);
-            return;
-        }
-        var preEncoded = targets[0].Codec.Encode(packet);
-        foreach (var player in targets)
-            player.SendRawBatch(preEncoded);
+        foreach (var player in _players)
+            if (player.IsInGame && player != except)
+                player.Send(packet);
     }
 
     /// <summary>Sends <paramref name="packet"/> to the players in <paramref name="world"/> only (blocks, entities, effects).</summary>
     public void BroadcastIn(World world, byte[] packet)
     {
-        var targets = _players.Where(p => p.IsInGame && p.World == world).ToList();
-        if (targets.Count == 0)
-            return;
-        if (targets.Count == 1)
-        {
-            targets[0].Send(packet);
-            return;
-        }
-        var preEncoded = targets[0].Codec.Encode(packet);
-        foreach (var player in targets)
-            player.SendRawBatch(preEncoded);
+        foreach (var player in _players)
+            if (player.IsInGame && player.World == world)
+                player.Send(packet);
     }
 
     public void BroadcastInExcept(World world, BedrockConnection except, byte[] packet)
     {
-        var targets = _players.Where(p => p.IsInGame && p != except && p.World == world).ToList();
-        if (targets.Count == 0)
-            return;
-        if (targets.Count == 1)
-        {
-            targets[0].Send(packet);
-            return;
-        }
-        var preEncoded = targets[0].Codec.Encode(packet);
-        foreach (var player in targets)
-            player.SendRawBatch(preEncoded);
+        foreach (var player in _players)
+            if (player.IsInGame && player != except && player.World == world)
+                player.Send(packet);
     }
 
     /// <summary>Sends <paramref name="packet"/> to viewers of chunk (chunkX, chunkZ), or world-wide if chunk not cached.</summary>
     public void BroadcastInChunk(World world, int chunkX, int chunkZ, byte[] packet)
     {
-        var chunk = world.LoadedChunk(chunkX, chunkZ);
-        if (chunk is not null)
+        if (world.LoadedChunk(chunkX, chunkZ) is not { } chunk)
         {
-            if (chunk.Viewers.Count == 0)
-                return;
-            if (chunk.Viewers.Count == 1)
-            {
-                var single = chunk.Viewers.First();
-                if (single.IsInGame)
-                    single.Send(packet);
-                return;
-            }
-            var preEncoded = chunk.Viewers.First().Codec.Encode(packet);
-            foreach (var viewer in chunk.Viewers)
-                if (viewer.IsInGame)
-                    viewer.SendRawBatch(preEncoded);
+            BroadcastIn(world, packet);
             return;
         }
-        BroadcastIn(world, packet);
+        foreach (var viewer in chunk.Viewers)
+            if (viewer.IsInGame)
+                viewer.Send(packet);
     }
 
 
@@ -497,68 +457,74 @@ public sealed partial class BedrokiaServer
         if (items is null)
             return;
         items.Tick();
-        // Only what changed, with the item's network offset (Dragonfly Movement.Send / ViewEntityMovement).
+        // Moving items: their position every other tick to the players who see their chunk (the client simulates
+        // them in between); at rest: once, with a zero motion. A motion every tick made them jitter.
+        var everyOther = CurrentTick % 2 == 0;
         foreach (var item in items.All)
         {
-            var position = (item.X, item.Y, item.Z);
+            var resting = item.OnGround && item.Vx == 0 && item.Vz == 0;
             var (sx, sy, sz) = item.SentPosition;
-            if (float.IsNaN(sx) || MathF.Abs(position.X - sx) + MathF.Abs(position.Y - sy) + MathF.Abs(position.Z - sz) > 0.001f)
+            var moved = float.IsNaN(sx) || MathF.Abs(item.X - sx) + MathF.Abs(item.Y - sy) + MathF.Abs(item.Z - sz) > 0.001f;
+            if (!moved || !resting && !everyOther)
+                continue;
+            item.SentPosition = (item.X, item.Y, item.Z);
+            int cx = (int)MathF.Floor(item.X) >> 4, cz = (int)MathF.Floor(item.Z) >> 4;
+            BroadcastInChunk(world, cx, cz, EntityPackets.MoveAbsolute(item.EntityId, item.X, item.Y + DroppedItems.NetworkOffset, item.Z, 0, 0, item.OnGround));
+            if (resting && item.SentVelocity != (0, 0, 0))
             {
-                item.SentPosition = position;
-                BroadcastIn(world, EntityPackets.MoveAbsolute(item.EntityId, item.X, item.Y + DroppedItems.NetworkOffset, item.Z, 0, 0, item.OnGround));
-            }
-            var velocity = (item.Vx, item.Vy, item.Vz);
-            if (velocity != item.SentVelocity)
-            {
-                item.SentVelocity = velocity;
-                BroadcastIn(world, EntityPackets.Motion(item.EntityId, item.Vx, item.Vy, item.Vz));
+                item.SentVelocity = (0, 0, 0);
+                BroadcastInChunk(world, cx, cz, EntityPackets.Motion(item.EntityId, 0, 0, 0));
             }
         }
 
-        foreach (var item in items.Expire(CurrentTick))
-            BroadcastIn(world, Packets.RemoveActor(item.EntityId));
-
-        var worldPlayers = _players.Where(p => p.IsInGame && p.World == world).ToList();
-        if (worldPlayers.Count == 0 || items.All.Count == 0)
-            return;
-
-        var pickedUp = new HashSet<DroppedItem>();
-        foreach (var player in worldPlayers)
+        if (CurrentTick % 20 == 0)
         {
+            foreach (var item in items.Expire(CurrentTick))
+                BroadcastIn(world, Packets.RemoveActor(item.EntityId));
+            foreach (var item in items.Merge(CurrentTick))
+                BroadcastIn(world, Packets.RemoveActor(item.EntityId));
+        }
+
+        if (items.All.Count == 0)
+            return;
+        foreach (var player in _players)
+        {
+            if (!player.IsInGame || player.World != world || player.Dead)
+                continue;
             var (pcx, pcz) = player.ChunkPosition;
             for (var dx = -1; dx <= 1; dx++)
             for (var dz = -1; dz <= 1; dz++)
             {
-                var candidateItems = items.InChunk(pcx + dx, pcz + dz);
-                if (candidateItems is null || candidateItems.Count == 0)
+                if (items.InChunk(pcx + dx, pcz + dz) is not { Count: > 0 } candidateItems)
                     continue;
-
-                foreach (var item in candidateItems.ToList())
+                // Backwards: a picked up item leaves this list.
+                for (var i = candidateItems.Count - 1; i >= 0; i--)
                 {
-                    if (pickedUp.Contains(item) || CurrentTick - item.SpawnTick < item.PickupDelay)
+                    if (i >= candidateItems.Count)
+                        continue;
+                    var item = candidateItems[i];
+                    if (CurrentTick - item.SpawnTick < item.PickupDelay)
                         continue; // just dropped: not yet (the player who threw it would take it back at once)
-                    if (Math.Abs(player.Position.X - item.X) < 1.5 && Math.Abs(player.Position.Z - item.Z) < 1.5
-                        && Math.Abs(player.Position.Y - 1.62 - item.Y) < 2)
+                    if (Math.Abs(player.Position.X - item.X) >= 1.5 || Math.Abs(player.Position.Z - item.Z) >= 1.5
+                        || Math.Abs(player.Position.Y - 1.62 - item.Y) >= 2)
+                        continue;
+                    var stack = item.Stack;
+                    if (Events.HasPlayerPickupItem)
                     {
-                        var stack = item.Stack;
-                        if (Events.HasPlayerPickupItem)
-                        {
-                            var ev = new PlayerPickupItemEvent(player, item);
-                            if (!Events.OnPlayerPickupItem(ev))
-                                continue;
-                            stack = ev.Item; // a plugin may change what is picked up
-                        }
-                        var (packets, remaining) = player.Inventory.Add(stack);
-                        if (remaining == stack.Count)
-                            continue; // inventory full
-                        player.Send([.. packets]);
-                        items.Remove(item);
-                        pickedUp.Add(item);
-                        BroadcastIn(world, InventoryPackets.TakeItemActor(item.EntityId, player.EntityId));
-                        BroadcastIn(world, Packets.RemoveActor(item.EntityId));
-                        if (remaining > 0)
-                            DropItem(stack.Split(remaining), item.X, item.Y, item.Z, world: world); // ponytail: leftover respawns as a new entity
+                        var ev = new PlayerPickupItemEvent(player, item);
+                        if (!Events.OnPlayerPickupItem(ev))
+                            continue;
+                        stack = ev.Item; // a plugin may change what is picked up
                     }
+                    var (packets, remaining) = player.Inventory.Add(stack);
+                    if (remaining == stack.Count)
+                        continue; // inventory full
+                    player.Send([.. packets]);
+                    items.Remove(item);
+                    BroadcastIn(world, InventoryPackets.TakeItemActor(item.EntityId, player.EntityId));
+                    BroadcastIn(world, Packets.RemoveActor(item.EntityId));
+                    if (remaining > 0)
+                        DropItem(stack.Split(remaining), item.X, item.Y, item.Z, world: world); // ponytail: leftover respawns as a new entity
                 }
             }
         }

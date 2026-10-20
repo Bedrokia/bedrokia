@@ -47,8 +47,31 @@ public sealed partial class BedrokiaServer
         BroadcastIn(world, Packets.UpdateBlock(x, y, z, block.NetworkId));
         world.Fluids.Wake(x, y, z);
         UpdateShapes(x, y, z, world);
+        CheckSupport(x, y + 1, z, world);
         if (block.Name == "minecraft:fire")
             ScheduleFire(world, x, y, z);
+    }
+
+    /// <summary>
+    /// The block at (x, y, z) may have lost what holds it (the block under it changed): it breaks with its drops, and
+    /// so on up the column (sugar cane, cactus, bamboo, kelp...).
+    /// </summary>
+    public void CheckSupport(int x, int y, int z, World? world = null)
+    {
+        world ??= World;
+        for (var cy = y; cy <= Chunk.MaxY; cy++)
+        {
+            if (world.GetBlock(x, cy, z) is not { } block || !Support.Unsupported(block, world.GetBlock(x, cy - 1, z)))
+                return;
+            // The top half of a door or tall plant drops nothing: its lower half already did.
+            if (block.States.GetValueOrDefault("upper_block_bit") is not (byte and not 0))
+                foreach (var drop in DropRules.Drops(block, null, _blockRandom))
+                    DropItem(drop, x + 0.5f, cy + 0.25f, z + 0.5f, world: world);
+            world.SetBlock(x, cy, z, Blocks.Air);
+            BroadcastIn(world, Packets.LevelEvent(2001, x, cy, z, unchecked((int)block.NetworkId))); // break particles
+            BroadcastIn(world, Packets.UpdateBlock(x, cy, z, Blocks.Air.NetworkId));
+            world.Fluids.Wake(x, cy, z);
+        }
     }
 
     /// <summary>A block changed at (x, y, z): walls there and around reshape their connections.</summary>
@@ -85,11 +108,16 @@ public sealed partial class BedrokiaServer
 
     // --- Random ticks: 3 random blocks per sub-chunk per tick, in chunks near players (vanilla randomTickSpeed 3) ---
 
+    private readonly HashSet<(int, int)> _randomTickChunks = [];
+
     private void RandomTicks(World world)
     {
-        var chunks = new HashSet<(int, int)>();
-        foreach (var player in _players.Where(p => p.IsInGame && p.World == world))
+        var chunks = _randomTickChunks;
+        chunks.Clear();
+        foreach (var player in _players)
         {
+            if (!player.IsInGame || player.World != world)
+                continue;
             var (cx, cz) = player.ChunkPosition;
             for (var dx = -6; dx <= 6; dx++)
             for (var dz = -6; dz <= 6; dz++)

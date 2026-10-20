@@ -107,9 +107,27 @@ public sealed class World
     // Half the cores generate; the rest keep the game running (disk loads are not limited).
     private static readonly SemaphoreSlim GenerationSlots = new(Math.Max(1, Environment.ProcessorCount / 2));
 
+    // The last chunk looked up: block loops (collisions, light, maps, mobs) read the same chunk again and again.
+    private sealed class CachedChunk(long key, Chunk chunk)
+    {
+        public readonly long Key = key;
+        public readonly Chunk Chunk = chunk;
+    }
+
+    private CachedChunk? _lastChunk;
+
     /// <summary>The chunk if it is already in memory and ready, otherwise null.</summary>
-    public Chunk? LoadedChunk(int x, int z) =>
-        _chunks.TryGetValue(ChunkKey(x, z), out var lazy) && lazy.IsValueCreated && lazy.Value.IsCompletedSuccessfully ? lazy.Value.Result : null;
+    public Chunk? LoadedChunk(int x, int z)
+    {
+        var key = ChunkKey(x, z);
+        if (_lastChunk is { } last && last.Key == key)
+            return last.Chunk;
+        if (!_chunks.TryGetValue(key, out var lazy) || !lazy.IsValueCreated || !lazy.Value.IsCompletedSuccessfully)
+            return null;
+        var chunk = lazy.Value.Result;
+        _lastChunk = new CachedChunk(key, chunk);
+        return chunk;
+    }
 
     /// <summary>Block at a world position, or null when its chunk is not loaded.</summary>
     public BlockType? GetBlock(int x, int y, int z) => LoadedChunk(x >> 4, z >> 4)?.GetBlock(x & 15, y, z & 15);
@@ -193,6 +211,7 @@ public sealed class World
                 continue;
             _chunks.TryRemove(key, out _);
         }
+        _lastChunk = null; // it may be one of the dropped chunks
     }
 
     private void SaveLevel() => WriteAtomically(LevelFile,

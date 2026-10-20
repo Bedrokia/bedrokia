@@ -323,6 +323,25 @@ public sealed partial class BedrockConnection
         }
         if (item == "glass_bottle")
             return FillBottle();
+        // Snow on snow: one more layer (8 at most), as vanilla.
+        if (item == "snow_layer")
+        {
+            foreach (var (sx, sy, sz) in new[] { (x, y, z), (x + fx, y + fy, z + fz) })
+            {
+                if (World.GetBlock(sx, sy, sz) is not { Name: "minecraft:snow_layer" } layer || SpawnProtected(sx, sz))
+                    continue;
+                var height = Convert.ToInt32(layer.States.GetValueOrDefault("height", 0));
+                if (height >= 7)
+                    continue;
+                _server.SetBlockAndUpdate(sx, sy, sz, Blocks.Get("snow_layer",
+                    ("covered_bit", layer.States.GetValueOrDefault("covered_bit", (byte)0)), ("height", height + 1)), World);
+                _server.PlaySound("use.snow", sx + 0.5, sy + 0.5, sz + 0.5, World);
+                if (survival)
+                    Send(Inventory.ConsumeHeld());
+                return true;
+            }
+            return false;
+        }
         // Boats on water or the ground, minecarts on a rail.
         if (VehicleManager.ForItem(item) is { } vehicle)
         {
