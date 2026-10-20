@@ -50,8 +50,8 @@ puis redémarrer. Le panel affiche le bilan de chargement dans la console.
 Il suffit de **remplacer un fichier** :
 
 1. télécharger `bedrokia` depuis la [release voulue](https://github.com/Nexiumpvp2/bedrokia/releases) ;
+2. dans le panel : *Files* → supprimer l'ancien `bedrokia` → *Upload* le nouveau ;
 3. attendre la fin de l'upload (100 %), puis redémarrer.
-3. redémarrer.
 
 Pas besoin de réinstaller : l'egg lance une copie (`.bedrokia-run`), donc le fichier peut être remplacé même serveur allumé, et les mondes, joueurs, plugins et
 réglages sont gardés. (*Settings → Reinstall Server* marche aussi : il télécharge la version de `VERSION`.)
