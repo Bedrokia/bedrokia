@@ -290,7 +290,8 @@ public static class Packets
             .Byte((byte)type);
         if (type == TextType.Chat)
             writer.String(source);
-        return writer.String(message)
+        // An empty text is a malformed packet for the client, which disconnects (an empty line in a plugin's help).
+        return writer.String(message.Length == 0 ? "§r" : message)
             .String("") // xuid
             .String("") // platform chat id
             .Bool(false) // no filtered message
