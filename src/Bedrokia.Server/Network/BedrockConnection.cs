@@ -755,7 +755,8 @@ public sealed partial class BedrockConnection
     private const int LevelEventStartCracking = 3600, LevelEventStopCracking = 3601, LevelEventDestroyParticles = 2001;
     private (int X, int Y, int Z)? _breaking;
 
-    // Block cracking is driven by the server: tell everyone how long the block takes to break.
+    // The others see the block crack (the breaker's client animates it itself: sending it too restarted its
+    // animation, which looked like lag). Once per block: "continue" actions repeat while breaking.
     private void OnBlockAction(int action, int x, int y, int z, int face)
     {
         _ = face;
@@ -763,23 +764,25 @@ public sealed partial class BedrockConnection
         {
             case StartBreak or ContinueDestroyBlock:
             {
+                if (_breaking == (x, y, z))
+                    return;
                 _breaking = (x, y, z);
                 if (GameMode == GameMode.Creative || World.GetBlock(x, y, z) is not { IsAir: false } block)
                     return;
                 var ticks = DropRules.BreakTicks(block, Inventory.Held);
                 if (ticks > 0)
-                    _server.BroadcastIn(World, Packets.LevelEvent(LevelEventStartCracking, x, y, z, 65535 / ticks));
+                    _server.BroadcastInExcept(World, this, Packets.LevelEvent(LevelEventStartCracking, x, y, z, 65535 / ticks));
                 break;
             }
             case AbortBreak:
                 _breaking = null;
-                _server.BroadcastIn(World, Packets.LevelEvent(LevelEventStopCracking, x, y, z, 0));
+                _server.BroadcastInExcept(World, this, Packets.LevelEvent(LevelEventStopCracking, x, y, z, 0));
                 break;
             case PredictDestroyBlock or StopBreak or CreativeDestroyBlock:
             {
                 var target = action == StopBreak && _breaking is { } breaking ? breaking : (x, y, z);
                 _breaking = null;
-                _server.BroadcastIn(World, Packets.LevelEvent(LevelEventStopCracking, target.Item1, target.Item2, target.Item3, 0));
+                _server.BroadcastInExcept(World, this, Packets.LevelEvent(LevelEventStopCracking, target.Item1, target.Item2, target.Item3, 0));
                 BreakBlock(target.Item1, target.Item2, target.Item3);
                 break;
             }
