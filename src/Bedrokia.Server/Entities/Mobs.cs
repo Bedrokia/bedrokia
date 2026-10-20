@@ -275,7 +275,7 @@ public sealed class MobManager(BedrokiaServer server)
 {
     public const int ViewDistance = 80, DespawnDistance = 128, PassiveCap = 12, HostileCap = 18, WaterCap = 8, AmbientCap = 4;
     private const int ActiveRange = 64, AdultAgeTicks = 24000, BreedCooldownTicks = 6000, LoveTicks = 600, AngerTicks = 600;
-    private const int MaxPathNodes = 600;
+    private const int MaxPathNodes = 300;
 
     // At most this many A* searches a tick: a crowd of mobs chasing at once spread their searches over the next
     // ticks instead of freezing one tick (they keep walking their old path meanwhile).
@@ -378,15 +378,14 @@ public sealed class MobManager(BedrokiaServer server)
             if (allPlayers[i].IsInGame)
                 _playerScratch.Add(allPlayers[i]);
 
-        if (tick % 20 == 0)
+        // Spawning once a second per player, spread over the second's 20 ticks (all at once made a lag spike).
+        foreach (var world in server.Worlds)
         {
-            foreach (var world in server.Worlds)
-            {
+            if (tick % 20 == 0)
                 Wake(world);
-                var here = _playerScratch.Where(p => p.World == world).ToList();
-                if (here.Count > 0)
-                    SpawnAround(world, here);
-            }
+            var here = _playerScratch.Where(p => p.World == world && (p.EntityId + tick) % 20 == 0).ToList();
+            if (here.Count > 0)
+                SpawnAround(world, here);
         }
 
         _mobScratch.Clear();
@@ -1003,6 +1002,11 @@ public sealed class MobManager(BedrokiaServer server)
     /// A* over the blocks the mob can stand on: 8 directions, one block up, three blocks down, no lava, fire or
     /// cactus. Returns the best path found within <see cref="MaxPathNodes"/> nodes (towards the goal if unreachable).
     /// </summary>
+    private readonly PriorityQueue<(int X, int Y, int Z), double> _pathOpen = new();
+    private readonly Dictionary<(int, int, int), double> _pathCost = [];
+    private readonly Dictionary<(int, int, int), (int, int, int)> _pathFrom = [];
+    private readonly HashSet<(int, int, int)> _pathClosed = [];
+
     internal List<(int X, int Y, int Z)>? FindPath(Mob mob, (int X, int Y, int Z) goal)
     {
         var world = mob.World!;
@@ -1017,17 +1021,27 @@ public sealed class MobManager(BedrokiaServer server)
             return Math.Max(dx, dz) + 0.414 * Math.Min(dx, dz) + Math.Abs(a.Y - b.Y);
         }
 
-        var open = new PriorityQueue<(int X, int Y, int Z), double>();
-        var cost = new Dictionary<(int, int, int), double> { [start] = 0 };
-        var cameFrom = new Dictionary<(int, int, int), (int, int, int)>();
+        // Reused by every search (game thread only).
+        var open = _pathOpen;
+        var cost = _pathCost;
+        var cameFrom = _pathFrom;
+        var closed = _pathClosed;
+        open.Clear();
+        cost.Clear();
+        cameFrom.Clear();
+        closed.Clear();
+        cost[start] = 0;
         open.Enqueue(start, Heuristic(start, goal));
         var best = start;
         var bestH = Heuristic(start, goal);
         var expanded = 0;
         (int X, int Z)[] directions = [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)];
 
-        while (open.TryDequeue(out var node, out _) && expanded++ < MaxPathNodes)
+        while (open.TryDequeue(out var node, out _) && expanded < MaxPathNodes)
         {
+            if (!closed.Add(node))
+                continue; // already expanded through a cheaper way
+            expanded++;
             var h = Heuristic(node, goal);
             if (h < bestH)
                 (best, bestH) = (node, h);
@@ -1060,6 +1074,8 @@ public sealed class MobManager(BedrokiaServer server)
                 if (ny is not { } stepY)
                     continue;
                 var next = (nx, stepY, nz);
+                if (closed.Contains(next) || Math.Abs(nx - start.Item1) + Math.Abs(nz - start.Item3) > 40)
+                    continue;
                 var stepCost = (diagonal ? 1.414 : 1) + (stepY > node.Y ? 1 : 0) + (node.Y - stepY) * 0.5
                                + (world.GetBlock(nx, stepY, nz) == Blocks.Water ? 2 : 0);
                 var newCost = cost[node] + stepCost;
@@ -1090,8 +1106,24 @@ public sealed class MobManager(BedrokiaServer server)
     private static bool Standable(World world, int x, int y, int z, int height) =>
         world.GetBlock(x, y - 1, z) is { } floor && BlockPhysics.IsSolid(floor) && !Dangerous(floor) && Passable(world, x, y, z, height);
 
-    private static bool Dangerous(BlockType block) => block.Name is "minecraft:lava" or "minecraft:flowing_lava" or "minecraft:fire"
-        or "minecraft:soul_fire" or "minecraft:cactus" or "minecraft:magma" or "minecraft:sweet_berry_bush" or "minecraft:campfire";
+    private static byte[] _dangerous = [];
+
+    // Same cache as BlockPhysics.IsSolid: paths ask it for every block they look at.
+    private static bool Dangerous(BlockType block)
+    {
+        var table = _dangerous;
+        if (block.Id >= table.Length)
+        {
+            var grown = new byte[Math.Max(Blocks.Count, block.Id + 1)];
+            Array.Copy(table, grown, table.Length);
+            _dangerous = table = grown;
+        }
+        ref var known = ref table[block.Id];
+        if (known == 0)
+            known = block.Name is "minecraft:lava" or "minecraft:flowing_lava" or "minecraft:fire" or "minecraft:soul_fire" or "minecraft:cactus"
+                or "minecraft:magma" or "minecraft:sweet_berry_bush" or "minecraft:campfire" ? (byte)2 : (byte)1;
+        return known == 2;
+    }
 
     private static bool LineOfSight(Mob mob, BedrockConnection player)
     {
@@ -2136,6 +2168,23 @@ public static class BlockPhysics
         "minecraft:rail", "minecraft:golden_rail", "minecraft:detector_rail", "minecraft:activator_rail",
     }.ToFrozenSet();
 
-    public static bool IsSolid(BlockType? block) =>
-        block is not null && !block.IsAir && !Passable.Contains(block.Name) && !block.Name.EndsWith("_sapling");
+    // Worked out once per block state (0 unknown, 1 no, 2 yes): it is asked millions of times (collisions, paths).
+    private static byte[] _solid = [];
+
+    public static bool IsSolid(BlockType? block)
+    {
+        if (block is null)
+            return false;
+        var table = _solid;
+        if (block.Id >= table.Length)
+        {
+            var grown = new byte[Math.Max(Blocks.Count, block.Id + 1)];
+            Array.Copy(table, grown, table.Length);
+            _solid = table = grown;
+        }
+        ref var known = ref table[block.Id];
+        if (known == 0)
+            known = !block.IsAir && !Passable.Contains(block.Name) && !block.Name.EndsWith("_sapling") ? (byte)2 : (byte)1;
+        return known == 2;
+    }
 }
