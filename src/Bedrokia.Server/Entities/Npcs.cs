@@ -129,7 +129,7 @@ public sealed class NpcManager(BedrokiaServer server)
             if (InRange(npc, player) && npc.Viewers.Add(player))
             {
                 // The skin travels in the player list; the entry is removed again so the NPC is not in the tab list.
-                var info = new PlayerInfo(npc.Uuid, npc.EntityId, npc.NameTag, "", 0, npc.Skin);
+                var info = new PlayerInfo(npc.Uuid, npc.EntityId, npc.NameTag, "", -1, npc.Skin); // -1: unknown device (0 is an invalid enum value for the client)
                 player.Send(PlayerPackets.PlayerListAdd([info]),
                     PlayerPackets.AddPlayer(info, (float)npc.X, (float)npc.Y + BedrockConnection.EyeHeight, (float)npc.Z, 0, npc.Yaw, 0,
                         showName: npc.NameTag != "", nameTag: npc.NameTag),
