@@ -69,7 +69,8 @@ usage vanilla :
 - **Usure** : les outils, armes et armures s'usent (barre de durabilité) et se cassent. Solidité les ménage.
 - **Arc** : on le tend (pleine puissance en 1 s), il consomme une flèche (pas avec Infinité ni en créatif). Puissance,
   Frappe et Flamme marchent. Les flèches plantées se ramassent.
-- **Arbalète** : chargée en 1,25 s (moins avec Charge rapide), elle tire fort ; Tir multiple tire trois flèches.
+- **Arbalète** : chargée en 1,25 s (moins avec Charge rapide), elle reste armée jusqu'au clic suivant ; Tir multiple tire
+  trois flèches.
 - **Trident** : on le lance (8 dégâts) ; il reste là où il tombe, ou revient avec Loyauté. En mêlée : 9 dégâts.
 - **Canne à pêche** : on la lance dans l'eau, on attend que le bouchon plonge, et on la ramène à ce moment-là pour
   attraper un poisson, un déchet ou un trésor (Appât et Chance de la mer marchent).
@@ -83,11 +84,25 @@ usage vanilla :
 - **Fiole vide** : se remplit d'eau. **Boule de feu** : comme le briquet.
 - **Fiole d'expérience**, **charge de vent** (repousse tout autour) et **potion persistante** se lancent.
 - **Œuf** : un poussin sort une fois sur huit.
-- **Feu d'artifice** : lancé depuis un bloc, ou propulse le joueur qui vole en élytres.
+- **Feu d'artifice** : lancé depuis un bloc, il éclate avec ses étoiles (couleurs, forme, traînée, scintillement), ou
+  propulse le joueur qui vole en élytres. L'artisanat des fusées et des étoiles marche, ainsi que la copie de cartes.
 - **Corne de chèvre** : sonne, avec 7 secondes de recharge.
 
-> Pas encore : bateaux, wagonnets, selles, laisses, cartes, ballots et longue-vue (l'arbalète tire dès qu'elle est
-> chargée, sans rester armée).
+- **Bateaux** (toutes les essences, radeaux en bambou) : posés sur l'eau ou au sol, on monte dedans (clic droit) et
+  on les dirige ; accroupi pour descendre ; trois coups les cassent.
+- **Wagonnets** : posés sur un rail, poussés en avançant. Les rails prennent tout seuls leur forme (virages, pentes) ;
+  les rails de propulsion accélèrent quand ils sont alimentés (bloc de redstone, torche ou levier à côté) et freinent
+  sinon.
+- **Selles** : sur un cochon, un arpenteur, un cheval, un âne, une mule ou un dromadaire, qu'on monte ensuite. Les
+  chevaux se dirigent au clavier ; le cochon avec une carotte sur un bâton, l'arpenteur avec un champignon biscornu
+  sur un bâton.
+- **Laisse** : l'animal suit le joueur (elle casse au-delà de 10 blocs) ; un clic sur une barrière l'y attache.
+- **Carte** : une carte vierge devient une carte de la zone, qui se complète quand on marche avec et montre le
+  joueur.
+- **Longue-vue** : zoome (géré par le client).
+
+> Pas encore : les ballots, ni de passager dans les bateaux ; les wagonnets à coffre, à entonnoir et à TNT n'ont pas
+> de fonction à eux.
 
 ### Importer un monde Bedrock
 

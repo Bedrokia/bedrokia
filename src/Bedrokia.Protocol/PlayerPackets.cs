@@ -43,14 +43,20 @@ public static class PlayerPackets
     /// Entity metadata of a living player. Without the "breathing" flag and air values the client shows the
     /// oxygen bubbles permanently, as if underwater. Keys, flags and types from gophertunnel (MIT) entity_metadata.go.
     /// </summary>
-    public static BedrockWriter PlayerMetadata(this BedrockWriter w, string name, bool showName = true)
+    /// <param name="seatY">Riding: the height of the seat above the vehicle (riding flag and seat offset); null otherwise.</param>
+    public static BedrockWriter PlayerMetadata(this BedrockWriter w, string name, bool showName = true, float? seatY = null)
     {
-        const int typeInt16 = 1, typeFloat = 3, typeString = 4, typeInt64 = 7;
+        const int typeInt16 = 1, typeFloat = 3, typeString = 4, typeInt64 = 7, typeVec3 = 8;
         const long nameFlags = (1L << 14) | (1L << 15); // show name, always show name
-        var flags = (showName ? nameFlags : 0) | (1L << 35) | (1L << 48) | (1L << 49); // breathing, collision, gravity
+        var flags = (showName ? nameFlags : 0) | (1L << 35) | (1L << 48) | (1L << 49) // breathing, collision, gravity
+                    | (seatY is null ? 0 : 1L << 2); // riding
         void Key(uint key, uint type) => w.VarUInt32(key).VarUInt32(type).Byte((byte)type); // type + legacy type byte
 
-        w.VarUInt32(7);
+        w.VarUInt32(seatY is null ? 7u : 8u);
+        if (seatY is { } seat)
+        {
+            Key(56, typeVec3); w.Vec3(0, seat, 0); // seat offset
+        }
         Key(0, typeInt64); w.VarInt64(flags);
         Key(4, typeString); w.String(name);
         Key(7, typeInt16); w.Int16(300); // air supply
@@ -85,9 +91,9 @@ public static class PlayerPackets
     }
 
     /// <summary>SetActorData for an entity's metadata (here: a player, including the receiving client itself).</summary>
-    public static byte[] SetPlayerData(long entityId, string name, bool showName = true) => new BedrockWriter().VarUInt32(PacketId.SetActorData)
+    public static byte[] SetPlayerData(long entityId, string name, bool showName = true, float? seatY = null) => new BedrockWriter().VarUInt32(PacketId.SetActorData)
         .VarUInt64((ulong)entityId)
-        .PlayerMetadata(name, showName)
+        .PlayerMetadata(name, showName, seatY)
         .VarUInt32(0).VarUInt32(0) // entity properties
         .VarUInt64(0) // tick
         .ToArray();

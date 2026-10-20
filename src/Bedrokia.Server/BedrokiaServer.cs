@@ -60,6 +60,12 @@ public sealed partial class BedrokiaServer
     /// <summary>Mobs of the overworld (spawning, AI, combat).</summary>
     public MobManager Mobs { get; }
 
+    /// <summary>Boats and minecarts, and players riding them or saddled mobs.</summary>
+    public VehicleManager Vehicles { get; }
+
+    /// <summary>Filled maps: their pixels, drawn from the world.</summary>
+    public MapManager Maps { get; }
+
     /// <summary>Non-player characters spawned by plugins.</summary>
     public NpcManager Npcs { get; }
 
@@ -91,6 +97,7 @@ public sealed partial class BedrokiaServer
         world.Fluids = new Fluids(this, world);
         world.FallingBlocks = new FallingBlocks(this, world);
         Mobs.Load(world); // its animals appear when their chunks are loaded
+        Vehicles.Load(world);
     }
 
     internal long NextEntityId() => Interlocked.Increment(ref _nextEntityId);
@@ -115,6 +122,8 @@ public sealed partial class BedrokiaServer
             logger.Error(permissionsError);
         Commands = new CommandManager(logger);
         Mobs = new MobManager(this);
+        Vehicles = new VehicleManager(this);
+        Maps = new MapManager(this);
         Npcs = new NpcManager(this);
         Projectiles = new ProjectileManager(this);
         Events = new ServerEvents(logger);
@@ -412,8 +421,12 @@ public sealed partial class BedrokiaServer
         try
         {
             var saved = Worlds.Sum(w => w.Save());
+            Maps.Save();
             foreach (var world in Worlds)
+            {
                 Mobs.Save(world);
+                Vehicles.Save(world);
+            }
             foreach (var player in _players.Where(p => p.IsInGame))
                 player.Snapshot().Write(player.Info!.Uuid);
             if (saved > 0)
@@ -576,6 +589,8 @@ public sealed partial class BedrokiaServer
                 using (Timings.Track(Timings.Mobs))
                 {
                     Mobs.Tick(CurrentTick);
+                    Vehicles.Tick(CurrentTick);
+                    Maps.Tick(CurrentTick);
                     Npcs.Tick(CurrentTick);
                     Projectiles.Tick();
                 }
@@ -739,7 +754,9 @@ public sealed partial class BedrokiaServer
             return;
         var wasInGame = connection.IsInGame; // read before OnClosed() changes the stage
         connection.OnClosed();
+        Vehicles.Dismount(connection, teleport: false);
         Mobs.Forget(connection);
+        Vehicles.Forget(connection);
         Npcs.Forget(connection);
         _players.Remove(connection);
         if (wasInGame)

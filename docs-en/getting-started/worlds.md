@@ -68,7 +68,8 @@ food, armour, buckets, flint and steel and bone meal, these have their vanilla u
 - **Wear**: tools, weapons and armour wear out (durability bar) and break. Unbreaking spares them.
 - **Bow**: draw it (full power in 1 s); it uses an arrow (not with Infinity or in creative). Power, Punch and Flame
   work. Stuck arrows can be picked up.
-- **Crossbow**: charged in 1.25 s (less with Quick Charge), it shoots hard; Multishot fires three arrows.
+- **Crossbow**: charged in 1.25 s (less with Quick Charge), it stays loaded until the next click; Multishot fires
+  three arrows.
 - **Trident**: thrown (8 damage), it stays where it lands or comes back with Loyalty. In melee: 9 damage.
 - **Fishing rod**: cast it into water, wait for the bobber to dip, and reel in right then to catch a fish, junk or a
   treasure (Lure and Luck of the Sea work).
@@ -82,12 +83,22 @@ food, armour, buckets, flint and steel and bone meal, these have their vanilla u
 - **Glass bottle**: fills with water. **Fire charge**: like flint and steel.
 - **Bottle o' enchanting**, **wind charge** (pushes everything around away) and **lingering potion** can be thrown.
 - **Egg**: a chick hatches one time in eight.
-- **Firework rocket**: launched from a block, or boosts a player flying with an elytra.
+- **Firework rocket**: launched from a block it bursts with its stars (colours, shape, trail, twinkle), or boosts a
+  player flying with an elytra. Crafting rockets and stars works, and so does copying maps.
 - **Goat horn**: sounds, with a 7-second cooldown.
 
+- **Boats** (every wood, bamboo rafts): placed on water or the ground; right click to get in and steer; sneak to get
+  out; three hits break them.
+- **Minecarts**: placed on a rail, pushed by walking forward. Rails take their shape by themselves (curves, slopes);
+  powered rails speed carts up when powered (a redstone block, torch or lever next to them) and brake them otherwise.
+- **Saddles**: on a pig, a strider, a horse, a donkey, a mule or a camel, which can then be ridden. Horses are steered
+  with the keys; a pig with a carrot on a stick, a strider with a warped fungus on a stick.
+- **Lead**: the animal follows the player (it breaks beyond 10 blocks); clicking a fence ties it there.
+- **Map**: an empty map becomes a map of the area, which fills in as you walk with it and shows you.
+- **Spyglass**: zooms (done by the client).
+
 !!! note
-    Not yet: boats, minecarts, saddles, leads, maps, bundles and the spyglass (the crossbow fires as soon as it is
-    charged instead of staying loaded).
+    Not yet: bundles, and no passenger in boats; chest, hopper and TNT minecarts have no use of their own.
 
 ### Import a Bedrock world
 

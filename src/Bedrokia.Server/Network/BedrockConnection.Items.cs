@@ -22,14 +22,29 @@ namespace Bedrokia.Server.Network;
 /// fish buckets, totem of undying, shield, mace; and the wear of tools, weapons and armour (vanilla durability).
 /// </summary>
 /// <remarks>
-/// ponytail: the crossbow fires as soon as it is charged (no loaded state kept in the item); no Riptide, Channeling,
-/// Piercing or Impaling; fireworks fly without their star explosions.
+/// ponytail: no Riptide, Channeling, Piercing or Impaling.
 /// </remarks>
 public sealed partial class BedrockConnection
 {
     private const byte EventConsumeTotem = 65, EventFireworkParticles = 25;
     private long? _chargeSince; // bow, crossbow or trident drawn since this tick
     private long _hornReadyAt;
+
+    /// <summary>What the player rides: a <see cref="Vehicle"/> (boat, minecart) or a saddled <see cref="Mob"/>; null on foot.</summary>
+    public object? Riding { get; internal set; }
+
+    private const uint MapInfoRequestId = 68;
+
+    // The client asks for a map it shows (held, in an item frame...).
+    private void OnMapInfoRequest(ref BedrockReader reader)
+    {
+        if (_server.Maps.Get(reader.VarInt64()) is { } map)
+            Send(MapManager.Packet(map, this));
+    }
+
+    /// <summary>Shows everyone (the player included) that the player sits at <paramref name="seatY"/> on its vehicle, or stands.</summary>
+    internal void SendRidingData(float? seatY) =>
+        _server.BroadcastIn(World, PlayerPackets.SetPlayerData(EntityId, NameTag, _nameTagVisible, seatY));
 
     // --- Right click in the air ---
 
@@ -41,6 +56,9 @@ public sealed partial class BedrockConnection
         var tick = _server.CurrentTick;
         switch (held.Type.Name)
         {
+            case "minecraft:crossbow" when held.Nbt?.ContainsKey("chargedItem") == true:
+                FireCrossbow(held); // loaded: a click shoots
+                return true;
             case "minecraft:bow" or "minecraft:crossbow":
                 if (GameMode == GameMode.Creative || Enchanting.Level(held, "infinity") > 0 || ArrowSlot() is not null)
                     _chargeSince = tick;
@@ -81,8 +99,17 @@ public sealed partial class BedrockConnection
                 return true;
             case "minecraft:glass_bottle":
                 return FillBottle();
+            case "minecraft:empty_map":
+                if (_server.Maps.Create(this) is { } map)
+                {
+                    if (GameMode != GameMode.Creative)
+                        Send(Inventory.ConsumeHeld());
+                    GiveItem(map);
+                    _server.PlaySound("ui.cartography_table.take_result", Position.X, Position.Y, Position.Z, World);
+                }
+                return true;
         }
-        return false;
+        return PlaceBoatOnWater(held);
     }
 
     /// <summary>The use key was released: a drawn bow or crossbow shoots, a trident is thrown.</summary>
@@ -99,7 +126,7 @@ public sealed partial class BedrockConnection
                 ShootBow(held, ticks);
                 break;
             case "minecraft:crossbow":
-                ShootCrossbow(held, ticks);
+                LoadCrossbow(held, ticks);
                 break;
             case "minecraft:trident" when ticks >= 10:
                 ThrowTrident(held);
@@ -128,19 +155,41 @@ public sealed partial class BedrockConnection
         WearHeld(1);
     }
 
-    // Crossbow: charged in 1.25 s (Quick Charge: 0.25 s less per level), then a strong shot; Multishot fires three arrows.
-    private void ShootCrossbow(ItemStack crossbow, int ticks)
+    // Crossbow: charged in 1.25 s (Quick Charge: 0.25 s less per level), it stays loaded (the arrow is in the item's
+    // "chargedItem", which the client shows) until the next click fires it.
+    private void LoadCrossbow(ItemStack crossbow, int ticks)
     {
         if (ticks < 25 - 5 * Enchanting.Level(crossbow, "quick_charge"))
             return;
         if (GameMode != GameMode.Creative && !TakeArrow())
             return;
+        var nbt = crossbow.Nbt is null ? new OrderedDictionary<string, object>() : new OrderedDictionary<string, object>(crossbow.Nbt);
+        nbt["chargedItem"] = new OrderedDictionary<string, object>
+        {
+            ["Count"] = (byte)1, ["Damage"] = (short)0, ["Name"] = "minecraft:arrow", ["WasPickedUp"] = (byte)0,
+        };
+        SetHeld(new ItemStack(crossbow.Type, crossbow.Count, crossbow.Meta, crossbow.BlockRuntimeId, nbt));
+        _server.PlaySound("crossbow.loading.end", Position.X, Position.Y, Position.Z, World);
+    }
+
+    // A loaded crossbow shoots hard; Multishot fires three arrows.
+    private void FireCrossbow(ItemStack crossbow)
+    {
         var multishot = Enchanting.Level(crossbow, "multishot") > 0;
         foreach (var offset in multishot ? new[] { -10f, 0f, 10f } : [0f])
             _server.Projectiles.Fire(this, ProjectileManager.Arrow, 3.15f, 6 + Random.Shared.Next(6), yawOffset: offset,
                 pickup: GameMode != GameMode.Creative && offset == 0);
         _server.PlaySound("crossbow.shoot", Position.X, Position.Y, Position.Z, World);
+        var nbt = new OrderedDictionary<string, object>(crossbow.Nbt!);
+        nbt.Remove("chargedItem");
+        SetHeld(new ItemStack(crossbow.Type, crossbow.Count, crossbow.Meta, crossbow.BlockRuntimeId, nbt.Count == 0 ? null : nbt));
         WearHeld(multishot ? 3 : 1);
+    }
+
+    private void SetHeld(ItemStack? stack)
+    {
+        Inventory.Main[Inventory.SelectedSlot] = stack;
+        Send(InventoryPackets.InventorySlot(InventoryPackets.WindowInventory, Inventory.SelectedSlot, stack));
     }
 
     // Trident: thrown from the hand (kept in creative), 8 damage; it lands on the ground or comes back with Loyalty.
@@ -184,25 +233,43 @@ public sealed partial class BedrockConnection
         return true;
     }
 
-    // A glass bottle aimed at water (5 blocks at most) becomes a water bottle.
-    private bool FillBottle()
+    // The water block the player looks at (5 blocks at most, nothing solid before it).
+    private (int X, int Y, int Z)? WaterInSight()
     {
         var yaw = Yaw * MathF.PI / 180;
         var pitch = Pitch * MathF.PI / 180;
         var (dx, dy, dz) = (-MathF.Sin(yaw) * MathF.Cos(pitch), -MathF.Sin(pitch), MathF.Cos(yaw) * MathF.Cos(pitch));
         for (var d = 0.5f; d <= 5; d += 0.25f)
         {
-            var block = World.GetBlock((int)MathF.Floor(Position.X + dx * d), (int)MathF.Floor(Position.Y + dy * d), (int)MathF.Floor(Position.Z + dz * d));
+            int bx = (int)MathF.Floor(Position.X + dx * d), by = (int)MathF.Floor(Position.Y + dy * d), bz = (int)MathF.Floor(Position.Z + dz * d);
+            var block = World.GetBlock(bx, by, bz);
             if (block?.Name is "minecraft:water" or "minecraft:flowing_water")
-            {
-                GiveBucket("potion"); // meta 0: water bottle
-                _server.PlaySound("bucket.fill_water", Position.X, Position.Y, Position.Z, World);
-                return true;
-            }
+                return (bx, by, bz);
             if (block is { IsAir: false })
-                return false;
+                return null;
         }
-        return false;
+        return null;
+    }
+
+    // A glass bottle aimed at water becomes a water bottle.
+    private bool FillBottle()
+    {
+        if (WaterInSight() is null)
+            return false;
+        GiveBucket("potion"); // meta 0: water bottle
+        _server.PlaySound("bucket.fill_water", Position.X, Position.Y, Position.Z, World);
+        return true;
+    }
+
+    // A boat item aimed at water: the boat floats on it.
+    private bool PlaceBoatOnWater(ItemStack held)
+    {
+        if (VehicleManager.ForItem(held.Type.Name) is not { } kind || kind.Identifier.Contains("minecart") || WaterInSight() is not var (x, y, z))
+            return false;
+        _server.Vehicles.Place(held.Type.Name, World, x + 0.5, y + 0.9, z + 0.5, Yaw);
+        if (GameMode != GameMode.Creative)
+            Send(Inventory.ConsumeHeld());
+        return true;
     }
 
     // --- Used on a block ---
@@ -256,6 +323,27 @@ public sealed partial class BedrockConnection
         }
         if (item == "glass_bottle")
             return FillBottle();
+        // Boats on water or the ground, minecarts on a rail.
+        if (VehicleManager.ForItem(item) is { } vehicle)
+        {
+            double vx, vy, vz;
+            if (vehicle.Identifier.Contains("minecart"))
+            {
+                if (!Rails.IsRail(clicked))
+                    return false;
+                (vx, vy, vz) = (x + 0.5, y, z + 0.5);
+            }
+            else if (clicked.Name is "minecraft:water" or "minecraft:flowing_water")
+                (vx, vy, vz) = (x + 0.5, y + 0.9, z + 0.5);
+            else if (World.GetBlock(x + fx, y + fy, z + fz) is { } ground && !BlockPhysics(ground))
+                (vx, vy, vz) = (x + fx + 0.5, y + fy, z + fz + 0.5);
+            else
+                return false;
+            _server.Vehicles.Place("minecraft:" + item, World, vx, vy, vz, Yaw);
+            if (survival)
+                Send(Inventory.ConsumeHeld());
+            return true;
+        }
         // Fish buckets: water and the fish in it.
         if (FishInBucket(item) is { } fish)
         {
@@ -278,7 +366,7 @@ public sealed partial class BedrockConnection
         }
         if (item == "firework_rocket")
         {
-            LaunchFirework(x + fx + 0.5f, y + fy + 0.2f, z + fz + 0.5f);
+            LaunchFirework(x + fx + 0.5f, y + fy + 0.2f, z + fz + 0.5f, Inventory.Held!);
             if (survival)
                 Send(Inventory.ConsumeHeld());
             return true;
@@ -297,19 +385,37 @@ public sealed partial class BedrockConnection
         _ => null,
     };
 
-    // A rocket flies up for a second and a half, then bursts.
-    private void LaunchFirework(float x, float y, float z)
+    /// <summary>
+    /// A rocket flies up for its flight duration (item NBT Fireworks.Flight), then bursts with its stars: the client
+    /// draws them from the item NBT sent in the entity metadata. Stars hurt players nearby (5 + 2 per star, less farther).
+    /// </summary>
+    private void LaunchFirework(float x, float y, float z, ItemStack rocket)
     {
         var id = _server.NextEntityId();
         var world = World;
-        _server.BroadcastIn(world, EntityPackets.AddActor(id, "minecraft:fireworks_rocket", x, y, z, 0, 1, 1, 0, 0.25f, 0.25f, 0));
+        var fireworks = rocket.Nbt?.GetValueOrDefault("Fireworks") as OrderedDictionary<string, object>;
+        var flight = fireworks?.GetValueOrDefault("Flight") is byte f ? f : (byte)1;
+        var stars = fireworks?.GetValueOrDefault("Explosions") is NbtList list ? list.Values.Count : 0;
+        var lifetime = 10 * (flight + 1) + Random.Shared.Next(6) + Random.Shared.Next(7);
+        _server.BroadcastIn(world, EntityPackets.AddActor(id, "minecraft:fireworks_rocket", x, y, z, 0, 1, 1, 0, 0.25f, 0.25f, 0,
+            displayNbt: rocket.Nbt ?? []));
         _server.BroadcastIn(world, EntityPackets.Motion(id, 0, 0.6, 0));
         _server.PlaySound("firework.launch", x, y, z, world);
-        _server.Schedule(30, () =>
+        var height = lifetime * 0.6f;
+        _server.Schedule(lifetime, () =>
         {
             _server.BroadcastIn(world, EntityPackets.Event(id, EventFireworkParticles));
-            _server.PlaySound("firework.blast", x, y + 18, z, world);
+            _server.PlaySound(stars > 0 ? "firework.large_blast" : "firework.blast", x, y + height, z, world);
             _server.BroadcastIn(world, Packets.RemoveActor(id));
+            if (stars == 0)
+                return;
+            foreach (var player in _server.Players.Where(p => p.IsInGame && p.World == world && !p.Dead).ToList())
+            {
+                var (px, py, pz) = player.Position;
+                var distance = Math.Sqrt((px - x) * (px - x) + (py - y - height) * (py - y - height) + (pz - z) * (pz - z));
+                if (distance < 5)
+                    player.Damage((float)((5 + 2 * stars) * (1 - distance / 5)), x, z, source: DamageSource.Explosion());
+            }
         });
     }
 

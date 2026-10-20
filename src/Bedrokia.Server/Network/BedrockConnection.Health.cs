@@ -442,6 +442,7 @@ public sealed partial class BedrockConnection
 
     private void Die()
     {
+        _server.Vehicles.Dismount(this, teleport: false);
         Dead = true;
         ClearEffects(EffectChangeCause.Death);
         CloseAllForms(FormCancelReason.UserClosed);
@@ -741,6 +742,19 @@ public sealed partial class BedrockConnection
     {
         var target = (long)reader.VarUInt64();
         var action = reader.VarInt32();
+        if (_server.Vehicles.Find(target) is { } vehicle && vehicle.World == World)
+        {
+            if (action == 0)
+                _server.Vehicles.Mount(this, vehicle);
+            else if (action == 1)
+                _server.Vehicles.Hit(this, vehicle);
+            return;
+        }
+        if (_server.Mobs.FindKnot(target) is { } knot)
+        {
+            _server.Mobs.BreakKnot(knot); // clicking or hitting a knot frees its mobs
+            return;
+        }
         if (_server.Npcs.Find(target) is { } npc)
         {
             if (action is 0 or 1)
