@@ -126,6 +126,7 @@ les messages d'usage (`/f create <nom> | invite <joueur> | ...`).
 | `Log`, `LogWarning`, `LogError` | écrit dans la console, préfixé du nom du plugin |
 | `RegisterCommand(nom, description, usage, opSeulement, action)` | ajoute une commande depuis le code |
 | `RegisterCommand(nom, description, usage, permission, action)` | commande avec un nœud de permission (`""` pour tous, `"op"`, ou `"monplugin.fly"`) |
+| `Server.Permissions.AddProvider((joueur, permission) => ...)` | donne des permissions selon le plugin (un système de rangs...) : `true` accorde, demandé à chaque vérification |
 | `UnregisterCommand(nom)` | retire une commande, par exemple une commande du serveur que le plugin remplace |
 | `RunNextTick(action)` / `ScheduleDelayed(ticks, action)` / `ScheduleRepeating(délai, période, action)` | tâches planifiées (20 ticks = 1 s), annulables avec `.Cancel()`, arrêtées quand le plugin s'arrête |
 
