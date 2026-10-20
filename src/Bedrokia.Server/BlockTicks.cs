@@ -357,10 +357,10 @@ public sealed partial class BedrokiaServer
             if (distance < reach)
                 player.Damage((float)Math.Round(7 * radius * (1 - distance / reach)), x, z, source: DamageSource.Explosion());
         }
-        if (world != World)
-            return; // ponytail: mobs only live in the overworld for now
         foreach (var mob in Mobs.All.ToList())
         {
+            if (mob.World != world)
+                continue;
             var distance = Math.Sqrt((mob.X - x) * (mob.X - x) + (mob.Y - y) * (mob.Y - y) + (mob.Z - z) * (mob.Z - z));
             if (distance < reach)
                 Mobs.Damage(mob, (float)Math.Round(7 * radius * (1 - distance / reach)), (x, z), source: DamageSource.Explosion());

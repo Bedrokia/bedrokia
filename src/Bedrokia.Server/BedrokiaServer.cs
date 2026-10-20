@@ -90,6 +90,7 @@ public sealed partial class BedrokiaServer
         world.DroppedItems = new DroppedItems(world);
         world.Fluids = new Fluids(this, world);
         world.FallingBlocks = new FallingBlocks(this, world);
+        Mobs.Load(world); // its animals appear when their chunks are loaded
     }
 
     internal long NextEntityId() => Interlocked.Increment(ref _nextEntityId);
@@ -411,6 +412,8 @@ public sealed partial class BedrokiaServer
         try
         {
             var saved = Worlds.Sum(w => w.Save());
+            foreach (var world in Worlds)
+                Mobs.Save(world);
             foreach (var player in _players.Where(p => p.IsInGame))
                 player.Snapshot().Write(player.Info!.Uuid);
             if (saved > 0)
@@ -1235,7 +1238,11 @@ public sealed partial class BedrokiaServer
             }
             
             var (x, y, z) = Self(sender).Position;
-            Mobs.Spawn(kind, x, y - BedrockConnection.EyeHeight, z);
+            if (Mobs.Spawn(kind, x, y - BedrockConnection.EyeHeight, z, Self(sender).World) is null)
+            {
+                sender.Reply(Config.Mobs ? "§cThe mob could not be summoned." : "§cMobs are off (mobs=off in server.properties).");
+                return;
+            }
             sender.Reply($"Summoned {kind.Id["minecraft:".Length..]}.");
         });
         Add("enchant", "Enchants the held item.", "<enchantment> [level:int]", "bedrokia.command.enchant", (sender, args) =>

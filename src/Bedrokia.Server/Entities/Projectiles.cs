@@ -138,11 +138,10 @@ public sealed class ProjectileManager(BedrokiaServer server)
                 if (MathF.Abs(at.X - player.Position.X) < 0.45f && MathF.Abs(at.Z - player.Position.Z) < 0.45f && at.Y >= feet && at.Y <= feet + 1.9f)
                     return (at, player, null);
             }
-            if (p.World == server.World)
-                foreach (var mob in server.Mobs.All)
-                    if (!mob.Dead && Math.Abs(at.X - mob.X) < mob.Kind.Width / 2 + 0.15 && Math.Abs(at.Z - mob.Z) < mob.Kind.Width / 2 + 0.15
-                        && at.Y >= mob.Y && at.Y <= mob.Y + mob.Kind.Height)
-                        return (at, null, mob);
+            foreach (var mob in server.Mobs.All)
+                if (!mob.Dead && mob.World == p.World && Math.Abs(at.X - mob.X) < mob.Width / 2 + 0.15 && Math.Abs(at.Z - mob.Z) < mob.Width / 2 + 0.15
+                    && at.Y >= mob.Y && at.Y <= mob.Y + mob.Height)
+                    return (at, null, mob);
             if (BlockPhysics.IsSolid(p.World.GetBlock((int)MathF.Floor(at.X), (int)MathF.Floor(at.Y), (int)MathF.Floor(at.Z))))
                 return (at, null, null);
         }

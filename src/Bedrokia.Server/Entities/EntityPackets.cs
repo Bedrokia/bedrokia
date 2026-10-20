@@ -20,10 +20,13 @@ internal static class EntityPackets
         AnimateId = 44, RespawnId = 45;
 
     public const byte EventHurt = 2, EventDeath = 3;
-    public const long FlagOnFire = 1L << 0, FlagBreathing = 1L << 35, FlagHasCollision = 1L << 48, FlagGravity = 1L << 49;
+    public const byte EventLoveParticles = 21;
+    // Actor flag bits (gophertunnel entity_metadata.go).
+    public const long FlagOnFire = 1L << 0, FlagInLove = 1L << 7, FlagIgnited = 1L << 10, FlagBaby = 1L << 11, FlagAngry = 1L << 25,
+        FlagSheared = 1L << 31, FlagBreathing = 1L << 35, FlagHasCollision = 1L << 48, FlagGravity = 1L << 49;
 
     public static byte[] AddActor(long entityId, string type, double x, double y, double z, float yaw, float health,
-        float maxHealth, float speed, float width, float height, long flags, int? colour = null, int? variant = null)
+        float maxHealth, float speed, float width, float height, long flags, int? colour = null, int? variant = null, float scale = 1)
     {
         var w = new BedrockWriter().VarUInt32(AddActorId).VarInt64(entityId).VarUInt64((ulong)entityId).String(type)
             .Vec3((float)x, (float)y, (float)z).Vec3(0, 0, 0)
@@ -31,21 +34,21 @@ internal static class EntityPackets
         w.VarUInt32(2); // attributes: name, min, value, max
         w.String("minecraft:health").Float32(0).Float32(health).Float32(maxHealth);
         w.String("minecraft:movement").Float32(0).Float32(speed).Float32(float.MaxValue);
-        Metadata(w, flags, width, height, colour, variant);
+        Metadata(w, flags, width, height, colour, variant, scale);
         return w.VarUInt32(0).VarUInt32(0) // entity properties (ints, floats)
             .VarUInt32(0) // links
             .ToArray();
     }
 
-    public static byte[] SetData(long entityId, long flags, float width, float height, int? colour = null)
+    public static byte[] SetData(long entityId, long flags, float width, float height, int? colour = null, float scale = 1)
     {
         var w = new BedrockWriter().VarUInt32(SetActorDataId).VarUInt64((ulong)entityId);
-        Metadata(w, flags, width, height, colour);
+        Metadata(w, flags, width, height, colour, scale: scale);
         return w.VarUInt32(0).VarUInt32(0).VarUInt64(0).ToArray();
     }
 
     // Key, type (+ legacy type byte), value; keys from gophertunnel entity_metadata.go.
-    private static void Metadata(BedrockWriter w, long flags, float width, float height, int? colour, int? variant = null)
+    private static void Metadata(BedrockWriter w, long flags, float width, float height, int? colour, int? variant = null, float scale = 1)
     {
         const uint typeByte = 0, typeInt16 = 1, typeInt32 = 2, typeFloat = 3, typeInt64 = 7;
         void Key(uint key, uint type) => w.VarUInt32(key).VarUInt32(type).Byte((byte)type);
@@ -53,7 +56,7 @@ internal static class EntityPackets
         Key(0, typeInt64); w.VarInt64(flags);
         Key(7, typeInt16); w.Int16(300); // air supply
         Key(42, typeInt16); w.Int16(300); // max air supply
-        Key(38, typeFloat); w.Float32(1); // scale
+        Key(38, typeFloat); w.Float32(scale); // 0.5 for babies
         Key(53, typeFloat); w.Float32(width);
         Key(54, typeFloat); w.Float32(height);
         if (colour is { } c)
