@@ -79,6 +79,9 @@ public sealed class Chunk
         return section is null ? Blocks.Air : Blocks.ById(section[Index(x, y, z)]);
     }
 
+    /// <summary>True when section <paramref name="index"/> (0 = the bottom one) holds nothing but air.</summary>
+    internal bool SectionEmpty(int index) => _sections[index] is null;
+
     /// <summary>
     /// The highest non-air block of column (x, z) at or below <paramref name="below"/> and its height; air when none.
     /// Empty sections are skipped whole: cheap enough to draw a map.

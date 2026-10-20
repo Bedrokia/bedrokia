@@ -233,6 +233,7 @@ autres plugins et le serveur continuent.
 |---|---|
 | `Server.Players` | joueurs connectés (filtrer avec `IsInGame`) |
 | `Server.BroadcastMessage(texte)` | message à tous |
+| `Server.BroadcastTip(texte)` / `BroadcastPopup(texte)` / `BroadcastActionBar(texte)` / `BroadcastTitle(titre, sous-titre)` | tip, popup, barre d'action ou titre à tous |
 | `Server.World.GetBlock(x, y, z)` | bloc à une position |
 | `Server.SetBlockAndUpdate(x, y, z, bloc)` | pose un bloc et prévient les joueurs |
 | `Server.SpawnParticle(nom, x, y, z)` | particules (`minecraft:heart_particle`, `minecraft:villager_happy`, `minecraft:basic_flame_particle`...) |
