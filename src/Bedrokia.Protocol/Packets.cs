@@ -38,10 +38,12 @@ public static class PacketId
     public const uint UpdateAttributes = 29;
     public const uint InventoryTransaction = 30;
     public const uint MobEquipment = 31;
+    public const uint MobArmourEquipment = 32;
     public const uint Interact = 33;
     public const uint BlockPickRequest = 34;
     public const uint PlayerAction = 36;
     public const uint SetActorData = 39;
+    public const uint SetActorLink = 41;
     public const uint Animate = 44;
     public const uint Respawn = 45;
     public const uint ContainerClose = 47;
@@ -62,6 +64,7 @@ public static class PacketId
     public const uint ServerSettingsRequest = 102;
     public const uint ServerSettingsResponse = 103;
     public const uint SetLocalPlayerAsInitialised = 113;
+    public const uint AvailableActorIdentifiers = 119;
     public const uint NetworkChunkPublisherUpdate = 121;
     public const uint BiomeDefinitionList = 122;
     public const uint LecternUpdate = 125;
@@ -76,6 +79,7 @@ public static class PacketId
     public const uint EmoteList = 152;
     public const uint ItemRegistry = 162;
     public const uint FilterText = 163;
+    public const uint SyncActorProperty = 165;
     public const uint SubChunkRequest = 175;
     public const uint RequestAbility = 184;
     public const uint RequestNetworkSettings = 193;
@@ -399,4 +403,99 @@ public static class Packets
         .String(emoteId)
         .Byte(flags)
         .ToArray();
+
+    /// <summary>
+    /// Sends the list of available actor identifiers and entity definitions to the client.
+    /// Source: gophertunnel (MIT) minecraft/protocol/packet/available_actor_identifiers.go
+    /// </summary>
+    /// <param name="nbt">NBT compound containing the "idlist" list of entity definition compounds.</param>
+    public static byte[] AvailableActorIdentifiers(OrderedDictionary<string, object> nbt) =>
+        Begin(PacketId.AvailableActorIdentifiers)
+            .Bytes(Nbt.Write(nbt, network: true))
+            .ToArray();
+
+    /// <summary>
+    /// Synchronizes entity property definitions and values across all entity types to the client.
+    /// Source: gophertunnel (MIT) minecraft/protocol/packet/sync_actor_property.go
+    /// </summary>
+    /// <param name="nbt">NBT compound containing entity property metadata.</param>
+    public static byte[] SyncActorProperty(OrderedDictionary<string, object> nbt) =>
+        Begin(PacketId.SyncActorProperty)
+            .Bytes(Nbt.Write(nbt, network: true))
+            .ToArray();
+
+    /// <summary>
+    /// Establishes or removes a vehicle/rider link between two entities.
+    /// Source: gophertunnel (MIT) minecraft/protocol/packet/set_actor_link.go
+    /// </summary>
+    /// <param name="vehicleId">The unique ID of the mount/vehicle.</param>
+    /// <param name="riderId">The unique ID of the passenger/rider.</param>
+    /// <param name="linkType">0 = none/remove, 1 = riding, 2 = passenger.</param>
+    /// <param name="immediate">Whether to update the link immediately without smooth interpolation.</param>
+    /// <param name="riderInitiated">True if the rider initiated the link action.</param>
+    public static byte[] SetActorLink(long vehicleId, long riderId, byte linkType, bool immediate, bool riderInitiated) =>
+        Begin(PacketId.SetActorLink)
+            .VarInt64(vehicleId)
+            .VarInt64(riderId)
+            .Byte(linkType)
+            .Bool(immediate)
+            .Bool(riderInitiated)
+            .ToArray();
+
+    /// <summary>
+    /// Displays a boss health bar and title on client screens.
+    /// Source: gophertunnel (MIT) minecraft/protocol/packet/boss_event.go (BossEventShow)
+    /// </summary>
+    /// <param name="bossEntityId">The unique ID of the boss entity.</param>
+    /// <param name="title">Title displayed above the health bar.</param>
+    /// <param name="healthPercent">Current health ratio (0.0f to 1.0f).</param>
+    /// <param name="darkenSky">Whether the sky should darken while the boss is active.</param>
+    public static byte[] BossEventShow(long bossEntityId, string title, float healthPercent, bool darkenSky = false) =>
+        Begin(PacketId.BossEvent)
+            .VarInt64(bossEntityId)
+            .VarUInt32(0) // BossEventShow
+            .String(title)
+            .Float32(healthPercent)
+            .Int16(darkenSky ? (short)1 : (short)0)
+            .VarUInt32(0) // color
+            .VarUInt32(0) // overlay
+            .ToArray();
+
+    /// <summary>
+    /// Removes a boss health bar from client screens.
+    /// Source: gophertunnel (MIT) minecraft/protocol/packet/boss_event.go (BossEventHide)
+    /// </summary>
+    /// <param name="bossEntityId">The unique ID of the boss entity.</param>
+    public static byte[] BossEventHide(long bossEntityId) =>
+        Begin(PacketId.BossEvent)
+            .VarInt64(bossEntityId)
+            .VarUInt32(2) // BossEventHide
+            .ToArray();
+
+    /// <summary>
+    /// Updates the health bar percentage of a boss on client screens.
+    /// Source: gophertunnel (MIT) minecraft/protocol/packet/boss_event.go (BossEventHealthPercentage)
+    /// </summary>
+    /// <param name="bossEntityId">The unique ID of the boss entity.</param>
+    /// <param name="healthPercent">Current health ratio (0.0f to 1.0f).</param>
+    public static byte[] BossEventHealth(long bossEntityId, float healthPercent) =>
+        Begin(PacketId.BossEvent)
+            .VarInt64(bossEntityId)
+            .VarUInt32(4) // BossEventHealthPercentage
+            .Float32(healthPercent)
+            .ToArray();
+
+    /// <summary>
+    /// Updates the display title of a boss health bar.
+    /// Source: gophertunnel (MIT) minecraft/protocol/packet/boss_event.go (BossEventTitle)
+    /// </summary>
+    /// <param name="bossEntityId">The unique ID of the boss entity.</param>
+    /// <param name="title">New title for the boss bar.</param>
+    public static byte[] BossEventTitle(long bossEntityId, string title) =>
+        Begin(PacketId.BossEvent)
+            .VarInt64(bossEntityId)
+            .VarUInt32(5) // BossEventTitle
+            .String(title)
+            .ToArray();
 }
+

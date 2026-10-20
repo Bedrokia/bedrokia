@@ -14,6 +14,7 @@ using Bedrokia.Server.Core;
 using Bedrokia.Server.Entities;
 using Bedrokia.Server.Events;
 using Bedrokia.Server.Game;
+using Bedrokia.Server.Game.Custom.Entities;
 using Bedrokia.Server.Game.Custom.Items;
 using Bedrokia.Server.Game.Ui.Forms;
 
@@ -832,6 +833,18 @@ public sealed partial class BedrockConnection
     /// <summary>Spawn egg used on a block: the mob appears on the clicked face (egg consumed in survival).</summary>
     private void UseSpawnEgg(ItemStack egg, int x, int y, int z, int face)
     {
+        var (dx, dy, dz) = face switch { 0 => (0, -2, 0), 1 => (0, 1, 0), 2 => (0, 0, -1), 3 => (0, 0, 1), 4 => (-1, 0, 0), _ => (1, 0, 0) };
+        if (egg.Type.Name.EndsWith("_spawn_egg"))
+        {
+            var rawCustom = egg.Type.Name[..^"_spawn_egg".Length];
+            if (CustomEntityRegistry.Get(rawCustom) is { } customDef)
+            {
+                if (_server.CustomEntities.Spawn(customDef.Identifier, World, x + dx + 0.5, y + dy, z + dz + 0.5) is not null && GameMode != GameMode.Creative)
+                    Send(Inventory.ConsumeHeld());
+                return;
+            }
+        }
+
         if (!egg.Type.Name.StartsWith("minecraft:") || !egg.Type.Name.EndsWith("_spawn_egg"))
             return;
         var mobName = egg.Type.Name["minecraft:".Length..^"_spawn_egg".Length];
@@ -840,7 +853,6 @@ public sealed partial class BedrockConnection
             SendMessage($"§cThis mob ({mobName}) is not available yet.");
             return;
         }
-        var (dx, dy, dz) = face switch { 0 => (0, -2, 0), 1 => (0, 1, 0), 2 => (0, 0, -1), 3 => (0, 0, 1), 4 => (-1, 0, 0), _ => (1, 0, 0) };
         // A plugin can cancel the spawn (EntitySpawn): then the egg is not used up.
         if (_server.Mobs.Spawn(kind, x + dx + 0.5, y + dy, z + dz + 0.5) is not null && GameMode != GameMode.Creative)
             Send(Inventory.ConsumeHeld());
@@ -870,6 +882,11 @@ public sealed partial class BedrockConnection
         }
         if (action == 0)
         {
+            if (_server.CustomEntities.Find(target) is { } customEntToInteract)
+            {
+                customEntToInteract.Interact(this);
+                return;
+            }
             if (_server.Events.HasPlayerInteractEntity)
                 _server.Events.OnPlayerInteractEntity(new PlayerInteractEntityEvent(this, target));
             return;
@@ -883,6 +900,19 @@ public sealed partial class BedrockConnection
             damage = Math.Max(0f, damage - 4f * (weak.Amplifier + 1));
         AddExhaustion(0.1f);
         _server.BroadcastInExcept(World, this, EntityPackets.Swing(EntityId));
+        if (_server.CustomEntities.Find(target) is { } customEnt)
+        {
+            var dx = customEnt.X - Position.X;
+            var dz = customEnt.Z - Position.Z;
+            if (dx * dx + dz * dz <= 6 * 6)
+            {
+                var held = Inventory.Held;
+                damage += 1.25f * Enchanting.Level(held, "sharpness");
+                customEnt.Damage(damage, (Position.X, Position.Z), damager: this, source: DamageSource.PlayerAttack(this));
+                ApplyWeaponWear();
+            }
+            return;
+        }
         if (_server.Mobs.Find(target) is { } mob)
         {
             var dx = mob.X - Position.X;

@@ -22,6 +22,7 @@ using Bedrokia.Server.Commands;
 using Bedrokia.Server.Core;
 using Bedrokia.Server.Entities;
 using Bedrokia.Server.Game;
+using Bedrokia.Server.Game.Custom.Entities;
 using Bedrokia.Server.Network;
 using Bedrokia.Server.Performance;
 using Bedrokia.Server.Permissions;
@@ -66,6 +67,9 @@ public sealed partial class BedrokiaServer
     /// <summary>Thrown snowballs, eggs, ender pearls and splash potions.</summary>
     public ProjectileManager Projectiles { get; }
 
+    /// <summary>Custom entities defined and spawned by plugins.</summary>
+    public CustomEntityManager CustomEntities { get; }
+
     /// <summary>Packs from resource_packs/, sent to players at login.</summary>
     public ResourcePacks ResourcePacks { get; private set; } = null!;
 
@@ -87,6 +91,7 @@ public sealed partial class BedrokiaServer
     // Each world simulates its own items on the ground, liquids and falling blocks.
     private void Attach(World world)
     {
+        world.Server = this;
         world.DroppedItems = new DroppedItems(world);
         world.Fluids = new Fluids(this, world);
         world.FallingBlocks = new FallingBlocks(this, world);
@@ -116,6 +121,7 @@ public sealed partial class BedrokiaServer
         Mobs = new MobManager(this);
         Npcs = new NpcManager(this);
         Projectiles = new ProjectileManager(this);
+        CustomEntities = new CustomEntityManager(this);
         Events = new ServerEvents(logger);
         Scheduler = new ServerScheduler(logger);
         Plugins = new PluginManager(this);
@@ -173,7 +179,7 @@ public sealed partial class BedrokiaServer
 
     /// <summary>Total number of entities active in the world (mobs, items, falling blocks, players).</summary>
     public int TotalEntitiesCount =>
-        Mobs.All.Count + Worlds.Sum(w => (w.DroppedItems?.All.Count ?? 0) + (w.FallingBlocks?.Count ?? 0)) + _players.Count;
+        Mobs.All.Count + CustomEntities.All.Count + Worlds.Sum(w => (w.DroppedItems?.All.Count ?? 0) + (w.FallingBlocks?.Count ?? 0)) + _players.Count;
 
     private long _lastTickTimestamp;
 
@@ -575,6 +581,7 @@ public sealed partial class BedrokiaServer
                 {
                     Mobs.Tick(CurrentTick);
                     Npcs.Tick(CurrentTick);
+                    CustomEntities.Tick(CurrentTick);
                     Projectiles.Tick();
                 }
 
@@ -715,6 +722,7 @@ public sealed partial class BedrokiaServer
         connection.OnClosed();
         Mobs.Forget(connection);
         Npcs.Forget(connection);
+        CustomEntities.Forget(connection);
         _players.Remove(connection);
         if (wasInGame)
         {
@@ -770,6 +778,8 @@ public sealed partial class BedrokiaServer
         BroadcastInExcept(connection.World, connection, connection.AddPlayerPacket());
         foreach (var item in connection.World.DroppedItems.All)
             connection.Send(InventoryPackets.AddItemActor(item.EntityId, item.Stack, item.X, item.Y, item.Z, item.Vx, item.Vy, item.Vz));
+        foreach (var customEntity in CustomEntities.InWorld(connection.World))
+            customEntity.SendTo(connection);
         var joinEv = new PlayerJoinEvent(connection, $"§e{connection.Name} joined the game");
         Events.OnJoin(joinEv);
         if (!string.IsNullOrEmpty(joinEv.BroadcastMessage))
