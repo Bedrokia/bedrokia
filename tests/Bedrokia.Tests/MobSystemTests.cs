@@ -176,10 +176,14 @@ public class MobSystemTests
         Assert.Equal(ProjectileManager.Arrow, arrow.Identifier);
         Assert.Same(skeleton, arrow.Shooter);
         Assert.True(arrow.Velocity.Z > 1, "flies towards the player"); // the player is at z 14
+        // The aim has a random spread: the skeleton keeps shooting until one arrow hits (a few seconds at most).
         var health = player.Health;
-        for (var i = 0; i < 40 && server.Projectiles.All.Count > 0; i++)
+        for (long t = 4; t < 400 && player.Health >= health; t++)
+        {
+            server.Mobs.Tick(t);
             server.Projectiles.Tick();
-        Assert.True(player.Health < health, "the arrow hit the player");
+        }
+        Assert.True(player.Health < health, "an arrow hit the player");
     }
 
     [Fact]
