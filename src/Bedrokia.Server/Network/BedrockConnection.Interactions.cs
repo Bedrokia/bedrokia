@@ -52,6 +52,21 @@ public sealed partial class BedrockConnection
                 Inventory.CraftingTableOpen = true;
                 Send(InventoryPackets.ContainerOpen(InventoryPackets.WindowCraftingTable, InventoryPackets.ContainerTypeWorkbench, x, y, z));
                 return true;
+            case "minecraft:anvil" or "minecraft:chipped_anvil" or "minecraft:damaged_anvil":
+                Inventory.AnvilOpen = true;
+                Inventory.AnvilPos = (x, y, z);
+                Send(InventoryPackets.ContainerOpen(InventoryPackets.WindowAnvil, InventoryPackets.ContainerTypeAnvil, x, y, z));
+                return true;
+            case "minecraft:grindstone":
+                Inventory.GrindstoneOpen = true;
+                Inventory.GrindstonePos = (x, y, z);
+                Send(InventoryPackets.ContainerOpen(InventoryPackets.WindowGrindstone, InventoryPackets.ContainerTypeGrindstone, x, y, z));
+                return true;
+            case "minecraft:stonecutter_block" or "minecraft:stonecutter":
+                Inventory.StonecutterOpen = true;
+                Inventory.StonecutterPos = (x, y, z);
+                Send(InventoryPackets.ContainerOpen(InventoryPackets.WindowStonecutter, InventoryPackets.ContainerTypeStonecutter, x, y, z));
+                return true;
             case "minecraft:bed" when World.Dimension == 1: // beds explode in the Nether
                 _server.SetBlockAndUpdate(x, y, z, Blocks.Air, World);
                 if (BlockPlacement.OtherHalf(block, x, y, z) is { } head && World.GetBlock(head.X, head.Y, head.Z)?.Name == name)

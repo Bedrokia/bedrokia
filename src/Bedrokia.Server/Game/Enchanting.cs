@@ -105,6 +105,16 @@ public static class Enchanting
 
     public static Enchantment? ById(int id) => All.FirstOrDefault(e => e.Id == id);
 
+    public static Enchantment? ByName(string name)
+    {
+        name = name.ToLowerInvariant().Replace("minecraft:", "");
+        return All.FirstOrDefault(e => e.Name.Equals(name, StringComparison.OrdinalIgnoreCase)
+            || e.Name.Replace("_", "").Equals(name.Replace("_", ""), StringComparison.OrdinalIgnoreCase));
+    }
+
+    public static Enchantment? ByIdOrName(string idOrName) =>
+        int.TryParse(idOrName, out var id) ? ById(id) : ByName(idOrName);
+
     /// <summary>Enchantments of a stack, read from its "ench" NBT list.</summary>
     public static List<(int Id, int Level)> Of(ItemStack? stack)
     {
@@ -122,11 +132,26 @@ public static class Enchanting
     public static ItemStack With(ItemStack stack, IEnumerable<(int Id, int Level)> enchantments)
     {
         var nbt = stack.Nbt is null ? new OrderedDictionary<string, object>() : new OrderedDictionary<string, object>(stack.Nbt);
-        nbt["ench"] = new NbtList(Nbt.Compound, enchantments.Select(e => (object)new OrderedDictionary<string, object>
+        var list = enchantments.ToList();
+        if (list.Count > 0)
         {
-            ["id"] = (short)e.Id, ["lvl"] = (short)e.Level,
-        }).ToList());
-        return new ItemStack(stack.Type, stack.Count, stack.Meta, stack.BlockRuntimeId, nbt);
+            nbt["ench"] = new NbtList(Nbt.Compound, list.Select(e => (object)new OrderedDictionary<string, object>
+            {
+                ["id"] = (short)e.Id, ["lvl"] = (short)e.Level,
+            }).ToList());
+        }
+        else
+        {
+            nbt.Remove("ench");
+        }
+
+        var type = stack.Type;
+        if ((type.Name is "minecraft:book" or "book") && list.Count > 0)
+            type = Items.ByName("minecraft:enchanted_book") ?? Items.ByName("enchanted_book") ?? type;
+        else if ((type.Name is "minecraft:enchanted_book" or "enchanted_book") && list.Count == 0)
+            type = Items.ByName("minecraft:book") ?? Items.ByName("book") ?? type;
+
+        return new ItemStack(type, stack.Count, stack.Meta, stack.BlockRuntimeId, nbt.Count > 0 ? nbt : null);
     }
 
     /// <summary>Material enchantability (Dragonfly EnchantmentValue); 0 = not enchantable at a table.</summary>

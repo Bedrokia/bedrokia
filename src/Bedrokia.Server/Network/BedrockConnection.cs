@@ -816,7 +816,10 @@ public sealed partial class BedrockConnection
             return;
         }
         if (type == 4) // release item: stopped eating (or drawing a bow)
+        {
             _eatingSince = -1;
+            ReleaseBow();
+        }
         if (type is not (useItem or useItemOnEntity))
             return; // ponytail: normal, mismatch and release transactions are not used
         SkipInventoryActions(ref reader);
@@ -870,6 +873,11 @@ public sealed partial class BedrockConnection
                     Send(Inventory.ConsumeHeld());
                 else
                     Send(InventoryPackets.InventorySlot(InventoryPackets.WindowInventory, Inventory.SelectedSlot, Inventory.Held));
+                return;
+            }
+            if (Inventory.Held?.Type.Name == "minecraft:bow")
+            {
+                _bowDrawnSince = _server.CurrentTick;
                 return;
             }
             if (!TryEquipHeld()) // right click with armour in hand: the client already shows it worn

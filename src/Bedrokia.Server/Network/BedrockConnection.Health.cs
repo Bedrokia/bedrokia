@@ -33,6 +33,7 @@ public sealed partial class BedrockConnection
     public int Food { get; private set; } = MaxFood;
     public float Saturation { get; private set; } = 5;
     public bool Dead { get; private set; }
+    public int FireTicks;
 
     private readonly Dictionary<EffectType, EffectInstance> _activeEffects = [];
     private readonly Dictionary<EffectType, int> _effectElapsed = [];
@@ -248,7 +249,7 @@ public sealed partial class BedrockConnection
     private float _exhaustion;
     private int _hurtTicks, _foodTicks;
     private float _fallPeak = float.NaN;
-    private long _eatingSince = -1;
+    private long _eatingSince = -1, _bowDrawnSince = -1;
     private (float X, float Z) _lastWalk = (float.NaN, 0);
 
     private DamageSource? _lastDamageSource;
@@ -288,8 +289,41 @@ public sealed partial class BedrockConnection
         if (armour)
         {
             amount *= 1 - Math.Min(ArmourPoints(), 20) / 25f;
-            amount *= 1 - Math.Min(ProtectionPoints(), 20) * 0.04f;
+            amount *= 1 - Math.Min(ProtectionPoints(source), 20) * 0.04f;
+
+            // Armor durability loss with Unbreaking
+            for (var s = 0; s < Inventory.Armour.Size; s++)
+            {
+                if (Inventory.Armour[s] is { } piece && piece.MaxDurability > 0)
+                {
+                    var unb = Enchanting.Level(piece, "unbreaking");
+                    if (unb == 0 || Random.Shared.Next(100) >= (60 + 40 / (unb + 1)))
+                    {
+                        var newDmg = piece.Damage + 1;
+                        if (newDmg >= piece.MaxDurability)
+                        {
+                            Inventory.Armour[s] = null;
+                            _server.PlaySound("random.break", Position.X, Position.Y, Position.Z, World);
+                        }
+                        else
+                        {
+                            Inventory.Armour[s] = piece.WithDamage(newDmg);
+                        }
+                    }
+                }
+            }
         }
+
+        if (source?.Attacker is BedrockConnection attacker && attacker != this)
+        {
+            var thornsLevel = Inventory.Armour.Slots.Max(p => Enchanting.Level(p, "thorns"));
+            if (thornsLevel > 0 && Random.Shared.NextDouble() < thornsLevel * 0.15)
+            {
+                var thornDmg = Random.Shared.Next(1, 5);
+                attacker.Damage(thornDmg, Position.X, Position.Z, armour: false, source: DamageSource.Custom());
+            }
+        }
+
         _hurtTicks = 10;
         AddExhaustion(0.1f);
         Health = Math.Max(0, Health - amount);
@@ -331,7 +365,21 @@ public sealed partial class BedrockConnection
         };
     });
 
-    private int ProtectionPoints() => Inventory.Armour.Slots.Sum(piece => Enchanting.Level(piece, "protection"));
+    private int ProtectionPoints(DamageSource? source = null)
+    {
+        var points = 0;
+        foreach (var piece in Inventory.Armour.Slots)
+        {
+            points += Enchanting.Level(piece, "protection");
+            if (source?.Cause is DamageCause.Fire or DamageCause.Lava)
+                points += Enchanting.Level(piece, "fire_protection") * 2;
+            else if (source?.Cause is DamageCause.Explosion)
+                points += Enchanting.Level(piece, "blast_protection") * 2;
+            else if (source?.Cause is DamageCause.Projectile)
+                points += Enchanting.Level(piece, "projectile_protection") * 2;
+        }
+        return points;
+    }
 
     public void Heal(float amount, HealCause cause = HealCause.Custom)
     {
@@ -513,6 +561,13 @@ public sealed partial class BedrockConnection
         TickPortal();
         TickEffects();
 
+        if (FireTicks > 0)
+        {
+            FireTicks--;
+            if (FireTicks % 20 == 0 && !Dead && GameMode != GameMode.Creative)
+                Damage(1, Position.X, Position.Z, armour: false, source: DamageSource.Fire());
+        }
+
         if (Dead || GameMode == GameMode.Creative)
             return;
 
@@ -677,6 +732,75 @@ public sealed partial class BedrockConnection
         SendVitals();
     }
 
+    internal void ReleaseBow()
+    {
+        if (_bowDrawnSince < 0 || Inventory.Held?.Type.Name != "minecraft:bow")
+        {
+            _bowDrawnSince = -1;
+            return;
+        }
+
+        var chargedTicks = _server.CurrentTick - _bowDrawnSince;
+        _bowDrawnSince = -1;
+        if (chargedTicks < 3)
+            return;
+
+        var force = Math.Min(1.0f, (float)chargedTicks / 20f);
+        var bow = Inventory.Held;
+        var hasInfinity = Enchanting.Level(bow, "infinity") > 0;
+        var isCreative = GameMode == GameMode.Creative;
+
+        // Check arrow in inventory
+        int arrowSlot = -1;
+        for (var s = 0; s < Inventory.Main.Size; s++)
+        {
+            if (Inventory.Main[s]?.Type.Name == "minecraft:arrow")
+            {
+                arrowSlot = s;
+                break;
+            }
+        }
+
+        if (!isCreative && arrowSlot < 0)
+            return;
+
+        if (!isCreative && !hasInfinity && arrowSlot >= 0)
+        {
+            var arrowStack = Inventory.Main[arrowSlot]!;
+            arrowStack.SetCount(arrowStack.Count - 1);
+            if (arrowStack.Count == 0)
+                Inventory.Main[arrowSlot] = null;
+            Send(InventoryPackets.InventorySlot(InventoryPackets.WindowInventory, arrowSlot, Inventory.Main[arrowSlot]));
+        }
+
+        var power = Enchanting.Level(bow, "power");
+        var punch = Enchanting.Level(bow, "punch");
+        var flame = Enchanting.Level(bow, "flame") > 0;
+        var speed = force * 3.0f;
+
+        _server.Projectiles.Launch(this, Entities.ProjectileManager.Arrow, speed: speed, power: power, punch: punch, flame: flame);
+
+        // Bow durability loss
+        if (!isCreative && bow.MaxDurability > 0)
+        {
+            var unb = Enchanting.Level(bow, "unbreaking");
+            if (unb == 0 || Random.Shared.Next(unb + 1) == 0)
+            {
+                var newDmg = bow.Damage + 1;
+                if (newDmg >= bow.MaxDurability)
+                {
+                    Inventory.Main[Inventory.SelectedSlot] = null;
+                    _server.PlaySound("random.break", Position.X, Position.Y, Position.Z, World);
+                }
+                else
+                {
+                    Inventory.Main[Inventory.SelectedSlot] = bow.WithDamage(newDmg);
+                }
+                Send(InventoryPackets.InventorySlot(InventoryPackets.WindowInventory, Inventory.SelectedSlot, Inventory.Main[Inventory.SelectedSlot]));
+            }
+        }
+    }
+
     /// <summary>Fall damage from the vertical movement reported by the client: 1 per block beyond 3.</summary>
     private void TrackFall(float previousY, float y)
     {
@@ -773,6 +897,7 @@ public sealed partial class BedrockConnection
                 damage += 2.5f * Enchanting.Level(held, "bane_of_arthropods");
             if (_server.Mobs.Damage(mob, damage, (Position.X, Position.Z), this, Enchanting.Level(held, "knockback"), Enchanting.Level(held, "looting"), source: DamageSource.PlayerAttack(this)))
                 mob.FireTicks = Math.Max(mob.FireTicks, 80 * Enchanting.Level(held, "fire_aspect"));
+            ApplyWeaponWear();
             return;
         }
         if (_server.Config.Pvp && _server.Players.FirstOrDefault(p => p.EntityId == target && p.IsInGame) is { } victim && victim != this)
@@ -780,7 +905,35 @@ public sealed partial class BedrockConnection
             var dx = victim.Position.X - Position.X;
             var dz = victim.Position.Z - Position.Z;
             if (dx * dx + dz * dz <= 6 * 6)
+            {
                 victim.Damage(damage + 1.25f * Enchanting.Level(Inventory.Held, "sharpness"), Position.X, Position.Z, source: DamageSource.PlayerAttack(this));
+                if (Enchanting.Level(Inventory.Held, "fire_aspect") is var fa && fa > 0)
+                    victim.FireTicks = Math.Max(victim.FireTicks, 80 * fa);
+                ApplyWeaponWear();
+            }
+        }
+    }
+
+    private void ApplyWeaponWear()
+    {
+        var held = Inventory.Held;
+        if (held is not null && held.MaxDurability > 0 && GameMode != GameMode.Creative)
+        {
+            var unb = Enchanting.Level(held, "unbreaking");
+            if (unb == 0 || Random.Shared.Next(unb + 1) == 0)
+            {
+                var newDmg = held.Damage + 1;
+                if (newDmg >= held.MaxDurability)
+                {
+                    Inventory.Main[Inventory.SelectedSlot] = null;
+                    _server.PlaySound("random.break", Position.X, Position.Y, Position.Z, World);
+                }
+                else
+                {
+                    Inventory.Main[Inventory.SelectedSlot] = held.WithDamage(newDmg);
+                }
+                Send(InventoryPackets.InventorySlot(InventoryPackets.WindowInventory, Inventory.SelectedSlot, Inventory.Main[Inventory.SelectedSlot]));
+            }
         }
     }
 

@@ -26,6 +26,7 @@ public sealed class FallingBlocks(BedrokiaServer server, World world)
         public int X { get; } = x;
         public int Z { get; } = z;
         public double Y = y;
+        public double StartY { get; } = y;
         public double Vy;
         public BlockType Block { get; } = block;
         public int Ticks;
@@ -93,13 +94,54 @@ public sealed class FallingBlocks(BedrokiaServer server, World world)
                 }
             }
 
-            if (!dropAsItem && target is not null && !BlockPhysics.IsSolid(target))
+            var isAnvil = Anvil.IsAnvilBlock(falling.Block.Name);
+            if (isAnvil)
+            {
+                var fallDistance = (float)Math.Max(0, falling.StartY - landY);
+                if (fallDistance > 1)
+                {
+                    var impactDamage = Math.Min(40f, (fallDistance - 1) * 2f);
+                    foreach (var player in server.Players.Where(p => p.World == world && !p.Dead))
+                    {
+                        if (Math.Abs(player.Position.X - (falling.X + 0.5f)) < 0.8f &&
+                            Math.Abs(player.Position.Z - (falling.Z + 0.5f)) < 0.8f &&
+                            Math.Abs(player.Position.Y - landY) < 1.5f)
+                        {
+                            player.Damage(impactDamage, falling.X + 0.5, falling.Z + 0.5, armour: true, source: DamageSource.Custom());
+                        }
+                    }
+                    foreach (var mob in server.Mobs.All.Where(m => !m.Dead && world == server.World))
+                    {
+                        if (Math.Abs(mob.X - (falling.X + 0.5f)) < 0.8f &&
+                            Math.Abs(mob.Z - (falling.Z + 0.5f)) < 0.8f &&
+                            Math.Abs(mob.Y - landY) < 1.5f)
+                        {
+                            server.Mobs.Damage(mob, impactDamage, (falling.X + 0.5, falling.Z + 0.5));
+                        }
+                    }
+                }
+
+                var degradeChance = 0.05 + fallDistance * 0.05;
+                if (Random.Shared.NextDouble() < degradeChance)
+                {
+                    if (Anvil.NextDamageState(blockToPlace) is { } degraded)
+                        blockToPlace = degraded;
+                }
+
+                if (blockToPlace.IsAir)
+                    server.PlaySound("random.anvil_break", falling.X + 0.5, landY, falling.Z + 0.5, world);
+                else
+                    server.PlaySound("random.anvil_land", falling.X + 0.5, landY, falling.Z + 0.5, world);
+            }
+
+            if (!dropAsItem && target is not null && !BlockPhysics.IsSolid(target) && !blockToPlace.IsAir)
             {
                 world.SetBlock(falling.X, landY, falling.Z, blockToPlace);
                 server.BroadcastIn(world, Bedrokia.Protocol.Packets.UpdateBlock(falling.X, landY, falling.Z, blockToPlace.NetworkId));
             }
-            else if (ItemStack.Of(falling.Block.Name) is { } item)
+            else if (ItemStack.Of(falling.Block.Name) is { } item && !blockToPlace.IsAir)
                 server.DropItem(item, falling.X + 0.5f, landY + 0.5f, falling.Z + 0.5f, world: world);
         }
+
     }
 }

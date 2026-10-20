@@ -30,6 +30,7 @@ public enum DamageCause
     Suffocation,
     Explosion,
     Magic,
+    Projectile,
     Custom
 }
 
@@ -56,5 +57,6 @@ public sealed record DamageSource(DamageCause Cause, object? Attacker = null, st
     public static DamageSource Magic(string description = "Killed by magic") => new(DamageCause.Magic, null, description);
     public static DamageSource Poison() => new(DamageCause.Magic, null, "Killed by poison");
     public static DamageSource Wither() => new(DamageCause.Magic, null, "Withered away");
+    public static DamageSource Projectile(object? shooter = null) => new(DamageCause.Projectile, shooter, "Hit by projectile");
     public static DamageSource Custom(string name = "custom") => new(DamageCause.Custom, null, name);
 }

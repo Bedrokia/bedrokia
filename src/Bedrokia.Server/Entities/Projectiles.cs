@@ -40,6 +40,10 @@ public sealed class Projectile
     /// <summary>The potion id (item meta) of a splash potion.</summary>
     public short Potion { get; }
 
+    public int PowerLevel { get; init; }
+    public int PunchLevel { get; init; }
+    public bool Flame { get; init; }
+
     internal int Ticks;
 }
 
@@ -51,7 +55,7 @@ public sealed class Projectile
 public sealed class ProjectileManager(BedrokiaServer server)
 {
     public const string Snowball = "minecraft:snowball", Egg = "minecraft:egg", EnderPearl = "minecraft:ender_pearl",
-        SplashPotion = "minecraft:splash_potion";
+        SplashPotion = "minecraft:splash_potion", Arrow = "minecraft:arrow";
 
     private const float Gravity = 0.03f, Drag = 0.99f, SplashRadius = 4;
     private const int MaxTicks = 1200;
@@ -67,7 +71,8 @@ public sealed class ProjectileManager(BedrokiaServer server)
     /// Throws a projectile from the player's eyes where they look; <paramref name="speed"/> 1.5 is a hand throw.
     /// Returns null when a plugin cancelled <see cref="ServerEvents.ProjectileLaunch"/>.
     /// </summary>
-    public Projectile? Launch(BedrockConnection player, string identifier, float speed = 1.5f, short potion = 0)
+    public Projectile? Launch(BedrockConnection player, string identifier, float speed = 1.5f, short potion = 0,
+        int power = 0, int punch = 0, bool flame = false)
     {
         if (server.Events.HasProjectileLaunch)
         {
@@ -80,15 +85,21 @@ public sealed class ProjectileManager(BedrokiaServer server)
         var pitch = player.Pitch * MathF.PI / 180;
         var direction = new Vector3(-MathF.Sin(yaw) * MathF.Cos(pitch), -MathF.Sin(pitch), MathF.Cos(yaw) * MathF.Cos(pitch));
         var projectile = Spawn(identifier, player.World, new Vector3(player.Position.X, player.Position.Y - 0.1f, player.Position.Z),
-            direction * speed, player, potion);
+            direction * speed, player, potion, power, punch, flame);
         server.PlaySound("random.bow", player.Position.X, player.Position.Y, player.Position.Z, player.World, 0.5f, 0.4f);
         return projectile;
     }
 
     /// <summary>A projectile from anywhere (a dispenser, a trap...), with its velocity in blocks per tick.</summary>
-    public Projectile Spawn(string identifier, World world, Vector3 position, Vector3 velocity, BedrockConnection? owner = null, short potion = 0)
+    public Projectile Spawn(string identifier, World world, Vector3 position, Vector3 velocity, BedrockConnection? owner = null,
+        short potion = 0, int power = 0, int punch = 0, bool flame = false)
     {
-        var projectile = new Projectile(server.NextEntityId(), identifier, world, owner, position, velocity, potion);
+        var projectile = new Projectile(server.NextEntityId(), identifier, world, owner, position, velocity, potion)
+        {
+            PowerLevel = power,
+            PunchLevel = punch,
+            Flame = flame
+        };
         _projectiles.Add(projectile);
         server.BroadcastIn(world,
             EntityPackets.AddActor(projectile.EntityId, identifier, position.X, position.Y, position.Z, 0,
@@ -173,6 +184,26 @@ public sealed class ProjectileManager(BedrokiaServer server)
                 break;
             case SplashPotion:
                 Splash(p, at);
+                break;
+            case Arrow:
+                var arrowDmg = 4f * (1f + 0.25f * (p.PowerLevel + (p.PowerLevel > 0 ? 1 : 0)));
+                if (player is not null)
+                {
+                    player.Damage(arrowDmg, p.Position.X, p.Position.Z, armour: true, source: DamageSource.Projectile(p.Owner));
+                    if (p.Flame)
+                        player.FireTicks = Math.Max(player.FireTicks, 100);
+                    if (p.PunchLevel > 0)
+                    {
+                        var norm = Vector3.Normalize(p.Velocity);
+                        player.Send(EntityPackets.Motion(player.EntityId, norm.X * 0.6 * p.PunchLevel, 0.4, norm.Z * 0.6 * p.PunchLevel));
+                    }
+                }
+                if (mob is not null)
+                {
+                    server.Mobs.Damage(mob, arrowDmg, (p.Position.X, p.Position.Z), p.Owner, knockback: p.PunchLevel);
+                    if (p.Flame)
+                        mob.FireTicks = Math.Max(mob.FireTicks, 100);
+                }
                 break;
         }
     }
