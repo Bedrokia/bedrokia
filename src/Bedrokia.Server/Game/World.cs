@@ -54,9 +54,18 @@ public sealed class World
     public int Dimension => Generator is Generation.NetherGenerator ? 1 : 0;
 
     // Per-world simulation, set up by the server when it opens the world.
+    public BedrokiaServer? Server { get; internal set; }
     public DroppedItems DroppedItems { get; internal set; } = null!;
     public Fluids Fluids { get; internal set; } = null!;
     public Entities.FallingBlocks FallingBlocks { get; internal set; } = null!;
+
+    /// <summary>Spawns a custom entity in this world.</summary>
+    public Custom.Entities.CustomEntityInstance? SpawnCustomEntity(string identifier, double x, double y, double z) =>
+        Server?.CustomEntities.Spawn(identifier, this, x, y, z);
+
+    /// <summary>Spawns a custom entity in this world (alias for SpawnCustomEntity).</summary>
+    public Custom.Entities.CustomEntityInstance? SpawnEntity(string identifier, double x, double y, double z) =>
+        SpawnCustomEntity(identifier, x, y, z);
 
     /// <summary>world.properties of this world (generator, day/night cycle).</summary>
     public WorldSettings Settings { get; }

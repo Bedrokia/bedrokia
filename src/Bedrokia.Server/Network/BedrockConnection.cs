@@ -625,7 +625,9 @@ public sealed partial class BedrockConnection
                         _server.Config.LevelName, _server.World.Time, (int)_server.Config.Difficulty, world.Settings.DaylightCycle, world.Dimension,
                         Game.Custom.Blocks.CustomBlockRegistry.GetDefinitions())),
                     Items.RegistryPacket,
-                    Biome.DefinitionListPacket);
+                    Biome.DefinitionListPacket,
+                    Packets.AvailableActorIdentifiers(Game.Custom.Entities.CustomEntityRegistry.GetIdentifiersNbt()),
+                    Packets.SyncActorProperty(Game.Custom.Entities.CustomEntityRegistry.GetSyncPropertiesNbt()));
                 break;
             }
             default:
@@ -697,6 +699,11 @@ public sealed partial class BedrockConnection
                     sneaking = Sneaking;
             }
             Sneaking = sneaking;
+            if (Sneaking)
+            {
+                var ridden = _server.CustomEntities.All.FirstOrDefault(e => e.Rider == this);
+                ridden?.Dismount();
+            }
         }
         reader.VarUInt32(); // input mode
         reader.VarUInt32(); // play mode

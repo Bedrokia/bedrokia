@@ -120,4 +120,20 @@ internal static class InventoryPackets
 
     public static byte[] PlayerHotbar(int selectedSlot, uint windowId = 0) =>
         new BedrockWriter().VarUInt32(48).VarUInt32((uint)selectedSlot).Byte((byte)windowId).Bool(true).ToArray();
+
+    /// <summary>
+    /// Encodes a MobArmourEquipment packet (packet ID 32) sending armor equipment to viewers.
+    /// Source: gophertunnel (MIT) minecraft/protocol/packet/mob_armour_equipment.go.
+    /// </summary>
+    public static byte[] MobArmorEquipment(long entityId, ItemStack? helmet = null, ItemStack? chestplate = null, ItemStack? leggings = null, ItemStack? boots = null, ItemStack? body = null)
+    {
+        var w = new BedrockWriter().VarUInt32(PacketId.MobArmourEquipment).VarUInt64((ulong)entityId);
+        ItemStack.WriteInstance(w, helmet);
+        ItemStack.WriteInstance(w, chestplate);
+        ItemStack.WriteInstance(w, leggings);
+        ItemStack.WriteInstance(w, boots);
+        ItemStack.WriteInstance(w, body);
+        return w.ToArray();
+    }
 }
+
