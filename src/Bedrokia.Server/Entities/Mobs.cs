@@ -277,6 +277,11 @@ public sealed class MobManager(BedrokiaServer server)
     private const int ActiveRange = 64, AdultAgeTicks = 24000, BreedCooldownTicks = 6000, LoveTicks = 600, AngerTicks = 600;
     private const int MaxPathNodes = 600;
 
+    // At most this many A* searches a tick: a crowd of mobs chasing at once spread their searches over the next
+    // ticks instead of freezing one tick (they keep walking their old path meanwhile).
+    private const int PathSearchesPerTick = 6;
+    private int _pathSearches;
+
     private readonly List<Mob> _mobs = [];
     private readonly List<Mob> _mobScratch = [];
     private readonly List<BedrockConnection> _playerScratch = [];
@@ -358,6 +363,7 @@ public sealed class MobManager(BedrokiaServer server)
 
     public void Tick(long tick)
     {
+        _pathSearches = 0;
         if (!server.Config.Mobs)
         {
             // mobs=off: none in the world. Animals are kept on disk and come back when mobs are on again.
@@ -953,8 +959,9 @@ public sealed class MobManager(BedrokiaServer server)
         if (pathfind)
         {
             var goal = ((int)Math.Floor(x), (int)Math.Floor(y + 0.01), (int)Math.Floor(z));
-            if (--mob.PathTicks <= 0
-                || Math.Abs(goal.Item1 - mob.PathGoal.X) + Math.Abs(goal.Item2 - mob.PathGoal.Y) + Math.Abs(goal.Item3 - mob.PathGoal.Z) > 2)
+            if ((--mob.PathTicks <= 0
+                 || Math.Abs(goal.Item1 - mob.PathGoal.X) + Math.Abs(goal.Item2 - mob.PathGoal.Y) + Math.Abs(goal.Item3 - mob.PathGoal.Z) > 2)
+                && _pathSearches++ < PathSearchesPerTick)
             {
                 mob.PathTicks = 20;
                 mob.PathGoal = goal;

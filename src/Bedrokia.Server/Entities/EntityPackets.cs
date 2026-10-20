@@ -105,6 +105,10 @@ internal static class EntityPackets
     public static byte[] Swing(long entityId) =>
         new BedrockWriter().VarUInt32(AnimateId).Byte(1).VarUInt64((ulong)entityId).Float32(0).Bool(false).ToArray();
 
+    /// <summary>Critical hit stars around the entity hit (Animate action 4).</summary>
+    public static byte[] CriticalHit(long entityId) =>
+        new BedrockWriter().VarUInt32(AnimateId).Byte(4).VarUInt64((ulong)entityId).Float32(0).Bool(false).ToArray();
+
     /// <summary>Respawn state 1 (ready to spawn) at the eye position.</summary>
     public static byte[] Respawn(long entityId, float x, float y, float z) =>
         new BedrockWriter().VarUInt32(RespawnId).Vec3(x, y, z).Byte(1).VarUInt64((ulong)entityId).ToArray();
