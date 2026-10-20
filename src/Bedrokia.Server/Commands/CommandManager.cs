@@ -219,7 +219,12 @@ public sealed class CommandManager(Logger logger)
                 }
                 indices.Add(v);
             }
-            enums.Add((options.Count == 1 ? options[0] : name, indices));
+            // The client crashes when it shows a command whose enum shares its name with another one ("action" of /time
+            // and of /whitelist): every name is made unique.
+            var enumName = options.Count == 1 ? options[0] : name;
+            for (var n = 2; enums.Any(e => e.Name == enumName); n++)
+                enumName = (options.Count == 1 ? options[0] : name) + n;
+            enums.Add((enumName, indices));
             return enumIndex[key] = enums.Count - 1;
         }
         var types = overloads.Select(command => command.Select(overload => overload.Select(p =>

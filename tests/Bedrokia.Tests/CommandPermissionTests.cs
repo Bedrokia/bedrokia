@@ -88,4 +88,16 @@ public class CommandUsageTests
         var packet = System.Text.Encoding.UTF8.GetString(manager.AvailableCommandsPacket(true));
         Assert.Contains("survival", packet); // the choices travel as enum values
     }
+
+    [Fact]
+    public void Enums_with_the_same_name_get_distinct_names()
+    {
+        using var logger = new Logger(LogLevel.Warn, null);
+        var manager = new CommandManager(logger);
+        manager.Register("time", "", "<action:set|add>", false, (_, _) => { });
+        manager.Register("whitelist", "", "<action:on|off>", false, (_, _) => { });
+        var packet = System.Text.Encoding.UTF8.GetString(manager.AvailableCommandsPacket(true));
+        // Two enums both named "action" crashed the client when it showed the second command.
+        Assert.Contains("action2", packet);
+    }
 }
