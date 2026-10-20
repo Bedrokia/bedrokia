@@ -866,8 +866,34 @@ public sealed partial class BedrokiaServer
         }
     }
 
+    // @s, @p, @r, @a, @e for every command (players only; selector arguments in brackets are ignored).
+    private IReadOnlyList<string>? ResolveSelector(CommandSender sender, string word)
+    {
+        if (word.Length < 2 || word[0] != '@' || word.Length > 2 && word[2] != '[')
+            return null;
+        var players = _players.Where(p => p.IsInGame).ToList();
+        var self = sender.Player;
+        switch (word[1])
+        {
+            case 's':
+                return self is null ? [] : [self.Name];
+            case 'p':
+                var candidates = self is null ? players : players.Where(p => p.World == self.World).ToList();
+                var nearest = self is null ? candidates.FirstOrDefault() : candidates.MinBy(p =>
+                    Math.Pow(p.Position.X - self.Position.X, 2) + Math.Pow(p.Position.Y - self.Position.Y, 2) + Math.Pow(p.Position.Z - self.Position.Z, 2));
+                return nearest is null ? [] : [nearest.Name];
+            case 'r':
+                return players.Count == 0 ? [] : [players[Random.Shared.Next(players.Count)].Name];
+            case 'a' or 'e':
+                return [.. players.Select(p => p.Name)];
+            default:
+                return null;
+        }
+    }
+
     private void RegisterBuiltinCommands()
     {
+        Commands.SelectorResolver = ResolveSelector;
         void Add(string name, string description, string usage, string permission, Action<CommandSender, string[]> run) =>
             Commands.Register(name, description, usage, permission, run);
         void Alias(string alias, string target, string usage, string permission) =>

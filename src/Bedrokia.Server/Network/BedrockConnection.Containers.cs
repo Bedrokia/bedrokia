@@ -51,7 +51,7 @@ public sealed partial class BedrockConnection
             var openEv = new ContainerOpenEvent(this, WindowContainer, type, new BlockPos(x, y, z), entity.Id, contents);
             if (!_server.Events.OnContainerOpen(openEv))
             {
-                Send(InventoryPackets.ContainerClose(WindowContainer, 0));
+                Send(InventoryPackets.ContainerClose(WindowContainer, 0, serverInitiated: true));
                 return true;
             }
         }
@@ -86,7 +86,7 @@ public sealed partial class BedrockConnection
                 _server.Events.OnContainerClose(new ContainerCloseEvent(this, WindowContainer));
         }
         if (notifyClient && OpenContainerAt is not null)
-            Send(InventoryPackets.ContainerClose(WindowContainer, 0));
+            Send(InventoryPackets.ContainerClose(WindowContainer, 0, serverInitiated: true));
         OpenContainerAt = null;
         Inventory.OpenContainer = null;
         CloseMenu();

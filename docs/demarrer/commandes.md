@@ -7,6 +7,9 @@ title: Commandes
 Dans le jeu, avec `/`. Dans la console, sans `/` (la console est toujours opérateur). Les commandes des plugins
 s'ajoutent à cette liste et apparaissent dans l'autocomplétion du jeu.
 
+Partout où une commande attend un joueur, les sélecteurs marchent : `@s` (soi-même), `@p` (le joueur le plus proche),
+`@r` (un joueur au hasard), `@a` et `@e` (tous les joueurs : la commande est lancée pour chacun).
+
 ## Tout le monde
 
 | Commande | Rôle |
