@@ -1091,6 +1091,7 @@ public sealed partial class BedrockConnection
         }
         _server.ApplyGravity(x, y + 1, z, World);
         _server.UpdateShapes(x, y, z, World);
+        _server.CheckSupport(x, y + 1, z, World); // what stood on it falls (sugar cane, flowers, torches...)
         if (current!.Name is "minecraft:obsidian" or "minecraft:portal")
             BreakPortal(x, y, z);
         // The breaker's client shows its own particles; the others need the event.
