@@ -75,6 +75,18 @@ public sealed partial class BedrockConnection
 
     public void SendMessage(string message) => Send(Packets.Text(TextType.Raw, message));
 
+    private const uint PacketViolationWarningId = 156;
+
+    // The client says which packet it could not read before it disconnects: the only trace of such a bug.
+    private void OnPacketViolationWarning(ref BedrockReader reader)
+    {
+        var type = reader.VarInt32();
+        var severity = reader.VarInt32();
+        var packet = reader.VarInt32();
+        var context = reader.Remaining > 0 ? reader.String() : "";
+        _server.Logger.Warn($"{Name}: the client rejected packet {packet} (violation {type}, severity {severity}): {context}");
+    }
+
     public bool IsOp => _server.Ops.Contains(Name);
 
     public string Prefix => _server.Permissions.GetPlayerPrefix(Name);
@@ -238,6 +250,7 @@ public sealed partial class BedrockConnection
 
     private void RegisterHandlers()
     {
+        _handlers[PacketViolationWarningId] = OnPacketViolationWarning;
         _handlers[PacketId.ActorEvent] = null;
         _handlers[PacketId.AdventureSettings] = null;
         _handlers[PacketId.Animate] = null;
