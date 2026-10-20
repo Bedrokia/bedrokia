@@ -30,8 +30,12 @@ public sealed class NetherNetSession
     // animations go well past 512 KB, so the cap stays at 4 MB (the segment count is a byte: 255 at most anyway).
     private const int MaxMessageSize = 4 * 1024 * 1024;
 
-    /// <summary>A client in game sends input every tick; silence this long means it is gone (crash, network loss).</summary>
-    public static readonly TimeSpan IdleTimeout = TimeSpan.FromSeconds(30);
+    /// <summary>
+    /// Silence this long means the client is gone. Long on purpose: while it asks the player whether to download the
+    /// resource packs, the client sends nothing (30 s disconnected slow players). A lost or crashed peer is caught
+    /// sooner by WebRTC itself (connection state disconnected or failed).
+    /// </summary>
+    public static readonly TimeSpan IdleTimeout = TimeSpan.FromMinutes(10);
 
     private readonly RTCPeerConnection _peer;
     private readonly Lock _sync = new();
