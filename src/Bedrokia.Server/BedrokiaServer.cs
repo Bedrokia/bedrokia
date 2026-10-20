@@ -248,8 +248,25 @@ public sealed partial class BedrokiaServer
             using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1.0 / TicksPerSecond));
             try
             {
-                while (await timer.WaitForNextTickAsync(_stop.Token))
+                while (true)
                 {
+                    var nextTick = timer.WaitForNextTickAsync(_stop.Token).AsTask();
+                    while (!nextTick.IsCompleted)
+                    {
+                        var packets = _mainThread.Reader.WaitToReadAsync(_stop.Token).AsTask();
+                        if (await Task.WhenAny(nextTick, packets) != packets || !await packets)
+                            break;
+                        try
+                        {
+                            HandleBetweenTicks();
+                        }
+                        catch (Exception ex)
+                        {
+                            Logger.Error($"Unhandled error between ticks: {ex}");
+                        }
+                    }
+                    if (!await nextTick)
+                        break;
                     try
                     {
                         Tick();
@@ -620,38 +637,7 @@ public sealed partial class BedrokiaServer
                 }
 
                 using (Timings.Track(Timings.MainThread))
-                {
-                    var reader = _mainThread.Reader;
-                    while (reader.TryRead(out var item))
-                    {
-                        if (item.ControlAction is { } action)
-                        {
-                            try
-                            {
-                                action();
-                            }
-                            catch (Exception e)
-                            {
-                                Logger.Error($"Unhandled error in tick {CurrentTick}: {e}");
-                            }
-                        }
-                        else if (item.Connection is { } conn && item.PooledPacket is { } pooled)
-                        {
-                            try
-                            {
-                                conn.HandlePacket(pooled, item.Length);
-                            }
-                            catch (Exception e)
-                            {
-                                Logger.Error($"Packet handling error in tick {CurrentTick}: {e}");
-                            }
-                            finally
-                            {
-                                ArrayPool<byte>.Shared.Return(pooled);
-                            }
-                        }
-                    }
-                }
+                    DrainMainThread();
 
                 FlushAllConnections();
             }
@@ -664,6 +650,61 @@ public sealed partial class BedrokiaServer
         Timings.OnTickEnd();
         var elapsedMs = Stopwatch.GetElapsedTime(tickStart).TotalMilliseconds;
         Performance.OnTick(elapsedMs, intervalMs);
+    }
+
+    /// <summary>
+    /// Packets that arrive between two ticks are handled at once and their answers sent, instead of waiting up to
+    /// 50 ms for the next tick: a hit shows its damage and knockback right away (PvP). Movement stays per tick.
+    /// </summary>
+    internal void HandleBetweenTicks()
+    {
+        var wasTicking = _ticking;
+        _ticking = true;
+        _tickThread = Environment.CurrentManagedThreadId;
+        try
+        {
+            DrainMainThread();
+            for (var i = 0; i < _connections.Count; i++)
+                _connections[i].FlushOutgoing();
+        }
+        finally
+        {
+            _ticking = wasTicking;
+        }
+    }
+
+    private void DrainMainThread()
+    {
+        var reader = _mainThread.Reader;
+        while (reader.TryRead(out var item))
+        {
+            if (item.ControlAction is { } action)
+            {
+                try
+                {
+                    action();
+                }
+                catch (Exception e)
+                {
+                    Logger.Error($"Unhandled error in tick {CurrentTick}: {e}");
+                }
+            }
+            else if (item.Connection is { } conn && item.PooledPacket is { } pooled)
+            {
+                try
+                {
+                    conn.HandlePacket(pooled, item.Length);
+                }
+                catch (Exception e)
+                {
+                    Logger.Error($"Packet handling error in tick {CurrentTick}: {e}");
+                }
+                finally
+                {
+                    ArrayPool<byte>.Shared.Return(pooled);
+                }
+            }
+        }
     }
 
     private void FlushAllConnections()
