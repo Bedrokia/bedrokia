@@ -52,6 +52,31 @@ public sealed partial class BedrockConnection : IEnchanter
         SendVitals();
     }
 
+    private const byte ContainerTypeAnvil = 5;
+
+    // Anvil window; after each use (survival) it wears out one time in eight or so: anvil, chipped, damaged, gone.
+    private void OpenAnvil(int x, int y, int z)
+    {
+        var world = World;
+        Inventory.AnvilUsed = () =>
+        {
+            if (GameMode != GameMode.Creative && Random.Shared.NextDouble() < 0.12 && world.GetBlock(x, y, z) is { } anvil)
+            {
+                var next = anvil.Name switch { "minecraft:anvil" => "minecraft:chipped_anvil", "minecraft:chipped_anvil" => "minecraft:damaged_anvil", _ => null };
+                var worn = next is null ? Blocks.Air : Blocks.ByKey(new BlockType(0, next, anvil.States).Key) ?? Blocks.ByName(next) ?? Blocks.Air;
+                _server.SetBlockAndUpdate(x, y, z, worn, world);
+                if (worn.IsAir)
+                {
+                    _server.PlaySound("random.anvil_break", x + 0.5, y + 0.5, z + 0.5, world);
+                    Send(InventoryPackets.ContainerClose(WindowEnchanting, ContainerTypeAnvil, serverInitiated: true));
+                    return;
+                }
+            }
+            _server.PlaySound("random.anvil_use", x + 0.5, y + 0.5, z + 0.5, world);
+        };
+        Send(InventoryPackets.ContainerOpen(WindowEnchanting, ContainerTypeAnvil, x, y, z));
+    }
+
     private void OpenEnchantingTable(int x, int y, int z)
     {
         _enchantTable = (x, y, z);

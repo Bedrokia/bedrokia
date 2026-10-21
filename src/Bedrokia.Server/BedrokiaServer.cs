@@ -311,7 +311,7 @@ public sealed partial class BedrokiaServer
             foreach (var connection in _connections.ToList())
                 connection.Disconnect("Server closed.", DisconnectReason.Shutdown);
             Plugins.DisableAll();
-            SaveWorld();
+            SaveWorld(wait: true);
             await Task.Delay(600); // let NetherNet sessions flush their Disconnect packet
             _networkStop.Cancel();
             await signaling;
@@ -449,11 +449,11 @@ public sealed partial class BedrokiaServer
         }
     }
 
-    private void SaveWorld()
+    private void SaveWorld(bool wait = false)
     {
         try
         {
-            var saved = Worlds.Sum(w => w.Save());
+            var saved = Worlds.Sum(w => w.Save(wait));
             Maps.Save();
             foreach (var world in Worlds)
             {
@@ -1136,7 +1136,7 @@ public sealed partial class BedrokiaServer
         Add("stop", "Stops the server cleanly.", "", "bedrokia.command.stop", (_, _) => Stop());
         Add("save-all", "Saves the world and the players now.", "", "bedrokia.command.saveall", (sender, _) =>
         {
-            SaveWorld();
+            SaveWorld(wait: true);
             sender.Reply("World saved.");
         });
         Add("say", "Sends a message to every player.", "<message...>", "bedrokia.command.say", (sender, args) =>
