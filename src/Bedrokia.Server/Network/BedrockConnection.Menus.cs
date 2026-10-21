@@ -21,11 +21,33 @@ public sealed record MenuClick(BedrockConnection Player, int Slot, ItemStack? It
 /// A chest window that is not a block of the world (shops, menus, another player's inventory...): 27 slots for a
 /// chest, 54 for a double chest. Like muqsit/InvMenu (MIT): a fake chest is shown under the player and opened.
 /// </summary>
-public sealed class InventoryMenu(string name, bool doubleChest = false)
+public sealed class InventoryMenu
 {
-    public string Name { get; set; } = name;
-    public bool DoubleChest { get; } = doubleChest;
-    public Inventory Inventory { get; } = new(doubleChest ? 54 : 27);
+    public InventoryMenu(string name, bool doubleChest = false)
+    {
+        Name = name;
+        DoubleChest = doubleChest;
+        Inventory = new Inventory(doubleChest ? 54 : 27);
+    }
+
+    /// <summary>
+    /// A window of any size (up to 255 slots) drawn by the resource pack, as ModSmith does: it is opened on an invisible
+    /// entity whose name is <paramref name="layout"/>, the hidden code the pack's ui/chest_screen.json looks for in the
+    /// title to show its own grid (colours, slots, title). Without such a pack the client shows a plain chest window.
+    /// </summary>
+    public InventoryMenu(string name, int slots, string layout)
+    {
+        Name = name;
+        Inventory = new Inventory(Math.Clamp(slots, 1, 255));
+        Layout = layout;
+    }
+
+    public string Name { get; set; }
+    public bool DoubleChest { get; }
+    public Inventory Inventory { get; }
+
+    /// <summary>The pack's layout code of a window of any size (see the constructor), or null for a chest window.</summary>
+    public string? Layout { get; }
 
     /// <summary>Called for every slot a player changes; return false to refuse it (the items go back).</summary>
     public Func<MenuClick, bool>? Listener { get; set; }
@@ -53,6 +75,11 @@ public sealed partial class BedrockConnection
     public void SendMenu(InventoryMenu menu)
     {
         CloseContainer(notifyClient: true);
+        if (menu.Layout is { } layout)
+        {
+            SendLayoutMenu(menu, layout);
+            return;
+        }
         var feet = ((int)Math.Floor(Position.X), (int)Math.Floor(Position.Y - EyeHeight) - 2, (int)Math.Floor(Position.Z));
         _menu = menu;
         _menuAt = feet;
@@ -70,6 +97,35 @@ public sealed partial class BedrockConnection
             Inventory.MenuListener = (slot, clicked, with) => menu.Listener?.Invoke(new MenuClick(this, slot, clicked, with)) ?? true;
             OpenContainerAt = feet;
             Send(InventoryPackets.ContainerOpen(WindowContainer, 0, x, y, z), InventoryPackets.InventoryContent(WindowContainer, menu.Inventory));
+        });
+    }
+
+    private long _menuEntity = -1;
+
+    // ModSmith's way: an invisible entity named with the layout code, holding a container of the menu's size, riding
+    // the player (it stays in reach), and the window opened on it.
+    private void SendLayoutMenu(InventoryMenu menu, string layout)
+    {
+        var feet = ((int)Math.Floor(Position.X), (int)Math.Floor(Position.Y - EyeHeight), (int)Math.Floor(Position.Z));
+        var id = _server.NextEntityId();
+        _menu = menu;
+        _menuAt = feet;
+        _menuEntity = id;
+        const long invisible = 1L << 5;
+        const sbyte containerInventory = -1; // WindowTypes::INVENTORY, as ModSmith
+        Send(Entities.EntityPackets.AddActor(id, Entities.ActorIdentifiers.InventoryHolder, Position.X, Position.Y - EyeHeight, Position.Z, 0, 1, 1, 0, 0, 0,
+                invisible, nameTag: layout, showName: false),
+            Entities.EntityPackets.ContainerData(id, containerInventory, menu.Inventory.Size),
+            Entities.VehicleManager.Link(EntityId, id, mount: true));
+        _server.Schedule(2, () =>
+        {
+            if (_menu != menu || !IsInGame)
+                return;
+            Inventory.OpenContainer = (menu.Inventory, "Menu");
+            Inventory.MenuListener = (slot, clicked, with) => menu.Listener?.Invoke(new MenuClick(this, slot, clicked, with)) ?? true;
+            OpenContainerAt = feet;
+            Send(InventoryPackets.ContainerOpen(WindowContainer, 0, feet.Item1, feet.Item2, feet.Item3, id),
+                InventoryPackets.InventoryContent(WindowContainer, menu.Inventory));
         });
     }
 
@@ -105,6 +161,13 @@ public sealed partial class BedrockConnection
             return;
         _menu = null;
         Inventory.MenuListener = null;
+        if (_menuEntity >= 0)
+        {
+            Send(Packets.RemoveActor(_menuEntity));
+            _menuEntity = -1;
+            menu.OnClose?.Invoke(this);
+            return;
+        }
         var (x, y, z) = _menuAt;
         foreach (var bx in menu.DoubleChest ? new[] { x, x + 1 } : [x])
         {

@@ -272,4 +272,15 @@ public class BlockDetailsTests
         Assert.Equal("minecraft:iron_ingot", furnace.Items[2]?.Type.Name);
         Assert.Equal(1, Convert.ToInt32(server.World.GetBlock(4, Floor, 4)!.States["test:lit"])); // lit while it burns
     }
+
+    [Fact]
+    public void A_menu_of_any_size_opens_on_the_invisible_inventory_holder()
+    {
+        Assert.True(ActorIdentifiers.Packet.AsSpan().IndexOf(System.Text.Encoding.UTF8.GetBytes(ActorIdentifiers.InventoryHolder)) > 0);
+        var (_, player) = Arena();
+        var menu = new InventoryMenu("Netherite Chest", 144, "§a§n§t§a");
+        Assert.Equal(144, menu.Inventory.Size);
+        player.SendMenu(menu);
+        Assert.Same(menu, player.OpenMenu);
+    }
 }
