@@ -753,15 +753,22 @@ public sealed partial class BedrokiaServer
         }
     }
 
+    // Movement first (game logic, this thread), then each player's packets compressed, encrypted and sent: every
+    // connection has its own codec and transport, so with several players this runs on all the cores at once.
     private void FlushAllConnections()
     {
         for (var i = 0; i < _connections.Count; i++)
+            _connections[i].FlushTickMovement();
+        if (_connections.Count < ParallelFlushPlayers)
         {
-            var conn = _connections[i];
-            conn.FlushTickMovement();
-            conn.FlushOutgoing();
+            for (var i = 0; i < _connections.Count; i++)
+                _connections[i].FlushOutgoing();
+            return;
         }
+        Parallel.For(0, _connections.Count, i => _connections[i].FlushOutgoing());
     }
+
+    private const int ParallelFlushPlayers = 4; // below, starting the workers costs more than it saves
 
     // Network thread: subscribe right away (no packet may be missed), then hand everything to the game thread.
     // Signaling thread.
