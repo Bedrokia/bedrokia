@@ -243,4 +243,13 @@ public class BlockDetailsTests
         var placed = BlockPlacement.Place(Blocks.ByName(block)!, 0, 64, 0, 1, 0, yaw, 0, (_, _, _) => true);
         Assert.Equal(facing, placed[0].Block.States["minecraft:cardinal_direction"]);
     }
+
+    [Fact]
+    public void Custom_blocks_with_a_rotation_face_the_player_as_with_Customies()
+    {
+        var id = "test:rotating_" + Guid.NewGuid().ToString("N")[..8];
+        Bedrokia.Server.Game.Custom.Blocks.CustomBlockBuilder.Create(id).WithProperty("test:rotation", 2, 3, 4, 5).Register();
+        var placed = BlockPlacement.Place(Blocks.ByName(id)!, 0, 64, 0, 1, 0, 0f, 0, (_, _, _) => true); // looking south
+        Assert.Equal(2, Convert.ToInt32(placed[0].Block.States["test:rotation"])); // its front looks north, at the player
+    }
 }

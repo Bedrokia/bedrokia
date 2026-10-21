@@ -72,6 +72,8 @@ public static class BlockPlacement
                 "attached_bit" => (byte)0,
                 "persistent_bit" => (byte)1, // leaves placed by a player never decay
                 "upper_block_bit" or "head_piece_bit" => (byte)0,
+                // Custom blocks (Customies "customies:rotation"): 2 north, 3 south, 4 west, 5 east, the front facing the player.
+                _ when key.EndsWith(":rotation") => ((look + 2) & 3) switch { 0 => 3, 1 => 4, 2 => 2, _ => 5 },
                 _ => null,
             };
             if (value is not null)

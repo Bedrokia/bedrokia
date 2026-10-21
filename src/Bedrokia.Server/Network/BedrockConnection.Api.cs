@@ -84,6 +84,12 @@ public sealed partial class BedrockConnection
     public void PlaySound(string name, float volume = 1, float pitch = 1) =>
         Send(BedrokiaServer.SoundPacket(name, Position.X, Position.Y, Position.Z, volume, pitch));
 
+    /// <summary>
+    /// Shows <paramref name="block"/> at (x, y, z) to this player only: the world does not change, and the next change of
+    /// that block (or the chunk sent again) shows the real one. For views such as seeing through the ground.
+    /// </summary>
+    public void ShowBlock(int x, int y, int z, BlockType block) => Send(Packets.UpdateBlock(x, y, z, block.NetworkId));
+
     /// <summary>Pushes the player (blocks per tick; 1.0 up is a big jump).</summary>
     public void SetMotion(double vx, double vy, double vz) => Send(EntityPackets.Motion(EntityId, vx, vy, vz));
 
