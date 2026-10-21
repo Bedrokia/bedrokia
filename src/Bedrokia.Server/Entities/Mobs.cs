@@ -169,6 +169,9 @@ public sealed class Mob(long entityId, MobKind kind, double x, double y, double 
     public double Z { get; set; } = z;
     public double Vx, Vy, Vz;
     public float Yaw;
+
+    // The target the clients were told (metadata key 6): skeletons draw their bow at it (0: none).
+    internal long ShownTarget;
     public float Health { get; set; } = kind.MaxHealth;
     public bool OnGround;
     public bool Dead => Health <= 0;
@@ -814,6 +817,13 @@ public sealed class MobManager(BedrokiaServer server)
         }
 
         var target = Target(mob, player, distance, day);
+        // Its target in the metadata: skeletons and pillagers aim at it (raised arms and drawn bow), as vanilla.
+        var shown = target?.EntityId ?? 0;
+        if (shown != mob.ShownTarget)
+        {
+            mob.ShownTarget = shown;
+            Broadcast(mob, EntityPackets.SetTarget(mob.EntityId, shown));
+        }
         if (target is not null)
         {
             var dist = Math.Sqrt(Distance2(mob, target));
@@ -1965,6 +1975,16 @@ public sealed class MobManager(BedrokiaServer server)
         }
     }
 
+    // What a mob holds in its hand (vanilla spawn equipment).
+    private static ItemStack? WeaponOf(MobKind kind) =>
+        kind == MobKind.Skeleton || kind == MobKind.Stray ? Bow.Value
+        : kind == MobKind.Pillager ? Crossbow.Value
+        : kind.Id == "minecraft:wither_skeleton" ? StoneSword.Value
+        : null;
+
+    private static readonly Lazy<ItemStack?> Bow = new(() => ItemStack.Of("bow")), Crossbow = new(() => ItemStack.Of("crossbow")),
+        StoneSword = new(() => ItemStack.Of("stone_sword"));
+
     // --- Visibility ---
 
     private void Sync(Mob mob, List<BedrockConnection> players)
@@ -1975,6 +1995,10 @@ public sealed class MobManager(BedrokiaServer server)
             if (visible && mob.Viewers.Add(player))
             {
                 player.Send(mob.AddPacket());
+                if (WeaponOf(mob.Kind) is { } weapon) // what it holds: the bow is what the skeleton draws
+                    player.Send(Network.InventoryPackets.MobEquipment(mob.EntityId, weapon, 0, 0));
+                if (mob.ShownTarget != 0)
+                    player.Send(EntityPackets.SetTarget(mob.EntityId, mob.ShownTarget));
                 if (mob.Rider is { } rider)
                     player.Send(VehicleManager.Link(mob.EntityId, rider.EntityId, mount: true));
             }

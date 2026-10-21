@@ -118,6 +118,17 @@ internal static class InventoryPackets
         return w.Byte((byte)inventorySlot).Byte((byte)hotbarSlot).Byte((byte)windowId).ToArray();
     }
 
+    /// <summary>MobArmourEquipment: the armour the others see (helmet, chestplate, leggings, boots, body).</summary>
+    public static byte[] MobArmourEquipment(long entityId, ItemStack? helmet, ItemStack? chestplate, ItemStack? leggings, ItemStack? boots)
+    {
+        var w = new BedrockWriter().VarUInt32(MobArmourEquipmentId).VarUInt64((ulong)entityId);
+        foreach (var item in (ItemStack?[])[helmet, chestplate, leggings, boots, null])
+            ItemStack.WriteInstance(w, item);
+        return w.ToArray();
+    }
+
+    private const uint MobArmourEquipmentId = 32;
+
     public static byte[] PlayerHotbar(int selectedSlot, uint windowId = 0) =>
         new BedrockWriter().VarUInt32(48).VarUInt32((uint)selectedSlot).Byte((byte)windowId).Bool(true).ToArray();
 }

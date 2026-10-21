@@ -27,11 +27,11 @@ internal static class EntityPackets
 
     public static byte[] AddActor(long entityId, string type, double x, double y, double z, float yaw, float health,
         float maxHealth, float speed, float width, float height, long flags, int? colour = null, int? variant = null, float scale = 1, string? nameTag = null,
-        OrderedDictionary<string, object>? displayNbt = null, long? leashHolder = null)
+        OrderedDictionary<string, object>? displayNbt = null, long? leashHolder = null, float pitch = 0)
     {
         var w = new BedrockWriter().VarUInt32(AddActorId).VarInt64(entityId).VarUInt64((ulong)entityId).String(type)
             .Vec3((float)x, (float)y, (float)z).Vec3(0, 0, 0)
-            .Float32(0).Float32(yaw).Float32(yaw).Float32(yaw);
+            .Float32(pitch).Float32(yaw).Float32(yaw).Float32(yaw);
         w.VarUInt32(2); // attributes: name, min, value, max
         w.String("minecraft:health").Float32(0).Float32(health).Float32(maxHealth);
         w.String("minecraft:movement").Float32(0).Float32(speed).Float32(float.MaxValue);
@@ -39,6 +39,15 @@ internal static class EntityPackets
         return w.VarUInt32(0).VarUInt32(0) // entity properties (ints, floats)
             .VarUInt32(0) // links
             .ToArray();
+    }
+
+    /// <summary>SetActorData with only the target (key 6): who a mob attacks (0: nobody).</summary>
+    public static byte[] SetTarget(long entityId, long targetId)
+    {
+        const uint keyTarget = 6, typeInt64 = 7;
+        return new BedrockWriter().VarUInt32(SetActorDataId).VarUInt64((ulong)entityId)
+            .VarUInt32(1).VarUInt32(keyTarget).VarUInt32(typeInt64).Byte((byte)typeInt64).VarInt64(targetId)
+            .VarUInt32(0).VarUInt32(0).VarUInt64(0).ToArray();
     }
 
     public static byte[] SetData(long entityId, long flags, float width, float height, int? colour = null, float scale = 1, string? nameTag = null, long? leashHolder = null)
