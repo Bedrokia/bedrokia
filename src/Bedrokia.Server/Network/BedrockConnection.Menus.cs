@@ -114,7 +114,7 @@ public sealed partial class BedrockConnection
         const long invisible = 1L << 5;
         const sbyte containerInventory = -1; // WindowTypes::INVENTORY, as ModSmith
         Send(Entities.EntityPackets.AddActor(id, Entities.ActorIdentifiers.InventoryHolder, Position.X, Position.Y - EyeHeight, Position.Z, 0, 1, 1, 0, 0, 0,
-                invisible, nameTag: layout, showName: false),
+                invisible, nameTag: layout + menu.Name, showName: false), // the name after the code: the pack can show it ($container_title)
             Entities.EntityPackets.ContainerData(id, containerInventory, menu.Inventory.Size),
             Entities.VehicleManager.Link(EntityId, id, mount: true));
         _server.Schedule(2, () =>
