@@ -233,4 +233,14 @@ public class BlockDetailsTests
         Assert.Equal(0.5f, potion.Velocity.Length(), 3);
         Assert.Equal(1.5f, snowball.Velocity.Length(), 3);
     }
+
+    [Theory]
+    [InlineData("anvil", 0f, "east")] // looking south: across the look, as the client predicts (Dragonfly RotateLeft)
+    [InlineData("damaged_anvil", 90f, "south")]
+    [InlineData("furnace", 0f, "north")] // faces the player
+    public void Placed_blocks_face_as_the_client_predicts(string block, float yaw, string facing)
+    {
+        var placed = BlockPlacement.Place(Blocks.ByName(block)!, 0, 64, 0, 1, 0, yaw, 0, (_, _, _) => true);
+        Assert.Equal(facing, placed[0].Block.States["minecraft:cardinal_direction"]);
+    }
 }
