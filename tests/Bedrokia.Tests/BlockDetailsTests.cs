@@ -29,7 +29,8 @@ public class BlockDetailsTests
     {
         public IPEndPoint RemoteEndPoint { get; } = new(IPAddress.Loopback, 19132);
         public ECDsa? PeerPublicKey => null;
-        public void Send(byte[] batch) { }
+        public int Sends;
+        public void Send(byte[] batch) => Sends++;
         public void Disconnect(string reason) { }
     }
 
@@ -282,5 +283,21 @@ public class BlockDetailsTests
         Assert.Equal(144, menu.Inventory.Size);
         player.SendMenu(menu);
         Assert.Same(menu, player.OpenMenu);
+    }
+
+    [Fact]
+    public void Many_blocks_shown_at_once_go_one_packet_per_sub_chunk()
+    {
+        var server = new BedrokiaServer(new ServerConfig { WorldsDirectory = TestWorlds.NewDirectory(), Port = 0, OnlineMode = false }, new Logger(LogLevel.Error, null));
+        server.InitWorldForTesting();
+        var transport = new FakeTransport();
+        var player = new BedrockConnection(server, transport, 100);
+        var blocks = new List<(int, int, int, BlockType)>();
+        for (var x = 0; x < 16; x++)
+        for (var y = 0; y < 32; y++) // two sub-chunks high
+        for (var z = 0; z < 16; z++)
+            blocks.Add((x, y, z, Blocks.Air));
+        player.ShowBlocks(blocks);
+        Assert.Equal(2, transport.Sends); // 8192 blocks, 2 packets (outside a tick each packet goes out by itself)
     }
 }
