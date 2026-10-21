@@ -155,7 +155,18 @@ public sealed partial class BedrokiaServer
     private int _tickThread;
 
     /// <summary>True on the game thread while a tick runs (other threads see false: what they send is not buffered).</summary>
-    public bool IsTicking => _ticking && Environment.CurrentManagedThreadId == _tickThread;
+    public bool IsTicking => _ticking && (Environment.CurrentManagedThreadId == _tickThread || _tickWorker);
+
+    // A worker of the tick's parallel network steps, each on its own player: it counts as the game thread for that player
+    // (sends are buffered, flushes happen). Without it a worker saw IsTicking false: from 4 players nothing was flushed
+    // and the movements went out unbatched, ahead of what was queued before.
+    [ThreadStatic] private static bool _tickWorker;
+
+    private static void AsTickWorker(Action action)
+    {
+        _tickWorker = true;
+        try { action(); } finally { _tickWorker = false; }
+    }
 
     /// <summary>The overworld; available once <see cref="Started"/> has completed.</summary>
     public World World { get; private set; } = null!;
@@ -779,7 +790,7 @@ public sealed partial class BedrokiaServer
                     for (var i = 0; i < _connections.Count; i++)
                         DeliverMoves(_connections[i]);
                 else
-                    Parallel.For(0, _connections.Count, i => DeliverMoves(_connections[i]));
+                    Parallel.For(0, _connections.Count, i => AsTickWorker(() => DeliverMoves(_connections[i])));
             }
         }
         using (Timings.Track(Timings.Network))
@@ -811,7 +822,7 @@ public sealed partial class BedrokiaServer
                 _connections[i].FlushOutgoing();
             return;
         }
-        Parallel.For(0, _connections.Count, i => _connections[i].FlushOutgoing());
+        Parallel.For(0, _connections.Count, i => AsTickWorker(_connections[i].FlushOutgoing));
     }
 
     private const int ParallelFlushPlayers = 4; // below, starting the workers costs more than it saves
