@@ -51,6 +51,9 @@ public sealed partial class BedrockConnection
             case "minecraft:enchanting_table":
                 OpenEnchantingTable(x, y, z);
                 return true;
+            case "minecraft:anvil" or "minecraft:chipped_anvil" or "minecraft:damaged_anvil":
+                OpenAnvil(x, y, z);
+                return true;
             case "minecraft:crafting_table":
                 Inventory.CraftingTableOpen = true;
                 Send(InventoryPackets.ContainerOpen(InventoryPackets.WindowCraftingTable, InventoryPackets.ContainerTypeWorkbench, x, y, z));

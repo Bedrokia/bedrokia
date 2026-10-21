@@ -89,6 +89,16 @@ public sealed class PlayerInventory
     /// <summary>The open enchanting table (options, level costs), or null.</summary>
     public IEnchanter? Enchanter { get; set; }
 
+    // The anvil window: input and material in the UI inventory (Dragonfly anvilInputSlot, anvilMaterialSlot).
+    private const byte ContainerAnvilInput = 0, ContainerAnvilMaterial = 1;
+    public const int AnvilInputSlot = 1, AnvilMaterialSlot = 2;
+
+    /// <summary>Set while an anvil is open: called after each use (sound, the anvil wearing out).</summary>
+    public Action? AnvilUsed { get; set; }
+
+    private sealed record AnvilCraft(int FilterIndex) : Op;
+    private readonly List<string> _filters = [];
+
     /// <summary>Called with the reason when a request is refused (for the server log).</summary>
     public Action<string>? Rejected { get; set; }
 
@@ -136,8 +146,9 @@ public sealed class PlayerInventory
             actions.Add(action);
         }
         var filters = reader.VarUInt32();
+        _filters.Clear();
         for (var f = 0; f < filters; f++)
-            reader.String();
+            _filters.Add(reader.String());
         reader.Int32(); // filter cause
 
         responses.Add(Process(requestId, actions, mode, drop, out var ok));
@@ -222,10 +233,9 @@ public sealed class PlayerInventory
                 r.Byte(); // number of crafts
                 return new CreativeCraft(creativeId);
             }
-            case 15:
+            case 15: // craft recipe optional: the anvil (the filter string is the new name)
                 r.VarUInt32();
-                r.Int32();
-                return new Unsupported("anvil");
+                return new AnvilCraft(r.Int32());
             case 16:
                 r.Int32();
                 r.Byte();
@@ -276,6 +286,7 @@ public sealed class PlayerInventory
         ContainerArmor => (Armour, slot.Slot),
         ContainerOffhand => (Offhand, 0),
         ContainerCursor or ContainerCreatedOutput or ContainerCraftingInput or ContainerEnchantingInput or ContainerEnchantingMaterial => (Ui, slot.Slot),
+        ContainerAnvilInput or ContainerAnvilMaterial when AnvilUsed is not null => (Ui, slot.Slot),
         // The open chest, barrel or ender chest; furnaces: ingredient 0, fuel 1, result 2.
         ContainerLevelEntity or ContainerBarrel when OpenContainer is { } open => (open.Items, slot.Slot),
         ContainerFurnaceIngredient or ContainerBlastFurnaceIngredient or ContainerSmokerIngredient when OpenContainer is { } open => (open.Items, 0),
@@ -499,6 +510,33 @@ public sealed class PlayerInventory
                         CreateResult(template.Split(template.MaxCount));
                         break;
                     }
+                    case AnvilCraft a when AnvilUsed is not null:
+                    {
+                        var input = Ui[AnvilInputSlot] ?? throw new InvalidOperationException("nothing in the anvil");
+                        var material = Ui[AnvilMaterialSlot];
+                        var rename = a.FilterIndex >= 0 && a.FilterIndex < _filters.Count ? _filters[a.FilterIndex] : null;
+                        var (repaired, cost, used) = Anvil.Combine(input, material, rename) ?? throw new InvalidOperationException("nothing to do on the anvil");
+                        if (Player is not null && Player.Server.Events.HasAnvilUse)
+                        {
+                            var anvilEv = new AnvilUseEvent(Player, repaired, rename ?? "", cost);
+                            if (!Player.Server.Events.OnAnvilUse(anvilEv))
+                                throw new InvalidOperationException("anvil use cancelled");
+                            cost = anvilEv.CostLevels;
+                        }
+                        if (mode != GameMode.Creative && (cost >= 40 || Player is null || !Player.SpendLevels(cost, cost)))
+                            throw new InvalidOperationException("too expensive or not enough experience levels");
+                        Remember((Ui, AnvilInputSlot));
+                        Set(new SlotRef(ContainerAnvilInput, AnvilInputSlot, 0), (Ui, AnvilInputSlot), null);
+                        if (material is not null)
+                        {
+                            Remember((Ui, AnvilMaterialSlot));
+                            material.SetCount(material.Count - used);
+                            Set(new SlotRef(ContainerAnvilMaterial, AnvilMaterialSlot, 0), (Ui, AnvilMaterialSlot), material.Count > 0 ? material : null);
+                        }
+                        CreateResult(repaired);
+                        AnvilUsed();
+                        break;
+                    }
                     case Craft c when Enchanter is not null && c.RecipeId <= 2:
                     {
                         // Ported from Dragonfly session/handler_enchanting.go: the "recipe" is the chosen option 0..2.
@@ -642,8 +680,10 @@ public sealed class PlayerInventory
         var leftover = new List<ItemStack>();
         CraftingTableOpen = false;
         Enchanter = null;
+        AnvilUsed = null;
         Ui[CreatedOutputSlot] = null;
-        foreach (var slot in Enumerable.Range(SmallGridOffset, LargeGridOffset + LargeGridSize - SmallGridOffset).Prepend(0).Append(EnchantInputSlot).Append(EnchantLapisSlot))
+        foreach (var slot in Enumerable.Range(SmallGridOffset, LargeGridOffset + LargeGridSize - SmallGridOffset).Prepend(0)
+                     .Append(EnchantInputSlot).Append(EnchantLapisSlot).Append(AnvilInputSlot).Append(AnvilMaterialSlot))
         {
             if (Ui[slot] is not { } stack)
                 continue;
