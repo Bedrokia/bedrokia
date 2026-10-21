@@ -710,8 +710,7 @@ public sealed partial class BedrokiaServer
         try
         {
             DrainMainThread();
-            for (var i = 0; i < _connections.Count; i++)
-                _connections[i].FlushOutgoing();
+            FlushOutgoingAll();
         }
         finally
         {
@@ -757,8 +756,55 @@ public sealed partial class BedrokiaServer
     // connection has its own codec and transport, so with several players this runs on all the cores at once.
     private void FlushAllConnections()
     {
-        for (var i = 0; i < _connections.Count; i++)
-            _connections[i].FlushTickMovement();
+        using (Timings.Track(Timings.Movement))
+        {
+            // 1. Game thread: each movement applied (events, chunks), its packet filed under its chunk.
+            _movesByChunk.Clear();
+            for (var i = 0; i < _connections.Count; i++)
+            {
+                var conn = _connections[i];
+                if (conn.FlushTickMovement() is not { } packet)
+                    continue;
+                var key = (conn.World, World.ChunkKey(conn.ChunkPosition.X, conn.ChunkPosition.Z));
+                if (!_movesByChunk.TryGetValue(key, out var moves))
+                    _movesByChunk[key] = moves = [];
+                moves.Add((conn, packet));
+            }
+            // 2. All cores: every player takes the movements of the chunks it sees. A worker only writes to the
+            // queue of its own player and only reads the rest: no locks, nothing shared changes.
+            if (_movesByChunk.Count > 0)
+            using (Timings.Track(Timings.MovementDelivery))
+            {
+                if (_connections.Count < ParallelFlushPlayers)
+                    for (var i = 0; i < _connections.Count; i++)
+                        DeliverMoves(_connections[i]);
+                else
+                    Parallel.For(0, _connections.Count, i => DeliverMoves(_connections[i]));
+            }
+        }
+        using (Timings.Track(Timings.Network))
+            FlushOutgoingAll();
+    }
+
+    private readonly Dictionary<(World, long), List<(BedrockConnection Mover, byte[] Packet)>> _movesByChunk = [];
+
+    private void DeliverMoves(BedrockConnection viewer)
+    {
+        if (!viewer.IsInGame)
+            return;
+        var world = viewer.World;
+        foreach (var chunk in viewer.SentChunks)
+        {
+            if (!_movesByChunk.TryGetValue((world, chunk), out var moves))
+                continue;
+            foreach (var (mover, packet) in moves)
+                if (mover != viewer)
+                    viewer.Send(packet);
+        }
+    }
+
+    private void FlushOutgoingAll()
+    {
         if (_connections.Count < ParallelFlushPlayers)
         {
             for (var i = 0; i < _connections.Count; i++)

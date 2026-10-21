@@ -990,7 +990,7 @@ public sealed partial class BedrockConnection
     {
         // The move of this same packet first (PocketMine handles movement at once): placing a block under yourself
         // while jumping was refused because the server still saw you standing there.
-        FlushTickMovement();
+        ApplyPendingMovementNow();
         const int clickBlock = 0, clickAir = 1, breakBlock = 2;
         var action = reader.VarInt32();
         reader.Byte(); // trigger type
@@ -1287,13 +1287,41 @@ public sealed partial class BedrockConnection
         return (drops, xp);
     }
 
-    internal void FlushTickMovement()
+    /// <summary>
+    /// The movement of this tick applied (events, chunks); the packet the others must see is returned instead of
+    /// being sent, so the server hands it to the viewers in parallel.
+    /// </summary>
+    internal byte[]? FlushTickMovement()
     {
         if (!_hasPendingMovement || _stage == Stage.Closed)
-            return;
+            return null;
         _hasPendingMovement = false;
-        ApplyMovement(_pendingPitch, _pendingYaw, _pendingX, _pendingY, _pendingZ);
+        _flushingMovement = true;
+        try
+        {
+            ApplyMovement(_pendingPitch, _pendingYaw, _pendingX, _pendingY, _pendingZ);
+        }
+        finally
+        {
+            _flushingMovement = false;
+        }
+        var packet = _moveBroadcast;
+        _moveBroadcast = null;
+        return packet;
     }
+
+    // The movement of this same packet applied at once (placing, attacking), and shown to the others now.
+    private void ApplyPendingMovementNow()
+    {
+        if (FlushTickMovement() is { } packet)
+            _server.BroadcastInChunkExcept(World, ChunkPosition.X, ChunkPosition.Z, this, packet);
+    }
+
+    private bool _flushingMovement;
+    private byte[]? _moveBroadcast;
+
+    /// <summary>The chunks sent to this player (keys of <see cref="World.ChunkKey"/>): what it sees.</summary>
+    internal IReadOnlyCollection<long> SentChunks => _sentChunks;
 
     private void ApplyMovement(float pitch, float yaw, float x, float y, float z)
     {
@@ -1338,7 +1366,10 @@ public sealed partial class BedrockConnection
             // Only to the players who see this chunk (they get the position again when the chunk is sent to them),
             // with the real head turn and ground state: walking and landing animate as vanilla.
             var (cx, cz) = ChunkPosition;
-            _server.BroadcastInChunkExcept(World, cx, cz, this, MovePacket(teleport: false));
+            if (_flushingMovement)
+                _moveBroadcast = MovePacket(teleport: false); // sent by the server to the viewers, on all cores
+            else
+                _server.BroadcastInChunkExcept(World, cx, cz, this, MovePacket(teleport: false));
         }
     }
 
