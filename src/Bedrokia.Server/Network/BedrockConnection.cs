@@ -1527,9 +1527,15 @@ public sealed partial class BedrockConnection
 
         try
         {
-            var batch = _codec.EncodeBatch(_pendingOutgoing);
-            if (batch.Length > 0)
-                _transport.Send(batch);
+            // At most MaxPacketsPerBatch per batch: the proxy (and PocketMine) refuse bigger ones and drop the player
+            // (a tick sending many chunks or blocks went over).
+            const int max = BatchCodec.MaxPacketsPerBatch;
+            for (var start = 0; start < _pendingOutgoing.Count; start += max)
+            {
+                var batch = _codec.EncodeBatch(_pendingOutgoing.Count <= max ? _pendingOutgoing : _pendingOutgoing.GetRange(start, Math.Min(max, _pendingOutgoing.Count - start)));
+                if (batch.Length > 0)
+                    _transport.Send(batch);
+            }
         }
         finally
         {
@@ -1565,7 +1571,8 @@ public sealed partial class BedrockConnection
         if (packets.Length == 1)
             _transport.Send(_codec.Encode(packets[0]));
         else
-            _transport.Send(_codec.Encode(packets));
+            foreach (var part in packets.Chunk(BatchCodec.MaxPacketsPerBatch))
+                _transport.Send(_codec.Encode(part));
     }
 }
 
