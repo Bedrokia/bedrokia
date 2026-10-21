@@ -795,7 +795,7 @@ public sealed partial class BedrockConnection
 
     internal void OnUseItemOnEntity(ref BedrockReader reader)
     {
-        FlushTickMovement(); // the attacker's position of this same moment (PocketMine handles movement at once)
+        ApplyPendingMovementNow(); // the attacker's position of this same moment (PocketMine handles movement at once)
         var target = (long)reader.VarUInt64();
         var action = reader.VarInt32();
         if (_server.Vehicles.Find(target) is { } vehicle && vehicle.World == World)

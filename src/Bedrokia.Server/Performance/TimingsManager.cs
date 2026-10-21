@@ -27,6 +27,9 @@ public sealed class TimingsManager
     public TimingRecord Players { get; }
     public TimingRecord World { get; }
     public TimingRecord MainThread { get; }
+    public TimingRecord Movement { get; }
+    public TimingRecord Network { get; }
+    public TimingRecord MovementDelivery { get; }
 
     public TimingsManager()
     {
@@ -40,6 +43,9 @@ public sealed class TimingsManager
         Players = RegisterRecord("Players Health", "Players");
         World = RegisterRecord("World Save & Unload", "World");
         MainThread = RegisterRecord("Main Thread Tasks", "Core");
+        Movement = RegisterRecord("Players Movement", "Players");
+        Network = RegisterRecord("Network Send", "Network");
+        MovementDelivery = RegisterRecord("Players Movement Delivery", "Network");
     }
 
     private TimingRecord RegisterRecord(string name, string group)
