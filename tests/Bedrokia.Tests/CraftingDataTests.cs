@@ -169,4 +169,16 @@ public class CraftingDataTests
                 problems.Add($"unknown output runtime id {network}");
         }
     }
+
+    [Fact]
+    public void Plugins_add_shaped_recipes_sent_with_the_others()
+    {
+        var before = Recipes.CraftingDataPacket.Length;
+        Recipes.AddShaped(["AAA", "ABA", "AAA"], new Dictionary<char, string> { ['A'] = "minecraft:dirt", ['B'] = "tag:minecraft:planks" }, ItemStack.Of("diamond")!);
+        var recipe = Recipes.ByResult("minecraft:diamond").ToArray().Last();
+        Assert.Same(recipe, Recipes.ByNetworkId(recipe.NetworkId));
+        Assert.Equal(9, recipe.Inputs.Count);
+        Assert.True(recipe.Inputs[4].Matches(ItemStack.Of("oak_planks")!));
+        Assert.True(Recipes.CraftingDataPacket.Length > before);
+    }
 }

@@ -90,7 +90,7 @@ public sealed partial class BedrokiaServer
             if (furnace.BurnTicks > 0)
             {
                 furnace.BurnTicks--;
-                if (canCook && ++furnace.CookTicks >= (furnace.Id == "Furnace" ? Smelting.FurnaceCookTicks : Smelting.FastCookTicks))
+                if (canCook && (furnace.CookTicks += CookStep(world, x, y, z)) >= (furnace.Id == "Furnace" ? Smelting.FurnaceCookTicks : Smelting.FastCookTicks))
                 {
                     furnace.CookTicks = 0;
                     if (Events.HasFurnaceSmelt)
@@ -153,10 +153,28 @@ public sealed partial class BedrokiaServer
         }
     }
 
-    // furnace <-> lit_furnace (same facing), and the same for blast furnaces and smokers.
+    // Cook ticks a tick: 1, or for a custom furnace 1 + 2 x (speed - 1) as AntaCore's FurnaceTile (at least one more).
+    private static int CookStep(World world, int x, int y, int z) =>
+        BlockEntity.FurnaceSpeed(world.GetBlock(x, y, z)?.Name) is { } speed and > 1 ? 1 + (int)Math.Ceiling((speed - 1) * 2) : 1;
+
+    // furnace <-> lit_furnace (same facing), and the same for blast furnaces and smokers; a custom furnace's ":lit".
     private void SetLit(World world, int x, int y, int z, bool lit)
     {
-        if (world.GetBlock(x, y, z) is not { } block || !block.Name.StartsWith("minecraft:"))
+        if (world.GetBlock(x, y, z) is not { } block)
+            return;
+        if (block.States.Keys.FirstOrDefault(k => k.EndsWith(":lit")) is { } litKey)
+        {
+            var states = new OrderedDictionary<string, object>(block.States) { [litKey] = lit ? 1 : 0 };
+            if (Convert.ToInt32(block.States[litKey]) != (lit ? 1 : 0) && Blocks.ByKey(new BlockType(0, block.Name, states).Key) is { } shown)
+            {
+                var kept = world.GetBlockEntity(x, y, z);
+                world.SetBlock(x, y, z, shown);
+                world.SetBlockEntity(x, y, z, kept);
+                BroadcastIn(world, Packets.UpdateBlock(x, y, z, shown.NetworkId));
+            }
+            return;
+        }
+        if (!block.Name.StartsWith("minecraft:"))
             return;
         var name = block.Name["minecraft:".Length..];
         var target = lit ? (name.StartsWith("lit_") ? null : "lit_" + name) : (name.StartsWith("lit_") ? name[4..] : null);

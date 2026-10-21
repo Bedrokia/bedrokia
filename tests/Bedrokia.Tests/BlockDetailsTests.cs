@@ -252,4 +252,24 @@ public class BlockDetailsTests
         var placed = BlockPlacement.Place(Blocks.ByName(id)!, 0, 64, 0, 1, 0, 0f, 0, (_, _, _) => true); // looking south
         Assert.Equal(2, Convert.ToInt32(placed[0].Block.States["test:rotation"])); // its front looks north, at the player
     }
+
+    [Fact]
+    public void A_custom_furnace_cooks_like_a_furnace_but_faster()
+    {
+        var (server, _) = Arena();
+        var id = "test:fast_furnace_" + Guid.NewGuid().ToString("N")[..8];
+        Bedrokia.Server.Game.Custom.Blocks.CustomBlockBuilder.Create(id).WithProperty("test:lit", 0, 1).Register();
+        server.RegisterFurnace(id, 6); // AntaCore's netherite furnace
+        var block = Blocks.ByName(id)!;
+        server.World.SetBlock(4, Floor, 4, block);
+        var furnace = BlockEntity.For(block)!;
+        server.World.SetBlockEntity(4, Floor, 4, furnace);
+        furnace.Items![0] = ItemStack.Of("raw_iron");
+        furnace.Items[1] = ItemStack.Of("coal");
+        server.WatchFurnace(4, Floor, 4, server.World);
+        for (var i = 0; i < 25; i++) // a vanilla furnace takes 200 ticks
+            server.TickFurnaces();
+        Assert.Equal("minecraft:iron_ingot", furnace.Items[2]?.Type.Name);
+        Assert.Equal(1, Convert.ToInt32(server.World.GetBlock(4, Floor, 4)!.States["test:lit"])); // lit while it burns
+    }
 }

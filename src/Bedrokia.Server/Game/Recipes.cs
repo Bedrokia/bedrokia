@@ -101,21 +101,64 @@ public static class Recipes
         ById = byIdTemp.ToFrozenDictionary();
         ByResultItem = byResultTemp.ToFrozenDictionary(k => k.Key, k => k.Value.ToArray());
 
-        var packet = new BedrockWriter().VarUInt32(CraftingDataId)
-            .VarUInt32(shapedCount).Bytes(shaped.ToArray())
+        var rest = new BedrockWriter()
             .VarUInt32(shapelessCount).Bytes(shapeless.ToArray())
             .VarUInt32(multiCount).Bytes(multi.ToArray())
             .VarUInt32(userDataCount).Bytes(userData.ToArray());
         for (var i = 0; i < 7; i++) // chemistry x2, smithing transform/trim, potions, potion containers, material reducers
-            packet.VarUInt32(0);
-        CraftingDataPacket = packet.Bool(true).ToArray(); // clear recipes
+            rest.VarUInt32(0);
+        rest.Bool(true); // clear recipes
+        VanillaShapedCount = shapedCount;
+        VanillaShaped = shaped.ToArray();
+        AfterShaped = rest.ToArray();
+        _nextAddedId = next;
         Count = ById.Count;
     }
 
-    public static ReadOnlySpan<Recipe> ByResult(string itemName) => ByResultItem.GetValueOrDefault(itemName) ?? [];
+    public static ReadOnlySpan<Recipe> ByResult(string itemName) => Added.Count == 0
+        ? ByResultItem.GetValueOrDefault(itemName) ?? []
+        : [.. ByResultItem.GetValueOrDefault(itemName) ?? [], .. Added.Values.Where(r => r.Outputs.Any(o => o.Type.Name == itemName))];
 
-    /// <summary>CraftingData packet with every recipe; send once at spawn.</summary>
-    public static byte[] CraftingDataPacket { get; }
+    private static readonly uint VanillaShapedCount;
+    private static readonly byte[] VanillaShaped, AfterShaped;
+
+    // Shaped recipes of plugins (AntaCore's chests and chest upgrades...), after the vanilla ones.
+    private static readonly Dictionary<uint, Recipe> Added = [];
+    private static readonly BedrockWriter AddedShaped = new();
+    private static uint _nextAddedId;
+    private static byte[]? _packet;
+
+    /// <summary>CraftingData packet with every recipe, plugins' included; send once at spawn.</summary>
+    public static byte[] CraftingDataPacket => _packet ??= new BedrockWriter().VarUInt32(CraftingDataId)
+        .VarUInt32(VanillaShapedCount + (uint)Added.Count).Bytes(VanillaShaped).Bytes(AddedShaped.ToArray()).Bytes(AfterShaped).ToArray();
+
+    /// <summary>
+    /// Adds a shaped crafting table recipe, as PocketMine's ShapedRecipe: <paramref name="pattern"/> rows ("AAA", "ABA",
+    /// "AAA"), each letter an item name of <paramref name="key"/> ("tag:minecraft:planks" for an item tag), a space
+    /// for an empty cell. Add recipes before players join (plugins' OnEnable): the recipe list is sent at spawn.
+    /// </summary>
+    /// <exception cref="ArgumentException">A letter has no item in <paramref name="key"/>.</exception>
+    public static void AddShaped(string[] pattern, IReadOnlyDictionary<char, string> key, ItemStack output)
+    {
+        var width = pattern.Max(row => row.Length);
+        var inputs = new List<Ingredient>();
+        foreach (var row in pattern)
+            for (var column = 0; column < width; column++)
+            {
+                var letter = column < row.Length ? row[column] : ' ';
+                if (letter == ' ')
+                    inputs.Add(new Ingredient("minecraft:air", 0, "", 0));
+                else if (!key.TryGetValue(letter, out var item))
+                    throw new ArgumentException($"No item for '{letter}' in the recipe of {output.Type.Name}.", nameof(key));
+                else
+                    inputs.Add(item.StartsWith("tag:") ? new Ingredient("", 0, item[4..], 1) : new Ingredient(item, Ingredient.AnyMeta, "", 1));
+            }
+        var recipe = new Recipe(_nextAddedId++, inputs, [output], "crafting_table");
+        Added[recipe.NetworkId] = recipe;
+        AddedShaped.String(RecipeId(recipe.NetworkId)).VarInt32(width).VarInt32(pattern.Length);
+        WriteRecipeBody(AddedShaped, recipe, 0, shapedSymmetry: true);
+        _packet = null;
+    }
 
     private static string RecipeId(uint networkId) => $"bedrokia:recipe_{networkId}";
 
@@ -149,14 +192,14 @@ public static class Recipes
 
     public static int Count { get; }
 
-    public static Recipe? ByNetworkId(uint id) => ById.GetValueOrDefault(id);
+    public static Recipe? ByNetworkId(uint id) => ById.GetValueOrDefault(id) ?? Added.GetValueOrDefault(id);
 
     private static readonly FrozenSet<uint> MultiIds;
 
     /// <summary>A "multi" recipe (fireworks, map copies...): its result comes from <see cref="SpecialRecipes"/>.</summary>
     public static bool IsMulti(uint id) => MultiIds.Contains(id);
 
-    public static IEnumerable<Recipe> All => ById.Values;
+    public static IEnumerable<Recipe> All => ById.Values.Concat(Added.Values);
 
     internal static bool TagContains(string tag, string item) => Tags.TryGetValue(tag, out var items) && items.Contains(item);
 

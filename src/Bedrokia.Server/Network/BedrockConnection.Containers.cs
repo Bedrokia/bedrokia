@@ -32,7 +32,8 @@ public sealed partial class BedrockConnection
     /// <summary>Opens the container at (x, y, z) if the block is one; returns false otherwise.</summary>
     internal bool TryOpenContainer(BlockType block, int x, int y, int z)
     {
-        if (!ContainerBlocks.Contains(block.Name))
+        var custom = BlockEntity.FurnaceSpeed(block.Name) is not null;
+        if (!custom && !ContainerBlocks.Contains(block.Name))
             return false;
         var world = World;
         var entity = world.GetBlockEntity(x, y, z);
@@ -56,6 +57,11 @@ public sealed partial class BedrockConnection
             }
         }
 
+        if (custom)
+        {
+            OpenCustomFurnace(entity, x, y, z);
+            return true;
+        }
         Inventory.OpenContainer = (contents, entity.Id);
         OpenContainerAt = (x, y, z);
         Send(InventoryPackets.ContainerOpen(WindowContainer, type, x, y, z),
@@ -63,6 +69,31 @@ public sealed partial class BedrockConnection
         if (entity.Id is "Furnace" or "BlastFurnace" or "Smoker")
             _server.WatchFurnace((x, y, z), World);
         return true;
+    }
+
+    // Where the furnace window of a custom furnace is anchored for the client (a vanilla furnace only it sees).
+    private (int X, int Y, int Z)? _fakeFurnaceAt;
+
+    // The client opens a furnace window only on a furnace: one is shown under the player, as the menus do with chests;
+    // the window works on the custom block's own furnace (OpenContainerAt), which cooks in TickFurnaces.
+    private void OpenCustomFurnace(BlockEntity entity, int x, int y, int z)
+    {
+        CloseContainer(notifyClient: true);
+        var fake = ((int)Math.Floor(Position.X), (int)Math.Floor(Position.Y - EyeHeight) - 2, (int)Math.Floor(Position.Z));
+        _fakeFurnaceAt = fake;
+        Send(Packets.UpdateBlock(fake.Item1, fake.Item2, fake.Item3, Blocks.ByName("furnace")!.NetworkId),
+            BlockEntity.DataPacket(fake.Item1, fake.Item2, fake.Item3, entity));
+        var world = World;
+        _server.Schedule(3, () => // the client needs the furnace before it accepts the window
+        {
+            if (_fakeFurnaceAt != fake || !IsInGame || World != world || world.GetBlockEntity(x, y, z) != entity)
+                return;
+            Inventory.OpenContainer = (entity.Items!, entity.Id);
+            OpenContainerAt = (x, y, z);
+            Send(InventoryPackets.ContainerOpen(WindowContainer, 2, fake.Item1, fake.Item2, fake.Item3),
+                InventoryPackets.InventoryContent(WindowContainer, entity.Items!));
+            _server.WatchFurnace((x, y, z), world);
+        });
     }
 
     /// <summary>After an inventory request: other players looking into the same container see the change.</summary>
@@ -89,6 +120,12 @@ public sealed partial class BedrockConnection
             Send(InventoryPackets.ContainerClose(WindowContainer, 0, serverInitiated: true));
         OpenContainerAt = null;
         Inventory.OpenContainer = null;
+        if (_fakeFurnaceAt is var (fx, fy, fz))
+        {
+            _fakeFurnaceAt = null;
+            if (World.GetBlock(fx, fy, fz) is { } real) // the real block comes back where the fake furnace was
+                Send(Packets.UpdateBlock(fx, fy, fz, real.NetworkId));
+        }
         CloseMenu();
     }
 
