@@ -193,6 +193,31 @@ public sealed partial class BedrokiaServer
     /// <summary>NetherNet signaling address, available after <see cref="Started"/> when NetherNet is enabled.</summary>
     public IPEndPoint? NetherNetEndPoint => _netherNet?.LocalEndPoint;
 
+    /// <summary>
+    /// Like vanilla's "preparing spawn area": the chunks within view-distance of the spawn are loaded (or generated)
+    /// before players can join, and stay loaded: the first players do not wait for them nor see holes.
+    /// </summary>
+    private async Task PrepareSpawnAsync()
+    {
+        var started = Stopwatch.GetTimestamp();
+        var (sx, _, sz) = World.Spawn;
+        var chunks = Preload(World, sx >> 4, sz >> 4, Config.ViewDistance);
+        await Task.WhenAll(chunks);
+        Logger.Info($"Spawn area ready: {chunks.Count} chunks in {Stopwatch.GetElapsedTime(started).TotalSeconds:F1} s.");
+    }
+
+    /// <summary>Starts loading the chunks within <paramref name="radius"/> of a chunk, nearest first.</summary>
+    internal List<Task<Chunk>> Preload(World world, int centerX, int centerZ, int radius)
+    {
+        var chunks = new List<(int X, int Z, int D)>();
+        for (var dx = -radius; dx <= radius; dx++)
+        for (var dz = -radius; dz <= radius; dz++)
+            if (dx * dx + dz * dz <= radius * radius)
+                chunks.Add((centerX + dx, centerZ + dz, dx * dx + dz * dz));
+        chunks.Sort((a, b) => a.D.CompareTo(b.D));
+        return chunks.ConvertAll(c => world.GetChunkAsync(c.X, c.Z));
+    }
+
     /// <summary>Runs until <see cref="Stop"/> is called.</summary>
     /// <exception cref="System.Net.Sockets.SocketException">The port cannot be bound.</exception>
     public async Task RunAsync()
@@ -214,6 +239,8 @@ public sealed partial class BedrokiaServer
             Attach(Nether);
             Plugins.LoadAll(PluginsDirectory, PluginDataDirectory);
             Logger.Info($"World '{Config.LevelName}': seed {World.Generator.Seed}, spawn {World.Spawn}.");
+            if (Config.Port != 0) // not for the tests' in-memory servers
+                await PrepareSpawnAsync();
             _netherNet = new NetherNetListener(new IPEndPoint(IPAddress.Any, Config.Port),
                     ServerIdentityKey.LoadOrCreate(Path.Combine("data", "nethernet-identity.pem")),
                     VerifyNetherNetToken, allowAnonymous: !Config.OnlineMode, Config.ParseWebRtcPorts(),
@@ -607,6 +634,7 @@ public sealed partial class BedrokiaServer
                     Maps.Tick(CurrentTick);
                     Npcs.Tick(CurrentTick);
                     Projectiles.Tick();
+                    TickFireworks();
                 }
 
                 using (Timings.Track(Timings.FallingBlocks))
@@ -639,8 +667,11 @@ public sealed partial class BedrokiaServer
                     using (Timings.Track(Timings.World))
                     {
                         SaveWorld();
+                        var (spawnX, spawnZ) = (World.Spawn.X >> 4, World.Spawn.Z >> 4);
                         foreach (var world in Worlds)
-                            world.Unload((x, z) => _players.Any(p =>
+                            world.Unload((x, z) => world == World && Math.Abs(x - spawnX) <= Config.ViewDistance
+                                                                   && Math.Abs(z - spawnZ) <= Config.ViewDistance // the spawn stays ready
+                                                  || _players.Any(p =>
                         {
                             if (p.World != world)
                                 return false;

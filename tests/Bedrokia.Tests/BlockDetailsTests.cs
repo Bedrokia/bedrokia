@@ -150,6 +150,52 @@ public class BlockDetailsTests
     }
 
     [Fact]
+    public void A_firework_with_a_star_bursts_up_high_and_hurts_who_is_close()
+    {
+        var (server, player) = Arena();
+        var star = new OrderedDictionary<string, object> { ["FireworkType"] = (byte)0, ["FireworkColor"] = new byte[] { 1 } };
+        var rocket = new ItemStack(ItemStack.Of("firework_rocket")!.Type, 1, 0, 0, new OrderedDictionary<string, object>
+        {
+            ["Fireworks"] = new OrderedDictionary<string, object> { ["Flight"] = (byte)1, ["Explosions"] = new Bedrokia.Protocol.NbtList(10, [star]) },
+        });
+        server.World.SetBlock(8, Floor + 4, 2, Blocks.Stone); // a ceiling: it bursts right above the player
+        server.LaunchFirework(8.5, Floor, 2.5, rocket);
+        var health = player.Health;
+        for (var i = 0; i < 40; i++)
+            server.Tick();
+        Assert.True(player.Health < health, "burst within 5 blocks");
+
+        player.SetHealth();
+        server.LaunchFirework(14.5, Floor, 14.5, rocket); // far away
+        for (var i = 0; i < 40; i++)
+            server.Tick();
+        Assert.Equal(player.CurrentMaxHealth, player.Health);
+    }
+
+    [Theory]
+    [InlineData("water", false)]
+    [InlineData("slime", false)]
+    [InlineData("grass_block", true)]
+    public void Falling_hurts_on_the_ground_but_not_into_water_or_onto_slime(string landing, bool hurts)
+    {
+        var (server, player) = Arena();
+        server.World.SetBlock(8, Floor - 1, 2, Blocks.ByName(landing)!);
+        if (landing == "water")
+            server.World.SetBlock(8, Floor, 2, Blocks.Water); // landing in the water
+        void Move(float feet)
+        {
+            var w = new Bedrokia.Protocol.BedrockWriter().Float32(0).Float32(0).Float32(8.5f).Float32(feet + BedrockConnection.EyeHeight).Float32(2.5f);
+            var reader = new Bedrokia.Protocol.BedrockReader(w.ToArray());
+            player.OnPlayerAuthInput(ref reader);
+        }
+        var health = player.Health;
+        for (var y = Floor + 12; y >= Floor; y--)
+            Move(y);
+        Move(Floor); // still: landed
+        Assert.Equal(hurts, player.Health < health);
+    }
+
+    [Fact]
     public void Obsidian_breaks_after_obsidian_durability_explosions()
     {
         var (server, _) = Arena();

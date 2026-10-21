@@ -44,12 +44,14 @@ public static class PlayerPackets
     /// oxygen bubbles permanently, as if underwater. Keys, flags and types from gophertunnel (MIT) entity_metadata.go.
     /// </summary>
     /// <param name="seatY">Riding: the height of the seat above the vehicle (riding flag and seat offset); null otherwise.</param>
-    public static BedrockWriter PlayerMetadata(this BedrockWriter w, string name, bool showName = true, float? seatY = null)
+    /// <param name="actionFlags">Sneaking, sprinting, swimming, gliding...: what the others see the player do.</param>
+    public static BedrockWriter PlayerMetadata(this BedrockWriter w, string name, bool showName = true, float? seatY = null, long actionFlags = 0)
     {
         const int typeInt16 = 1, typeFloat = 3, typeString = 4, typeInt64 = 7, typeVec3 = 8;
         const long nameFlags = (1L << 14) | (1L << 15); // show name, always show name
         var flags = (showName ? nameFlags : 0) | (1L << 35) | (1L << 48) | (1L << 49) // breathing, collision, gravity
-                    | (seatY is null ? 0 : 1L << 2); // riding
+                    | (seatY is null ? 0 : 1L << 2) // riding
+                    | actionFlags;
         void Key(uint key, uint type) => w.VarUInt32(key).VarUInt32(type).Byte((byte)type); // type + legacy type byte
 
         w.VarUInt32(seatY is null ? 7u : 8u);
@@ -91,9 +93,9 @@ public static class PlayerPackets
     }
 
     /// <summary>SetActorData for an entity's metadata (here: a player, including the receiving client itself).</summary>
-    public static byte[] SetPlayerData(long entityId, string name, bool showName = true, float? seatY = null) => new BedrockWriter().VarUInt32(PacketId.SetActorData)
+    public static byte[] SetPlayerData(long entityId, string name, bool showName = true, float? seatY = null, long actionFlags = 0) => new BedrockWriter().VarUInt32(PacketId.SetActorData)
         .VarUInt64((ulong)entityId)
-        .PlayerMetadata(name, showName, seatY)
+        .PlayerMetadata(name, showName, seatY, actionFlags)
         .VarUInt32(0).VarUInt32(0) // entity properties
         .VarUInt64(0) // tick
         .ToArray();
@@ -122,7 +124,8 @@ public static class PlayerPackets
         .Uuid(uuid)
         .ToArray();
 
-    public static byte[] AddPlayer(PlayerInfo p, float x, float y, float z, float pitch, float yaw, int gameMode, bool showName = true, string? nameTag = null) =>
+    public static byte[] AddPlayer(PlayerInfo p, float x, float y, float z, float pitch, float yaw, int gameMode, bool showName = true, string? nameTag = null,
+        long actionFlags = 0) =>
         new BedrockWriter().VarUInt32(PacketId.AddPlayer)
             .Uuid(p.Uuid)
             .String(p.Name)
@@ -133,7 +136,7 @@ public static class PlayerPackets
             .Float32(pitch).Float32(yaw).Float32(yaw)
             .Int16(0).UInt16(0).VarUInt32(0).Bool(false).VarUInt32(0).VarUInt32(0) // held item: air
             .VarInt32(gameMode)
-            .PlayerMetadata(nameTag ?? p.Name, showName)
+            .PlayerMetadata(nameTag ?? p.Name, showName, actionFlags: actionFlags)
             .VarUInt32(0).VarUInt32(0) // entity properties (int, float)
             .Int64(p.EntityId).Byte(1).Byte(0).VarUInt32(0) // abilities: member, normal commands, no layers
             .VarUInt32(0) // entity links

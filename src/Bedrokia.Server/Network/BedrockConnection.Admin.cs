@@ -65,13 +65,56 @@ public sealed partial class BedrockConnection
                 return;
             _nameTag = value;
             if (IsInGame)
-                _server.BroadcastInExcept(World, this, PlayerPackets.SetPlayerData(EntityId, NameTag, _nameTagVisible));
+                _server.BroadcastInExcept(World, this, DataPacket());
         }
     }
 
     /// <summary>AddPlayer for another client: this player as it stands, name tag included.</summary>
-    internal byte[] AddPlayerPacket() =>
-        PlayerPackets.AddPlayer(Info!, Position.X, Position.Y, Position.Z, Pitch, Yaw, (int)GameMode, _nameTagVisible, NameTag);
+    internal byte[] AddPlayerPacket()
+    {
+        _equipmentShown = false; // whoever gets this player now also needs its armour and held item (next tick)
+        return PlayerPackets.AddPlayer(Info!, Position.X, Position.Y, Position.Z, Pitch, Yaw, (int)GameMode, _nameTagVisible, NameTag, ActionFlags);
+    }
+
+    // What the others see of this player: name, riding seat and actions (sneaking, sprinting, swimming, gliding).
+    internal byte[] DataPacket() => PlayerPackets.SetPlayerData(EntityId, NameTag, _nameTagVisible, _seatY, ActionFlags);
+
+    private float? _seatY;
+    private bool _sprinting, _swimming, _gliding;
+    private long _shownActionFlags;
+
+    // Entity flags (gophertunnel EntityDataFlag): sneaking 1, sprinting 3, gliding 32, swimming 57.
+    private long ActionFlags => (Sneaking ? 1L << 1 : 0) | (_sprinting ? 1L << 3 : 0) | (_gliding ? 1L << 32 : 0) | (_swimming ? 1L << 57 : 0);
+
+    /// <summary>Whether the player is flying with an elytra.</summary>
+    public bool Gliding => _gliding;
+
+    // Held item and armour as last shown to the others: sent again when one of them is another item.
+    private bool _equipmentShown;
+    private readonly Game.ItemStack?[] _shownEquipment = new Game.ItemStack?[5];
+
+    private void SyncEquipment()
+    {
+        var held = Inventory.Held;
+        var armour = Inventory.Armour;
+        if (_equipmentShown && ReferenceEquals(_shownEquipment[0], held) && ReferenceEquals(_shownEquipment[1], armour[0])
+            && ReferenceEquals(_shownEquipment[2], armour[1]) && ReferenceEquals(_shownEquipment[3], armour[2]) && ReferenceEquals(_shownEquipment[4], armour[3]))
+            return;
+        _equipmentShown = true;
+        (_shownEquipment[0], _shownEquipment[1], _shownEquipment[2], _shownEquipment[3], _shownEquipment[4]) = (held, armour[0], armour[1], armour[2], armour[3]);
+        if (Vanished)
+            return;
+        _server.BroadcastInExcept(World, this, InventoryPackets.MobEquipment(EntityId, held, Inventory.SelectedSlot, Inventory.SelectedSlot));
+        _server.BroadcastInExcept(World, this, InventoryPackets.MobArmourEquipment(EntityId, armour[0], armour[1], armour[2], armour[3]));
+    }
+
+    private void SyncActionFlags()
+    {
+        if (ActionFlags == _shownActionFlags)
+            return;
+        _shownActionFlags = ActionFlags;
+        _server.BroadcastInExcept(World, this, DataPacket());
+    }
 
     /// <summary>Whether the other players see this player's name above the head (PocketMine setNameTagVisible).</summary>
     public bool NameTagVisible
@@ -83,7 +126,7 @@ public sealed partial class BedrockConnection
                 return;
             _nameTagVisible = value;
             if (IsInGame)
-                _server.BroadcastInExcept(World, this, PlayerPackets.SetPlayerData(EntityId, NameTag, value));
+                _server.BroadcastInExcept(World, this, DataPacket());
         }
     }
 

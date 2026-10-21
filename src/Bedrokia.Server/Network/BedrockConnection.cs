@@ -564,6 +564,9 @@ public sealed partial class BedrockConnection
         }
         _stage = Stage.ResourcePacks;
         Send(Packets.PlayStatus(PlayStatus.LoginSuccess), _server.ResourcePacks.InfoPacket(_server.Config.ForceResourcePacks));
+        // While the client deals with resource packs, its chunks get ready where it logged off.
+        if (PlayerData.Read(Identity!.Uuid) is { } saved)
+            _server.Preload(_server.WorldOf(saved.Dimension), (int)Math.Floor(saved.X) >> 4, (int)Math.Floor(saved.Z) >> 4, Math.Min(_server.Config.ViewDistance, 6));
     }
 
     // Response (0 refused, 1 send packs, 2 all downloaded, 3 completed), its name, and for 1 the packs to send.
@@ -706,6 +709,12 @@ public sealed partial class BedrockConnection
                 case InputFlagVerticalCollision: _onGround = true; break;
                 case InputFlagStartFlying: _flying = true; break;
                 case InputFlagStopFlying: _flying = false; break;
+                case InputFlagStartSprinting: _sprinting = true; break;
+                case InputFlagStopSprinting: _sprinting = false; break;
+                case InputFlagStartSwimming: _swimming = true; break;
+                case InputFlagStopSwimming: _swimming = false; break;
+                case InputFlagStartGliding: _gliding = Inventory.Armour[1]?.Type.Name == "minecraft:elytra"; break;
+                case InputFlagStopGliding: _gliding = false; break;
             }
         if (missedSwing) // PocketMine Player::missSwing: the others see the arm and hear the swing
         {
@@ -762,7 +771,8 @@ public sealed partial class BedrockConnection
 
     // Player action ids (gophertunnel protocol/player.go).
     private const int InputFlagSneaking = 8, InputFlagMissedSwing = 39, InputFlagStartFlying = 42, InputFlagStopFlying = 43,
-        InputFlagVerticalCollision = 50; // gophertunnel packet/player_auth_input.go
+        InputFlagVerticalCollision = 50, InputFlagStartSprinting = 25, InputFlagStopSprinting = 26, InputFlagStartSwimming = 29,
+        InputFlagStopSwimming = 30, InputFlagStartGliding = 32, InputFlagStopGliding = 33; // gophertunnel packet/player_auth_input.go
     private bool _onGround, _flying;
     private float _headYaw = float.NaN; // NaN until the client sends one: the body yaw is used
 
@@ -1394,7 +1404,10 @@ public sealed partial class BedrockConnection
                 continue;
             var world = World;
             var task = world.GetChunkAsync(item.X, item.Z);
-            task.ContinueWith(t => _server.RunOnMainThread(() => OnChunkReady(t, world)), TaskScheduler.Default);
+            if (task.IsCompletedSuccessfully)
+                OnChunkReady(task, world); // already in memory (spawn, other players): sent now, not a tick later
+            else
+                task.ContinueWith(t => _server.RunOnMainThread(() => OnChunkReady(t, world)), TaskScheduler.Default);
         }
         TrySpawn();
     }

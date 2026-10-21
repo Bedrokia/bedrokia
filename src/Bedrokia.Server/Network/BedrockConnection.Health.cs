@@ -519,6 +519,8 @@ public sealed partial class BedrockConnection
         TickPortal();
         TickEffects();
         TickBreaking();
+        SyncEquipment();
+        SyncActionFlags();
         _positionHistory[(int)(_server.CurrentTick % PositionHistoryTicks)] = Position;
 
         if (Dead || GameMode == GameMode.Creative)
@@ -688,7 +690,10 @@ public sealed partial class BedrockConnection
     /// <summary>Fall damage from the vertical movement reported by the client: 1 per block beyond 3.</summary>
     private void TrackFall(float previousY, float y)
     {
-        if (GameMode == GameMode.Creative || Dead)
+        // No fall at all (vanilla): in water or lava, on a ladder, vine or scaffolding, in cobweb or powder snow,
+        // gliding with an elytra, flying or riding. Checked on every move: sinking in water no longer adds up.
+        var feetBlock = World?.GetBlock((int)Math.Floor(Position.X), (int)Math.Floor(y - EyeHeight), (int)Math.Floor(Position.Z));
+        if (GameMode is GameMode.Creative or GameMode.Spectator || Dead || _gliding || _flying || Riding is not null || BreaksFall(feetBlock))
         {
             _fallPeak = float.NaN;
             return;
@@ -705,13 +710,27 @@ public sealed partial class BedrockConnection
             return;
         var fallen = _fallPeak - y;
         _fallPeak = float.NaN;
-        var feet = World.GetBlock((int)Math.Floor(Position.X), (int)Math.Floor(y - EyeHeight), (int)Math.Floor(Position.Z));
-        if (fallen > 3.5f && feet != Blocks.Water)
+        // What it lands on: slime cancels the fall, hay and honey keep 20 %, a bed 50 %.
+        var landedOn = World!.GetBlock((int)Math.Floor(Position.X), (int)Math.Floor(y - EyeHeight - 0.1f), (int)Math.Floor(Position.Z))?.Name;
+        var share = landedOn switch
+        {
+            "minecraft:slime" => 0f,
+            "minecraft:hay_block" or "minecraft:honey_block" => 0.2f,
+            "minecraft:bed" => 0.5f,
+            _ => 1f,
+        };
+        var damage = (float)Math.Floor((fallen - 3) * share);
+        if (fallen > 3.5f && damage > 0)
         {
             _hurtTicks = 0;
-            Damage((float)Math.Floor(fallen - 3) * (1 - Math.Min(Enchanting.Level(Inventory.Armour[3], "feather_falling") * 3 + ProtectionPoints(), 20) * 0.04f), Position.X, Position.Z, armour: false, source: DamageSource.Fall(fallen));
+            Damage(damage * (1 - Math.Min(Enchanting.Level(Inventory.Armour[3], "feather_falling") * 3 + ProtectionPoints(), 20) * 0.04f), Position.X, Position.Z, armour: false, source: DamageSource.Fall(fallen));
         }
     }
+
+    private static bool BreaksFall(BlockType? block) => block is not null && (Fluids.IsLiquid(block) || block.Name is "minecraft:ladder"
+        or "minecraft:vine" or "minecraft:scaffolding" or "minecraft:web" or "minecraft:powder_snow" or "minecraft:twisting_vines"
+        or "minecraft:weeping_vines" or "minecraft:cave_vines" or "minecraft:cave_vines_body_with_berries" or "minecraft:cave_vines_head_with_berries"
+        or "minecraft:sweet_berry_bush" or "minecraft:bubble_column");
 
     /// <summary>Spawn egg used on a block: the mob appears on the clicked face (egg consumed in survival).</summary>
     private void UseSpawnEgg(ItemStack egg, int x, int y, int z, int face)

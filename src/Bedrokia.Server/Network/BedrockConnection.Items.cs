@@ -26,7 +26,7 @@ namespace Bedrokia.Server.Network;
 /// </remarks>
 public sealed partial class BedrockConnection
 {
-    private const byte EventConsumeTotem = 65, EventFireworkParticles = 25;
+    private const byte EventConsumeTotem = 65;
     private long? _chargeSince; // bow, crossbow or trident drawn since this tick
     private long _hornReadyAt;
 
@@ -43,8 +43,11 @@ public sealed partial class BedrockConnection
     }
 
     /// <summary>Shows everyone (the player included) that the player sits at <paramref name="seatY"/> on its vehicle, or stands.</summary>
-    internal void SendRidingData(float? seatY) =>
-        _server.BroadcastIn(World, PlayerPackets.SetPlayerData(EntityId, NameTag, _nameTagVisible, seatY));
+    internal void SendRidingData(float? seatY)
+    {
+        _seatY = seatY;
+        _server.BroadcastIn(World, DataPacket());
+    }
 
     // --- Right click in the air ---
 
@@ -385,7 +388,7 @@ public sealed partial class BedrockConnection
         }
         if (item == "firework_rocket")
         {
-            LaunchFirework(x + fx + 0.5f, y + fy + 0.2f, z + fz + 0.5f, Inventory.Held!);
+            _server.LaunchFirework(x + fx + 0.5f, y + fy + 0.2f, z + fz + 0.5f, Inventory.Held!, World);
             if (survival)
                 Send(Inventory.ConsumeHeld());
             return true;
@@ -403,40 +406,6 @@ public sealed partial class BedrockConnection
         "tadpole_bucket" => MobKind.Tadpole,
         _ => null,
     };
-
-    /// <summary>
-    /// A rocket flies up for its flight duration (item NBT Fireworks.Flight), then bursts with its stars: the client
-    /// draws them from the item NBT sent in the entity metadata. Stars hurt players nearby (5 + 2 per star, less farther).
-    /// </summary>
-    private void LaunchFirework(float x, float y, float z, ItemStack rocket)
-    {
-        var id = _server.NextEntityId();
-        var world = World;
-        var fireworks = rocket.Nbt?.GetValueOrDefault("Fireworks") as OrderedDictionary<string, object>;
-        var flight = fireworks?.GetValueOrDefault("Flight") is byte f ? f : (byte)1;
-        var stars = fireworks?.GetValueOrDefault("Explosions") is NbtList list ? list.Values.Count : 0;
-        var lifetime = 10 * (flight + 1) + Random.Shared.Next(6) + Random.Shared.Next(7);
-        _server.BroadcastIn(world, EntityPackets.AddActor(id, "minecraft:fireworks_rocket", x, y, z, 0, 1, 1, 0, 0.25f, 0.25f, 0,
-            displayNbt: rocket.Nbt ?? []));
-        _server.BroadcastIn(world, EntityPackets.Motion(id, 0, 0.6, 0));
-        _server.PlaySound("firework.launch", x, y, z, world);
-        var height = lifetime * 0.6f;
-        _server.Schedule(lifetime, () =>
-        {
-            _server.BroadcastIn(world, EntityPackets.Event(id, EventFireworkParticles));
-            _server.PlaySound(stars > 0 ? "firework.large_blast" : "firework.blast", x, y + height, z, world);
-            _server.BroadcastIn(world, Packets.RemoveActor(id));
-            if (stars == 0)
-                return;
-            foreach (var player in _server.Players.Where(p => p.IsInGame && p.World == world && !p.Dead).ToList())
-            {
-                var (px, py, pz) = player.Position;
-                var distance = Math.Sqrt((px - x) * (px - x) + (py - y - height) * (py - y - height) + (pz - z) * (pz - z));
-                if (distance < 5)
-                    player.Damage((float)((5 + 2 * stars) * (1 - distance / 5)), x, z, source: DamageSource.Explosion());
-            }
-        });
-    }
 
     // --- Wear ---
 
