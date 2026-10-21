@@ -32,9 +32,9 @@ internal static class InventoryPackets
     public const byte ContainerTypeInventory = 0xFF, ContainerTypeWorkbench = 1;
     public const byte WindowCraftingTable = 1;
 
-    public static byte[] ContainerOpen(byte windowId, byte type, int x, int y, int z) =>
+    public static byte[] ContainerOpen(byte windowId, byte type, int x, int y, int z, long entityId = -1) =>
         new BedrockWriter().VarUInt32(ContainerOpenId).Byte(windowId).Byte(type)
-            .VarInt32(x).VarInt32(y).VarInt32(z).VarInt64(-1).ToArray();
+            .VarInt32(x).VarInt32(y).VarInt32(z).VarInt64(entityId).ToArray();
 
     /// <param name="serverInitiated">True when the server closes the window itself; false when it answers the client closing it
     /// (the client rejects a close sent with the wrong one).</param>

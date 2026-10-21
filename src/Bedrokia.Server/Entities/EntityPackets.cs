@@ -27,7 +27,7 @@ internal static class EntityPackets
 
     public static byte[] AddActor(long entityId, string type, double x, double y, double z, float yaw, float health,
         float maxHealth, float speed, float width, float height, long flags, int? colour = null, int? variant = null, float scale = 1, string? nameTag = null,
-        OrderedDictionary<string, object>? displayNbt = null, long? leashHolder = null, float pitch = 0)
+        OrderedDictionary<string, object>? displayNbt = null, long? leashHolder = null, float pitch = 0, bool showName = true)
     {
         var w = new BedrockWriter().VarUInt32(AddActorId).VarInt64(entityId).VarUInt64((ulong)entityId).String(type)
             .Vec3((float)x, (float)y, (float)z).Vec3(0, 0, 0)
@@ -35,10 +35,20 @@ internal static class EntityPackets
         w.VarUInt32(2); // attributes: name, min, value, max
         w.String("minecraft:health").Float32(0).Float32(health).Float32(maxHealth);
         w.String("minecraft:movement").Float32(0).Float32(speed).Float32(float.MaxValue);
-        Metadata(w, flags, width, height, colour, variant, scale, nameTag, displayNbt, leashHolder);
+        Metadata(w, flags, width, height, colour, variant, scale, nameTag, displayNbt, leashHolder, showName);
         return w.VarUInt32(0).VarUInt32(0) // entity properties (ints, floats)
             .VarUInt32(0) // links
             .ToArray();
+    }
+
+    /// <summary>SetActorData with a container (keys 44, 45): what the client opens on this entity, and how many slots.</summary>
+    public static byte[] ContainerData(long entityId, sbyte containerType, int size)
+    {
+        const uint keyContainerType = 44, keyContainerSize = 45, typeByte = 0, typeInt32 = 2;
+        return new BedrockWriter().VarUInt32(SetActorDataId).VarUInt64((ulong)entityId).VarUInt32(2)
+            .VarUInt32(keyContainerType).VarUInt32(typeByte).Byte((byte)typeByte).Byte(unchecked((byte)containerType))
+            .VarUInt32(keyContainerSize).VarUInt32(typeInt32).Byte((byte)typeInt32).VarInt32(size)
+            .VarUInt32(0).VarUInt32(0).VarUInt64(0).ToArray();
     }
 
     /// <summary>SetActorData with only the target (key 6): who a mob attacks (0: nobody).</summary>
@@ -59,10 +69,10 @@ internal static class EntityPackets
 
     // Key, type (+ legacy type byte), value; keys from gophertunnel entity_metadata.go.
     private static void Metadata(BedrockWriter w, long flags, float width, float height, int? colour, int? variant = null, float scale = 1,
-        string? nameTag = null, OrderedDictionary<string, object>? displayNbt = null, long? leashHolder = null)
+        string? nameTag = null, OrderedDictionary<string, object>? displayNbt = null, long? leashHolder = null, bool showName = true)
     {
         const uint typeString = 4, typeCompound = 5;
-        if (nameTag is not null)
+        if (nameTag is not null && showName)
             flags |= (1L << 14) | (1L << 15); // show name, always show name
         if (leashHolder is not null)
             flags |= 1L << 30; // leashed

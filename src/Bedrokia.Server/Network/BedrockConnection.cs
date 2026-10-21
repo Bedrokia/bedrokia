@@ -339,12 +339,16 @@ public sealed partial class BedrockConnection
     {
         var window = reader.Byte();
         var type = reader.Byte();
+        // The client confirming a close the server asked for: no answer, the client rejects one ("should have sent
+        // the server initiated packet").
+        var acknowledging = reader.Remaining > 0 && reader.Bool();
         _inventoryOpen = false;
         CloseContainer(notifyClient: false);
         foreach (var stack in Inventory.ReturnCraftingItems())
             _server.DropItem(stack, Position.X, Position.Y - EyeHeight + 0.5f, Position.Z, world: World);
-        Send(InventoryPackets.ContainerClose(window, window == InventoryPackets.WindowCraftingTable
-            ? InventoryPackets.ContainerTypeWorkbench : type, serverInitiated: false));
+        if (!acknowledging)
+            Send(InventoryPackets.ContainerClose(window, window == InventoryPackets.WindowCraftingTable
+                ? InventoryPackets.ContainerTypeWorkbench : type, serverInitiated: false));
         Send([.. Inventory.ContentPackets()]);
     }
 
@@ -635,6 +639,7 @@ public sealed partial class BedrockConnection
                         _server.Config.LevelName, _server.World.Time, (int)_server.Config.Difficulty, world.Settings.DaylightCycle, world.Dimension,
                         Game.Custom.Blocks.CustomBlockRegistry.GetDefinitions())),
                     Items.RegistryPacket,
+                    Entities.ActorIdentifiers.Packet,
                     Biome.DefinitionListPacket);
                 break;
             }
