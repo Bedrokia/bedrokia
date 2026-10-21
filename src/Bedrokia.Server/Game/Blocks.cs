@@ -49,6 +49,10 @@ public sealed class BlockType
     /// <summary>Cannot be broken in survival.</summary>
     public bool Unbreakable => Blocks.UnbreakableNames.Contains(Name);
 
+    /// <summary>The same block with one state changed (facing, lit...), or this block when no such state exists.</summary>
+    public BlockType WithState(string key, object value) =>
+        Blocks.ByKey(new BlockType(0, Name, new OrderedDictionary<string, object>(States) { [key] = value }).Key) ?? this;
+
     public override string ToString() => Key;
 }
 
