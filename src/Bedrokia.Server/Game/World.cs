@@ -150,7 +150,16 @@ public sealed class World
 
     public void SetBlockEntity(int x, int y, int z, BlockEntity? entity) => LoadedChunk(x >> 4, z >> 4)?.SetBlockEntity(x & 15, y, z & 15, entity);
 
+    // The chunk, with its network payload already built: done here, on a pool thread, before the game sees the
+    // chunk (no race), so the game thread only sends it.
     private async Task<Chunk> LoadOrGenerateAsync(int x, int z)
+    {
+        var chunk = await ReadOrGenerateAsync(x, z);
+        chunk.NetworkPayload(Dimension == 1);
+        return chunk;
+    }
+
+    private async Task<Chunk> ReadOrGenerateAsync(int x, int z)
     {
         await _writes; // a chunk dropped after its save must not be read back before its file is written
         var file = ChunkFile(x, z);
