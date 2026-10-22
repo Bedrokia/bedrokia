@@ -181,4 +181,15 @@ public class CraftingDataTests
         Assert.True(recipe.Inputs[4].Matches(ItemStack.Of("oak_planks")!));
         Assert.True(Recipes.CraftingDataPacket.Length > before);
     }
+
+    [Fact]
+    public void Plugins_add_shapeless_recipes_for_their_own_table_and_the_packet_still_decodes()
+    {
+        Recipes.AddShapeless(new Dictionary<string, int> { ["minecraft:dirt"] = 2, ["minecraft:stick"] = 1 }, ItemStack.Of("emerald")!, "test_table");
+        var recipe = Recipes.ByResult("minecraft:emerald").ToArray().Last();
+        Assert.Equal("test_table", recipe.Block);
+        Assert.Equal(3, recipe.Inputs.Count);
+        Assert.Throws<ArgumentException>(() => Recipes.AddShapeless(new Dictionary<string, int> { ["minecraft:dirt"] = 10 }, ItemStack.Of("emerald")!));
+        Crafting_data_packet_decodes_completely_and_is_consistent();
+    }
 }

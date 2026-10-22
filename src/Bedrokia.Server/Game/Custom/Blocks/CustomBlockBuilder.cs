@@ -137,9 +137,14 @@ public sealed class CustomBlockBuilder
         return this;
     }
 
-    public CustomBlockBuilder WithCraftingTable(params string[] craftingTags)
+    /// <summary>
+    /// A crafting table titled <paramref name="tableName"/> crafting the recipes of <paramref name="craftingTags"/>
+    /// ("crafting_table" for the vanilla ones, a tag of yours for recipes added with that block, see
+    /// <see cref="Recipes.AddShaped"/>).
+    /// </summary>
+    public CustomBlockBuilder WithCraftingTable(string tableName, params string[] craftingTags)
     {
-        AddComponent(new CraftingTableBlockComponent(craftingTags));
+        AddComponent(new CraftingTableBlockComponent(craftingTags, tableName));
         return this;
     }
 

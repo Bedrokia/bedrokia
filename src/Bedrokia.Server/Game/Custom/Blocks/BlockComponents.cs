@@ -184,13 +184,17 @@ public sealed record ReplaceableBlockComponent : IBlockComponent
     public OrderedDictionary<string, object> BuildNbt() => [];
 }
 
-public sealed record CraftingTableBlockComponent(IReadOnlyList<string> CraftingTags, int GridSize = 3) : IBlockComponent
+/// <summary>
+/// The block is a crafting table: a right click opens the client's own crafting screen titled <see cref="TableName"/>,
+/// which crafts the recipes made for one of its <see cref="CraftingTags"/> ("crafting_table": the vanilla ones).
+/// </summary>
+public sealed record CraftingTableBlockComponent(IReadOnlyList<string> CraftingTags, string TableName = "") : IBlockComponent
 {
     public string Name => BlockComponentIds.CraftingTable;
     public OrderedDictionary<string, object> BuildNbt() => new()
     {
         ["crafting_tags"] = new NbtList(Nbt.String, CraftingTags.Cast<object>().ToList()),
-        ["grid_size"] = GridSize
+        ["table_name"] = TableName,
     };
 }
 

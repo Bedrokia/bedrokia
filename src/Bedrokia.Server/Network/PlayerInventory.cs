@@ -83,6 +83,9 @@ public sealed class PlayerInventory
     /// <summary>True while a crafting table is open (3x3 grid).</summary>
     public bool CraftingTableOpen { get; set; }
 
+    /// <summary>The crafting tags of the open table ("crafting_table" for a vanilla one and the inventory grid).</summary>
+    public IReadOnlyList<string> CraftingTags { get; set; } = ["crafting_table"];
+
     private const byte ContainerEnchantingInput = 22, ContainerEnchantingMaterial = 23;
     public const int EnchantInputSlot = 14, EnchantLapisSlot = 15;
 
@@ -593,7 +596,8 @@ public sealed class PlayerInventory
                             break;
                         }
                         // Crafting table and inventory crafting
-                        if (Recipes.ByNetworkId(c.RecipeId) is not { Block: "crafting_table" } recipe || c.Times < 1)
+                        // The recipe must belong to the open table (a custom table's own recipes only there).
+                        if (Recipes.ByNetworkId(c.RecipeId) is not { } recipe || !CraftingTags.Contains(recipe.Block) || c.Times < 1)
                             throw new InvalidOperationException($"unknown crafting recipe {c.RecipeId}");
                         if (Player is not null)
                         {
@@ -679,6 +683,7 @@ public sealed class PlayerInventory
     {
         var leftover = new List<ItemStack>();
         CraftingTableOpen = false;
+        CraftingTags = ["crafting_table"];
         Enchanter = null;
         AnvilUsed = null;
         Ui[CreatedOutputSlot] = null;

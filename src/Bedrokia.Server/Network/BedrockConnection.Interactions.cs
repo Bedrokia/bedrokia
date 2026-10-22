@@ -46,6 +46,14 @@ public sealed partial class BedrockConnection
             return true;
         if (TryOpenContainer(block, x, y, z))
             return true;
+        // A custom crafting table: the client's crafting screen, for its own recipes.
+        if (Game.Custom.Blocks.CustomBlockRegistry.Get(name)?.Components.GetValueOrDefault(Game.Custom.Blocks.BlockComponentIds.CraftingTable) is Game.Custom.Blocks.CraftingTableBlockComponent table)
+        {
+            Inventory.CraftingTableOpen = true;
+            Inventory.CraftingTags = table.CraftingTags;
+            Send(InventoryPackets.ContainerOpen(InventoryPackets.WindowCraftingTable, InventoryPackets.ContainerTypeWorkbench, x, y, z));
+            return true;
+        }
         switch (name)
         {
             case "minecraft:enchanting_table":
@@ -56,6 +64,7 @@ public sealed partial class BedrockConnection
                 return true;
             case "minecraft:crafting_table":
                 Inventory.CraftingTableOpen = true;
+                Inventory.CraftingTags = ["crafting_table"];
                 Send(InventoryPackets.ContainerOpen(InventoryPackets.WindowCraftingTable, InventoryPackets.ContainerTypeWorkbench, x, y, z));
                 return true;
             case "minecraft:bed" when World.Dimension == 1: // beds explode in the Nether
