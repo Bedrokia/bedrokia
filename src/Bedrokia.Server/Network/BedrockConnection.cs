@@ -339,22 +339,23 @@ public sealed partial class BedrockConnection
     {
         var window = reader.Byte();
         var type = reader.Byte();
-        // The client confirming a close the server sent (the next close of that window within 2 s, or flagged so): the
-        // server already closed it, and maybe opened the next window since (a menu leading to another): nothing to do,
-        // and no answer (the client rejects one: "should have sent the server initiated packet").
-        var confirming = window == _closingWindow && _server.CurrentTick - _closingTick <= 40 || reader.Remaining > 0 && reader.Bool();
+        // As PocketMine (InventoryManager::onClientRemoveWindow): every close is answered, even the client's answer to a
+        // close the server sent (it then acts as if it closed the window itself and waits for the answer: without it no
+        // window opens any more). That answer only confirms: the server closed it already, and may have opened the next
+        // window since (a menu leading to another), which stays open.
+        var confirming = window == _closingWindow && _server.CurrentTick - _closingTick <= 40;
         if (window == _closingWindow)
             _closingWindow = -1;
-        if (confirming)
-            return;
+        if (!confirming)
+        {
+            _inventoryOpen = false;
+            CloseContainer(notifyClient: false);
+            foreach (var stack in Inventory.ReturnCraftingItems())
+                _server.DropItem(stack, Position.X, Position.Y - EyeHeight + 0.5f, Position.Z, world: World);
+        }
         // Window 0xFF: the client closing its own crafting grid or creative screen, which it never opened through the
-        // server: no answer (Dragonfly ContainerCloseHandler).
-        var acknowledging = window == 0xFF;
-        _inventoryOpen = false;
-        CloseContainer(notifyClient: false);
-        foreach (var stack in Inventory.ReturnCraftingItems())
-            _server.DropItem(stack, Position.X, Position.Y - EyeHeight + 0.5f, Position.Z, world: World);
-        if (!acknowledging)
+        // server: no answer, it rejects one (Dragonfly ContainerCloseHandler).
+        if (window != 0xFF)
             Send(InventoryPackets.ContainerClose(window, window == InventoryPackets.WindowCraftingTable
                 ? InventoryPackets.ContainerTypeWorkbench : type, serverInitiated: false));
         Send([.. Inventory.ContentPackets()]);
