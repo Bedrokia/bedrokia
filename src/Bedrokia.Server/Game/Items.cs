@@ -41,8 +41,6 @@ public static class Items
         }
         ShieldRuntimeId = ByNameMap.TryGetValue("minecraft:shield", out var shield) ? shield.RuntimeId : (short)-1;
         RegistryPacket = BuildRegistry();
-        CreativeContentPacket = BuildCreativeContent(out var count);
-        CreativeItemCount = count;
     }
 
     public static int Count => ByNameMap.Count;
@@ -50,13 +48,79 @@ public static class Items
     /// <summary>ItemRegistry packet with every vanilla item.</summary>
     public static byte[] RegistryPacket { get; private set; }
 
-    /// <summary>CreativeContent packet with the vanilla creative inventory.</summary>
-    public static byte[] CreativeContentPacket { get; private set; }
+    /// <summary>CreativeContent packet with the vanilla creative inventory and the custom items.</summary>
+    public static byte[] CreativeContentPacket
+    {
+        get
+        {
+            BuildCreativeIfChanged();
+            return _creativePacket!;
+        }
+    }
 
-    public static int CreativeItemCount { get; private set; }
+    public static int CreativeItemCount
+    {
+        get
+        {
+            BuildCreativeIfChanged();
+            return _creativeCount;
+        }
+    }
 
     /// <summary>Creative inventory entries; creative network id N is index N - 1.</summary>
-    internal static List<ItemStack> CreativeTemplates { get; } = [];
+    internal static List<ItemStack> CreativeTemplates
+    {
+        get
+        {
+            BuildCreativeIfChanged();
+            return _creativeTemplates;
+        }
+    }
+
+    private static readonly List<ItemStack> _creativeTemplates = [];
+    private static byte[]? _creativePacket;
+    private static int _creativeCount;
+    private static readonly System.Threading.Lock CreativeLock = new();
+
+    // Built on first use and again after a change (plugins register hundreds of items: once, not once each).
+    private static void BuildCreativeIfChanged()
+    {
+        if (_creativePacket is not null)
+            return;
+        lock (CreativeLock)
+        {
+            if (_creativePacket is not null)
+                return;
+            _creativeTemplates.Clear();
+            var packet = BuildCreativeContent(out _creativeCount);
+            _creativePacket = packet;
+        }
+    }
+
+    private static readonly Dictionary<string, OrderedDictionary<string, object>> DefaultNbt = [];
+
+    /// <summary>
+    /// The NBT every new item of this kind has (its lore...): in the creative inventory, taken from it, and from
+    /// <see cref="ItemStack.Of"/> (crafts, gives, drops). Set it when the plugin loads, before players join.
+    /// </summary>
+    public static void SetDefaultNbt(string itemName, OrderedDictionary<string, object> nbt)
+    {
+        var name = itemName.Contains(':') ? itemName : "minecraft:" + itemName;
+        DefaultNbt[name] = nbt;
+        for (var i = 0; i < CustomCreativeEntries.Count; i++)
+            if (CustomCreativeEntries[i].Stack.Type.Name == name)
+            {
+                var old = CustomCreativeEntries[i].Stack;
+                CustomCreativeEntries[i] = (new ItemStack(old.Type, old.Count, old.Meta, old.BlockRuntimeId, CopyNbt(nbt)), CustomCreativeEntries[i].Category);
+            }
+        _creativePacket = null;
+    }
+
+    internal static OrderedDictionary<string, object>? DefaultNbtOf(string itemName) =>
+        DefaultNbt.TryGetValue(itemName, out var nbt) ? CopyNbt(nbt) : null;
+
+    private static OrderedDictionary<string, object> CopyNbt(OrderedDictionary<string, object> nbt) =>
+        Nbt.ReadAll(Nbt.Write(nbt, network: false), network: false)[0];
 
     private static readonly List<(ItemStack Stack, int Category)> CustomCreativeEntries = [];
 
@@ -78,11 +142,9 @@ public static class Items
         RegistryPacket = BuildRegistry();
         if (isCreative)
         {
-            var template = new ItemStack(item, 1, 0, Blocks.ByName(item.Name)?.NetworkId ?? 0);
+            var template = new ItemStack(item, 1, 0, Blocks.ByName(item.Name)?.NetworkId ?? 0, DefaultNbtOf(item.Name));
             CustomCreativeEntries.Add((template, creativeCategory));
-            CreativeTemplates.Clear();
-            CreativeContentPacket = BuildCreativeContent(out var count);
-            CreativeItemCount = count;
+            _creativePacket = null;
         }
     }
 
@@ -119,14 +181,14 @@ public static class Items
             if (!WriteStack(stack, item, out var template) || template is null)
                 continue; // item or block state unknown to this build
             itemCount++;
-            CreativeTemplates.Add(template);
+            _creativeTemplates.Add(template);
             body.VarUInt32((uint)itemCount).Bytes(stack.ToArray()).VarUInt32((uint)groupIndex);
         }
 
         foreach (var (stack, category) in CustomCreativeEntries)
         {
             itemCount++;
-            CreativeTemplates.Add(stack);
+            _creativeTemplates.Add(stack);
             var stackWriter = new BedrockWriter();
             stackWriter.VarInt32(stack.Type.RuntimeId).UInt16((ushort)stack.Count).VarUInt32((ushort)stack.Meta).VarInt32(unchecked((int)stack.BlockRuntimeId));
             WriteUserData(stackWriter, stack.Nbt, stack.Type.RuntimeId == ShieldRuntimeId);
