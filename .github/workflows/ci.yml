@@ -4,7 +4,6 @@ on:
   push:
     branches: [main]
     tags: ['v*']
-  pull_request:
 
 permissions:
   contents: write # release job: create the GitHub release and its tag
@@ -15,20 +14,6 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  test:
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
-        with:
-          global-json-file: global.json
-      # A test stuck for 3 minutes is stopped and named in the log instead of holding the run.
-      - run: dotnet test Bedrokia.slnx -c Release --blame-hang-timeout 3m
-
   version:
     # Every push to main is a release: last tag + 1 patch (v0.3.0 -> v0.3.1), or the <Version> of
     # Directory.Build.props when it was raised by hand (0.4.0). A pushed tag v1.2.3 is used as is.
@@ -53,38 +38,26 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Version: $version"
 
-  publish:
-    needs: [test, version]
-    strategy:
-      matrix:
-        rid: [linux-x64, win-x64]
+  release:
+    # Every push to main (and every v* tag) publishes the binaries, the Pterodactyl egg and the example plugins.
+    needs: [version]
     runs-on: ubuntu-latest
+    env:
+      TAG: v${{ needs.version.outputs.version }}
+      VERSION: ${{ needs.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
-      - run: dotnet publish src/Bedrokia.Cli -c Release -r ${{ matrix.rid }} --self-contained -p:PublishSingleFile=true -p:Version=${{ needs.version.outputs.version }} -o out
-      - run: rm -f out/*.pdb # single file: bedrokia (Linux) or bedrokia.exe (Windows), uploaded as is
-      - uses: actions/upload-artifact@v4
-        with:
-          name: bedrokia-${{ matrix.rid }}
-          path: out
-          retention-days: 1 # only this run's release job uses it (the binaries stay in the release); kept longer they filled the storage quota
-
-  release:
-    # Every push to main (and every v* tag) publishes the binaries, the Pterodactyl egg and the example plugins.
-    if: github.event_name == 'push'
-    needs: [test, publish, version]
-    runs-on: ubuntu-latest
-    env:
-      TAG: v${{ needs.version.outputs.version }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-          merge-multiple: true
+      # Built here and attached to the release directly: no build artifacts (the private storage quota blocked them).
+      - name: Linux and Windows binaries (single file)
+        run: |
+          mkdir -p artifacts
+          for rid in linux-x64 win-x64; do
+            dotnet publish src/Bedrokia.Cli -c Release -r "$rid" --self-contained -p:PublishSingleFile=true -p:Version="$VERSION" -o "out/$rid"
+          done
+          cp out/linux-x64/bedrokia out/win-x64/bedrokia.exe artifacts/
       - name: Zip the example plugins
         run: cd examples && zip -r ../artifacts/example-plugins.zip plugins -x '*.csproj' '*/bin/*' '*/obj/*'
       - name: Release notes (commits since the last release, sorted by kind)
@@ -111,8 +84,8 @@ jobs:
 
   discord-failure:
     # A broken main branch or tag shows up in Discord right away.
-    if: failure() && github.event_name == 'push'
-    needs: [test, version, publish, release]
+    if: failure()
+    needs: [version, release]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

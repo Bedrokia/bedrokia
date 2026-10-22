@@ -1,7 +1,0 @@
-nav:
-  - changelog.md
-  - roadmap.md
-  - architecture.md
-  - ai.md
-  - glob: "*"
-    ignore_no_matches: true

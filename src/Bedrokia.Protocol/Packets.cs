@@ -97,7 +97,7 @@ public static class PacketId
 
 public static class ProtocolInfo
 {
-    /// <summary>Not validated against a real client yet (see docs/ROADMAP.md).</summary>
+    /// <summary>Not validated against a real client yet.</summary>
     public const int Version = 2193;
     public const string GameVersion = "1.26.50";
 }

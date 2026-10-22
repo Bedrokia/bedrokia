@@ -1,4 +1,4 @@
-# systemd unit for Bedrokia. Install: see the documentation, https://nexiumpvp2.github.io/bedrokia/en/getting-started/installation/
+# systemd unit for Bedrokia.
 [Unit]
 Description=Bedrokia Minecraft Bedrock server
 After=network-online.target
