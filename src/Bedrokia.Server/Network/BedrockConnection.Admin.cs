@@ -91,21 +91,24 @@ public sealed partial class BedrockConnection
 
     // Held item and armour as last shown to the others: sent again when one of them is another item.
     private bool _equipmentShown;
-    private readonly Game.ItemStack?[] _shownEquipment = new Game.ItemStack?[5];
+    private readonly Game.ItemStack?[] _shownEquipment = new Game.ItemStack?[6];
 
     private void SyncEquipment()
     {
         var held = Inventory.Held;
         var armour = Inventory.Armour;
+        var offhand = Inventory.Offhand[0];
         if (_equipmentShown && ReferenceEquals(_shownEquipment[0], held) && ReferenceEquals(_shownEquipment[1], armour[0])
-            && ReferenceEquals(_shownEquipment[2], armour[1]) && ReferenceEquals(_shownEquipment[3], armour[2]) && ReferenceEquals(_shownEquipment[4], armour[3]))
+            && ReferenceEquals(_shownEquipment[2], armour[1]) && ReferenceEquals(_shownEquipment[3], armour[2]) && ReferenceEquals(_shownEquipment[4], armour[3]) && ReferenceEquals(_shownEquipment[5], offhand))
             return;
         _equipmentShown = true;
-        (_shownEquipment[0], _shownEquipment[1], _shownEquipment[2], _shownEquipment[3], _shownEquipment[4]) = (held, armour[0], armour[1], armour[2], armour[3]);
+        (_shownEquipment[0], _shownEquipment[1], _shownEquipment[2], _shownEquipment[3], _shownEquipment[4], _shownEquipment[5]) = (held, armour[0], armour[1], armour[2], armour[3], offhand);
         if (Vanished)
             return;
         _server.BroadcastInExcept(World, this, InventoryPackets.MobEquipment(EntityId, held, Inventory.SelectedSlot, Inventory.SelectedSlot));
         _server.BroadcastInExcept(World, this, InventoryPackets.MobArmourEquipment(EntityId, armour[0], armour[1], armour[2], armour[3]));
+        // The second hand (totem, shield...): MobEquipment on the offhand window, as PocketMine.
+        _server.BroadcastInExcept(World, this, InventoryPackets.MobEquipment(EntityId, offhand, 0, 0, InventoryPackets.WindowOffhand));
     }
 
     private void SyncActionFlags()
