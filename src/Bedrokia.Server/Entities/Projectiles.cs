@@ -56,11 +56,43 @@ public sealed class Projectile
     /// <summary>An arrow that can be picked up where it lands (not from Infinity or creative).</summary>
     public bool Pickup { get; internal init; }
 
+    /// <summary>The plugin's throwable it is (<see cref="ProjectileManager.RegisterThrowable"/>), or null.</summary>
+    public ThrowableType? Type { get; internal init; }
+
     // Fishing hook: ticks until a fish bites, then ticks the bite lasts.
     internal int HookWait = -1, BiteTicks;
 
     internal int Ticks;
 }
+
+/// <summary>
+/// A throwable of a plugin (a grenade, a sticky bomb, a magic orb...): the item thrown with a right click becomes the
+/// entity <see cref="Entity"/>, whose look comes from the resource pack (entity/&lt;name&gt;.entity.json: geometry,
+/// texture, animations). Give the item <c>WithThrowable()</c> so the client swings the arm.
+/// </summary>
+public sealed class ThrowableType
+{
+    /// <summary>The custom entity, e.g. "antafac:grenade".</summary>
+    public required string Entity { get; init; }
+
+    /// <summary>Blocks per tick when thrown (1.5 is a snowball).</summary>
+    public float Speed { get; init; } = 1.5f;
+
+    /// <summary>Blocks per tick lost each tick (0.03 is a snowball, 0 flies straight).</summary>
+    public float Gravity { get; init; } = 0.03f;
+
+    /// <summary>Damage to the player or mob hit (0: only the knockback, like a snowball).</summary>
+    public float Damage { get; init; }
+
+    /// <summary>Hitbox width and height of the entity.</summary>
+    public float Size { get; init; } = 0.25f;
+
+    /// <summary>Called where it lands or hits (explode, teleport, give an effect...), after the damage.</summary>
+    public Action<ProjectileHit>? OnHit { get; init; }
+}
+
+/// <summary>Where a <see cref="ThrowableType"/> landed: the player or mob it hit, or neither (a block).</summary>
+public sealed record ProjectileHit(Projectile Projectile, Vector3 At, BedrockConnection? Player, Mob? Mob);
 
 /// <summary>
 /// Projectiles (<see cref="BedrokiaServer.Projectiles"/>): players throw snowballs, eggs, ender pearls and splash
@@ -83,8 +115,20 @@ public sealed class ProjectileManager(BedrokiaServer server)
 
     public IReadOnlyList<Projectile> All => _projectiles;
 
+    private static readonly Dictionary<string, ThrowableType> Throwables = [];
+
+    /// <summary>
+    /// Makes <paramref name="itemId"/> throwable with a right click, as <paramref name="type"/>; its entity is made
+    /// known to the clients. Call it when the plugin loads (the clients learn the entities when they join).
+    /// </summary>
+    public static void RegisterThrowable(string itemId, ThrowableType type)
+    {
+        Throwables[itemId] = type;
+        ActorIdentifiers.Register(type.Entity);
+    }
+
     /// <summary>True for the items a right click throws.</summary>
-    public static bool IsThrowable(ItemStack? item) => item?.Type.Name is Snowball or Egg or EnderPearl or SplashPotion or LingeringPotion
+    public static bool IsThrowable(ItemStack? item) => item is not null && Throwables.ContainsKey(item.Type.Name) || item?.Type.Name is Snowball or Egg or EnderPearl or SplashPotion or LingeringPotion
         or "minecraft:experience_bottle" or "minecraft:wind_charge";
 
     /// <summary>
@@ -94,7 +138,10 @@ public sealed class ProjectileManager(BedrokiaServer server)
     /// </summary>
     public Projectile? Launch(BedrockConnection player, string identifier, float? throwSpeed = null, short potion = 0)
     {
-        var speed = throwSpeed ?? (identifier is SplashPotion or LingeringPotion ? PotionThrowSpeed : 1.5f);
+        var custom = Throwables.GetValueOrDefault(identifier);
+        if (custom is not null)
+            identifier = custom.Entity;
+        var speed = throwSpeed ?? custom?.Speed ?? (identifier is SplashPotion or LingeringPotion ? PotionThrowSpeed : 1.5f);
         if (server.Events.HasProjectileLaunch)
         {
             var launch = new ProjectileLaunchEvent(player, identifier, speed);
@@ -103,15 +150,16 @@ public sealed class ProjectileManager(BedrokiaServer server)
             speed = launch.Force;
         }
         identifier = identifier switch { "minecraft:experience_bottle" => XpBottle, "minecraft:wind_charge" => WindCharge, _ => identifier };
-        var projectile = Spawn(identifier, player.World, new Vector3(player.Position.X, player.Position.Y - 0.1f, player.Position.Z),
-            Look(player) * speed, player, potion);
+        var projectile = Add(new Projectile(server.NextEntityId(), identifier, player.World, player,
+            new Vector3(player.Position.X, player.Position.Y - 0.1f, player.Position.Z), Look(player) * speed, potion) { Type = custom });
         server.PlaySound("random.bow", player.Position.X, player.Position.Y, player.Position.Z, player.World, 0.5f, 0.4f);
         return projectile;
     }
 
     /// <summary>A projectile from anywhere (a dispenser, a trap...), with its velocity in blocks per tick.</summary>
-    public Projectile Spawn(string identifier, World world, Vector3 position, Vector3 velocity, BedrockConnection? owner = null, short potion = 0) =>
-        Add(new Projectile(server.NextEntityId(), identifier, world, owner, position, velocity, potion));
+    public Projectile Spawn(string identifier, World world, Vector3 position, Vector3 velocity, BedrockConnection? owner = null, short potion = 0,
+        ThrowableType? type = null) =>
+        Add(new Projectile(server.NextEntityId(), type?.Entity ?? identifier, world, owner, position, velocity, potion) { Type = type });
 
     private static Vector3 Look(BedrockConnection player, float yawOffset = 0)
     {
@@ -173,17 +221,17 @@ public sealed class ProjectileManager(BedrokiaServer server)
     {
         _projectiles.Add(projectile);
         var (position, velocity, identifier) = (projectile.Position, projectile.Velocity, projectile.Identifier);
-        var size = identifier == Fireball ? 1f : 0.25f;
+        var size = projectile.Type?.Size ?? (identifier == Fireball ? 1f : 0.25f);
         var yaw = MathF.Atan2(-velocity.X, velocity.Z) * 180 / MathF.PI;
         server.BroadcastIn(projectile.World,
             EntityPackets.AddActor(projectile.EntityId, identifier, position.X, position.Y, position.Z, yaw,
-                1, 1, 0, size, size, GravityOf(identifier) > 0 ? EntityPackets.FlagGravity : 0,
+                1, 1, 0, size, size, GravityOf(projectile) > 0 ? EntityPackets.FlagGravity : 0,
                 variant: identifier == SplashPotion ? projectile.Potion : null));
         server.BroadcastIn(projectile.World, EntityPackets.Motion(projectile.EntityId, velocity.X, velocity.Y, velocity.Z));
         return projectile;
     }
 
-    private static float GravityOf(string identifier) => identifier switch
+    private static float GravityOf(Projectile p) => p.Type?.Gravity ?? p.Identifier switch
     {
         Arrow => ArrowGravity,
         SplashPotion or LingeringPotion => PotionGravity,
@@ -221,7 +269,7 @@ public sealed class ProjectileManager(BedrokiaServer server)
                 continue;
             }
             p.Position = to;
-            p.Velocity = p.Identifier is Fireball or SmallFireball ? p.Velocity : p.Velocity * Drag - new Vector3(0, GravityOf(p.Identifier), 0);
+            p.Velocity = p.Identifier is Fireball or SmallFireball ? p.Velocity : p.Velocity * Drag - new Vector3(0, GravityOf(p), 0);
             if (p.Ticks % 2 == 0)
             {
                 var v = p.Velocity;
@@ -294,6 +342,16 @@ public sealed class ProjectileManager(BedrokiaServer server)
             return;
         var source = p.Shooter is { } shooter ? DamageSource.EntityAttack(shooter)
             : p.Owner is { } archer ? DamageSource.PlayerAttack(archer) : DamageSource.Custom(p.Identifier);
+        if (p.Type is { } type)
+        {
+            // A plugin's throwable: its damage (knockback even at 0, like a snowball), then what the plugin does.
+            if (player is not null && (p.Owner is null || player == p.Owner || server.Config.Pvp))
+                player.Damage(type.Damage, p.Position.X, p.Position.Z, source: source);
+            if (mob is not null)
+                server.Mobs.Damage(mob, type.Damage, (p.Position.X, p.Position.Z), p.Owner, source: source);
+            type.OnHit?.Invoke(new ProjectileHit(p, at, player, mob));
+            return;
+        }
         switch (p.Identifier)
         {
             case Arrow or SmallFireball or Trident:

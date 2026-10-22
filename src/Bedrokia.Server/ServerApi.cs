@@ -33,6 +33,9 @@ public sealed partial class BedrokiaServer
     /// <summary>Makes a custom block a furnace cooking <paramref name="speed"/> times as fast (see <see cref="Game.BlockEntity.RegisterFurnace"/>).</summary>
     public void RegisterFurnace(string blockId, float speed) => Game.BlockEntity.RegisterFurnace(blockId, speed);
 
+    /// <summary>Makes an item throwable as a custom entity (see <see cref="ThrowableType"/>).</summary>
+    public void RegisterThrowable(string itemId, ThrowableType type) => ProjectileManager.RegisterThrowable(itemId, type);
+
     internal static byte[] SoundPacket(string name, double x, double y, double z, float volume, float pitch) =>
         new BedrockWriter().VarUInt32(86).String(name).BlockPos((int)(x * 8), (int)(y * 8), (int)(z * 8)) // position in 1/8 blocks
             .Float32(volume).Float32(pitch).VarInt32(0).Bool(false).Bool(false).Bool(false).ToArray(); // no loop, no handle
