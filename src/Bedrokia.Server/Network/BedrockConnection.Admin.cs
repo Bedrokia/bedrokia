@@ -115,8 +115,45 @@ public sealed partial class BedrockConnection
     {
         if (ActionFlags == _shownActionFlags)
             return;
+        var glidingChanged = ((ActionFlags ^ _shownActionFlags) & 1L << 32) != 0;
         _shownActionFlags = ActionFlags;
         _server.BroadcastInExcept(World, this, DataPacket());
+        if (glidingChanged)
+            Send(DataPacket()); // as PocketMine: the glider is told too, or its client keeps flying on its own
+    }
+
+    // PocketMine Player::toggleGlide: only with a working elytra (one durability point left is a broken one).
+    private bool CanGlide() => Inventory.Armour[1] is { Type.Name: "minecraft:elytra" } elytra
+                               && Game.Durability.Damage(elytra) < Game.Durability.Max(elytra) - 1 && GameMode != GameMode.Spectator;
+
+    private void StartGliding()
+    {
+        _gliding = CanGlide();
+        if (!_gliding)
+            Send(DataPacket()); // refused: the client stops gliding
+    }
+
+    private int _glideTicks;
+
+    // Every tick while gliding: the elytra wears one point a second (vanilla) and stops working at its last point;
+    // without one (taken off, broken) or back on the ground, the glide ends.
+    private void TickGliding()
+    {
+        if (!_gliding)
+            return;
+        if (!CanGlide() || _onGround && _glideTicks > 10)
+        {
+            _gliding = false;
+            _glideTicks = 0;
+            return;
+        }
+        if (++_glideTicks % 20 != 0 || GameMode == GameMode.Creative || Inventory.Armour[1] is not { } elytra)
+            return;
+        var nbt = elytra.Nbt is null ? new OrderedDictionary<string, object>() : new OrderedDictionary<string, object>(elytra.Nbt);
+        nbt["Damage"] = Math.Min(Game.Durability.Damage(elytra) + 1, Game.Durability.Max(elytra) - 1);
+        var worn = new Game.ItemStack(elytra.Type, elytra.Count, elytra.Meta, elytra.BlockRuntimeId, nbt);
+        Inventory.Armour[1] = worn;
+        Send(InventoryPackets.InventorySlot(InventoryPackets.WindowArmour, 1, worn));
     }
 
     /// <summary>Whether the other players see this player's name above the head (PocketMine setNameTagVisible).</summary>
