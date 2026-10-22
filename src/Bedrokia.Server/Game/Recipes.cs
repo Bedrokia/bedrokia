@@ -162,7 +162,7 @@ public static class Recipes
         var recipe = new Recipe(_nextAddedId++, inputs, [output], block);
         Added[recipe.NetworkId] = recipe;
         AddedShaped.String(RecipeId(recipe.NetworkId)).VarInt32(width).VarInt32(pattern.Length);
-        WriteRecipeBody(AddedShaped, recipe, 0, shapedSymmetry: true);
+        WriteRecipeBody(AddedShaped, AsSent(recipe), 0, shapedSymmetry: true);
         _addedShapedCount++;
         _packet = null;
     }
@@ -181,10 +181,14 @@ public static class Recipes
         var recipe = new Recipe(_nextAddedId++, inputs, [output], block);
         Added[recipe.NetworkId] = recipe;
         AddedShapeless.String(RecipeId(recipe.NetworkId));
-        WriteRecipeBody(AddedShapeless, recipe, 0, shapedSymmetry: false);
+        WriteRecipeBody(AddedShapeless, AsSent(recipe), 0, shapedSymmetry: false);
         _addedShapelessCount++;
         _packet = null;
     }
+
+    // The client shows a custom table's recipes only as "crafting_table" ones (it opens the table the server opened as a
+    // plain crafting table, its tags unused): they go out so, and the server checks the table (PlayerInventory Craft).
+    private static Recipe AsSent(Recipe recipe) => recipe.Block == "crafting_table" ? recipe : recipe with { Block = "crafting_table" };
 
     private static string RecipeId(uint networkId) => $"bedrokia:recipe_{networkId}";
 
