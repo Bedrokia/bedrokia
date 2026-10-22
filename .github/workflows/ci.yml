@@ -70,6 +70,7 @@ jobs:
         with:
           name: bedrokia-${{ matrix.rid }}
           path: out
+          retention-days: 1 # only this run's release job uses it (the binaries stay in the release); kept longer they filled the storage quota
 
   release:
     # Every push to main (and every v* tag) publishes the binaries, the Pterodactyl egg and the example plugins.
