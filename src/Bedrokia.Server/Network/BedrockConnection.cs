@@ -339,13 +339,17 @@ public sealed partial class BedrockConnection
     {
         var window = reader.Byte();
         var type = reader.Byte();
-        // The client confirming a close the server sent (within 2 s, or flagged so) is not answered: the client
-        // rejects an answer there ("should have sent the server initiated packet").
-        var confirming = window == _closingWindow && _server.CurrentTick - _closingTick <= 40;
-        _closingWindow = -1;
+        // The client confirming a close the server sent (the next close of that window within 2 s, or flagged so): the
+        // server already closed it, and maybe opened the next window since (a menu leading to another): nothing to do,
+        // and no answer (the client rejects one: "should have sent the server initiated packet").
+        var confirming = window == _closingWindow && _server.CurrentTick - _closingTick <= 40 || reader.Remaining > 0 && reader.Bool();
+        if (window == _closingWindow)
+            _closingWindow = -1;
+        if (confirming)
+            return;
         // Window 0xFF: the client closing its own crafting grid or creative screen, which it never opened through the
-        // server: no answer either (Dragonfly ContainerCloseHandler).
-        var acknowledging = confirming || window == 0xFF || reader.Remaining > 0 && reader.Bool();
+        // server: no answer (Dragonfly ContainerCloseHandler).
+        var acknowledging = window == 0xFF;
         _inventoryOpen = false;
         CloseContainer(notifyClient: false);
         foreach (var stack in Inventory.ReturnCraftingItems())
