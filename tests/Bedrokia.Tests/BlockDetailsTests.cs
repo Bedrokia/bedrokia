@@ -56,6 +56,24 @@ public class BlockDetailsTests
     }
 
     [Fact]
+    public void A_hidden_name_is_not_sent_at_all()
+    {
+        // A player's name shows even without the name flags: hiding it (hood) must send no name.
+        var shown = Bedrokia.Protocol.PlayerPackets.SetPlayerData(1, "Pseudo", showName: true);
+        var hidden = Bedrokia.Protocol.PlayerPackets.SetPlayerData(1, "Pseudo", showName: false);
+        Assert.True(shown.AsSpan().IndexOf("Pseudo"u8) >= 0);
+        Assert.True(hidden.AsSpan().IndexOf("Pseudo"u8) < 0);
+    }
+
+    [Theory]
+    [InlineData(0, 0f)]
+    [InlineData(20, 0.8f)] // full diamond, vanilla
+    [InlineData(26, 0.86f)] // stronger custom armour: 1 % a point above 20
+    [InlineData(60, 0.9f)] // never more than 90 %
+    public void Armour_reduces_as_vanilla_up_to_diamond_then_a_little_more(int points, float reduction) =>
+        Assert.Equal(reduction, Bedrokia.Server.Network.BedrockConnection.ArmourReduction(points), 3);
+
+    [Fact]
     public void A_sugar_cane_column_breaks_from_its_base()
     {
         var (server, _) = Arena();

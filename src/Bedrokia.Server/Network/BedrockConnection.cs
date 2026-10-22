@@ -718,7 +718,7 @@ public sealed partial class BedrockConnection
                 case InputFlagStopSprinting: _sprinting = false; break;
                 case InputFlagStartSwimming: _swimming = true; break;
                 case InputFlagStopSwimming: _swimming = false; break;
-                case InputFlagStartGliding: _gliding = Inventory.Armour[1]?.Type.Name == "minecraft:elytra"; break;
+                case InputFlagStartGliding: StartGliding(); break;
                 case InputFlagStopGliding: _gliding = false; break;
             }
         if (missedSwing) // PocketMine Player::missSwing: the others see the arm and hear the swing

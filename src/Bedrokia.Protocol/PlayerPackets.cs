@@ -60,7 +60,7 @@ public static class PlayerPackets
             Key(56, typeVec3); w.Vec3(0, seat, 0); // seat offset
         }
         Key(0, typeInt64); w.VarInt64(flags);
-        Key(4, typeString); w.String(name);
+        Key(4, typeString); w.String(showName ? name : ""); // a player's name shows even without the flags: hidden = no name
         Key(7, typeInt16); w.Int16(300); // air supply
         Key(38, typeFloat); w.Float32(1); // scale
         Key(42, typeInt16); w.Int16(300); // max air supply

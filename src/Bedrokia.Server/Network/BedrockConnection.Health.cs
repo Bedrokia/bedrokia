@@ -291,7 +291,7 @@ public sealed partial class BedrockConnection
         if (armour)
         {
             WearArmour(amount);
-            amount *= 1 - Math.Min(ArmourPoints(), 20) / 25f;
+            amount *= 1 - ArmourReduction(ArmourPoints());
             amount *= 1 - Math.Min(ProtectionPoints(), 20) * 0.04f;
         }
         _hurtTicks = 10;
@@ -310,6 +310,12 @@ public sealed partial class BedrockConnection
         if (Health <= 0 && !UseTotem(source))
             Die();
     }
+
+    /// <summary>
+    /// Share of the damage the armour takes: vanilla 4 % a point up to 20 (full diamond: 80 %), then 1 % per point
+    /// above (custom armours stronger than diamond), 90 % at most.
+    /// </summary>
+    internal static float ArmourReduction(int points) => Math.Min(0.9f, Math.Min(points, 20) / 25f + Math.Max(0, points - 20) * 0.01f);
 
     // Vanilla defence points of the worn armour (helmet, chestplate, leggings, boots).
     private int ArmourPoints() => Inventory.Armour.Slots.Sum(piece =>
@@ -519,6 +525,7 @@ public sealed partial class BedrockConnection
         TickPortal();
         TickEffects();
         TickBreaking();
+        TickGliding();
         SyncEquipment();
         SyncActionFlags();
         _positionHistory[(int)(_server.CurrentTick % PositionHistoryTicks)] = Position;

@@ -33,6 +33,12 @@ public sealed partial class BedrokiaServer
     /// <summary>Makes a custom block a furnace cooking <paramref name="speed"/> times as fast (see <see cref="Game.BlockEntity.RegisterFurnace"/>).</summary>
     public void RegisterFurnace(string blockId, float speed) => Game.BlockEntity.RegisterFurnace(blockId, speed);
 
+    /// <summary>
+    /// Makes the clients know a resource pack entity (e.g. "antafac:statue") so plugins can spawn it
+    /// (<see cref="NpcManager.SpawnEntity"/>). Call it when the plugin loads: the clients learn the list when they join.
+    /// </summary>
+    public void RegisterEntity(string identifier) => ActorIdentifiers.Register(identifier);
+
     /// <summary>Makes an item throwable as a custom entity (see <see cref="ThrowableType"/>).</summary>
     public void RegisterThrowable(string itemId, ThrowableType type) => ProjectileManager.RegisterThrowable(itemId, type);
 

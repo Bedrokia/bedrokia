@@ -38,10 +38,15 @@ public sealed class Npc
     public double Y { get; }
     public double Z { get; }
     public float Yaw { get; }
-    public string NameTag { get; }
 
-    /// <summary>The encoded skin (<see cref="PlayerPackets.CustomSkin"/>).</summary>
+    /// <summary>The encoded skin (<see cref="PlayerPackets.CustomSkin"/>); empty for an entity NPC.</summary>
     public byte[] Skin { get; }
+
+    /// <summary>The custom entity it is (<see cref="NpcManager.SpawnEntity"/>), or null for a player-like NPC.</summary>
+    public string? Identifier { get; internal init; }
+
+    /// <summary>The name above it; <see cref="NpcManager.Rename"/> changes it.</summary>
+    public string NameTag { get; internal set; }
 
     /// <summary>Free data for the plugin that spawned it (e.g. the crate type).</summary>
     public string Tag { get; set; } = "";
@@ -66,6 +71,27 @@ public sealed class NpcManager(BedrokiaServer server)
         _npcs.Add(npc);
         Sync(npc);
         return npc;
+    }
+
+    /// <summary>
+    /// Spawns a resource pack entity that stands still (a totem, a statue, a machine...): its look comes from the pack
+    /// (entity/&lt;name&gt;.entity.json), clicks fire <see cref="Events.NpcInteractEvent"/>. Main thread only.
+    /// </summary>
+    public Npc SpawnEntity(World world, double x, double y, double z, float yaw, string identifier, string nameTag = "")
+    {
+        ActorIdentifiers.Register(identifier);
+        var npc = new Npc(server.NextEntityId(), world, x, y, z, yaw, nameTag, []) { Identifier = identifier };
+        _npcs.Add(npc);
+        Sync(npc);
+        return npc;
+    }
+
+    /// <summary>Changes the name above an NPC (a gauge, a counter...).</summary>
+    public void Rename(Npc npc, string nameTag)
+    {
+        npc.NameTag = nameTag;
+        foreach (var viewer in npc.Viewers.Where(v => v.IsInGame))
+            viewer.Send(PlayerPackets.SetPlayerData(npc.EntityId, nameTag, nameTag != "", null, 0));
     }
 
     public void Remove(Npc npc)
@@ -128,6 +154,12 @@ public sealed class NpcManager(BedrokiaServer server)
         foreach (var player in server.Players)
             if (InRange(npc, player) && npc.Viewers.Add(player))
             {
+                if (npc.Identifier is { } identifier)
+                {
+                    player.Send(EntityPackets.AddActor(npc.EntityId, identifier, npc.X, npc.Y, npc.Z, npc.Yaw, 1, 1, 0, 1, 1, 0,
+                        nameTag: npc.NameTag, showName: npc.NameTag != ""));
+                    continue;
+                }
                 // The skin travels in the player list; the entry is removed again so the NPC is not in the tab list.
                 var info = new PlayerInfo(npc.Uuid, npc.EntityId, npc.NameTag, "", -1, npc.Skin); // -1: unknown device (0 is an invalid enum value for the client)
                 player.Send(PlayerPackets.PlayerListAdd([info]),
