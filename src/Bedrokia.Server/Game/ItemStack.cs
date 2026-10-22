@@ -50,7 +50,7 @@ public sealed class ItemStack
     {
         if (Items.ByName(name) is not { } type)
             return null;
-        return new ItemStack(type, count, 0, Blocks.ByName(type.Name)?.NetworkId ?? 0);
+        return new ItemStack(type, count, 0, Blocks.ByName(type.Name)?.NetworkId ?? 0, Items.DefaultNbtOf(type.Name));
     }
 
     /// <summary>Same item, new count; keeps the network id (same stack in the same slot).</summary>
