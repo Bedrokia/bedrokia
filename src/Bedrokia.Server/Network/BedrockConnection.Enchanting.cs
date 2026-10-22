@@ -68,7 +68,7 @@ public sealed partial class BedrockConnection : IEnchanter
                 if (worn.IsAir)
                 {
                     _server.PlaySound("random.anvil_break", x + 0.5, y + 0.5, z + 0.5, world);
-                    Send(InventoryPackets.ContainerClose(WindowEnchanting, ContainerTypeAnvil, serverInitiated: true));
+                    CloseWindowFromServer(WindowEnchanting, ContainerTypeAnvil);
                     return;
                 }
             }

@@ -339,9 +339,11 @@ public sealed partial class BedrockConnection
     {
         var window = reader.Byte();
         var type = reader.Byte();
-        // The client confirming a close the server asked for: no answer, the client rejects one ("should have sent
-        // the server initiated packet").
-        var acknowledging = reader.Remaining > 0 && reader.Bool();
+        // The client confirming a close the server sent (within 2 s, or flagged so) is not answered: the client
+        // rejects an answer there ("should have sent the server initiated packet").
+        var confirming = window == _closingWindow && _server.CurrentTick - _closingTick <= 40;
+        _closingWindow = -1;
+        var acknowledging = confirming || reader.Remaining > 0 && reader.Bool();
         _inventoryOpen = false;
         CloseContainer(notifyClient: false);
         foreach (var stack in Inventory.ReturnCraftingItems())
