@@ -52,7 +52,7 @@ public sealed partial class BedrockConnection
             var openEv = new ContainerOpenEvent(this, WindowContainer, type, new BlockPos(x, y, z), entity.Id, contents);
             if (!_server.Events.OnContainerOpen(openEv))
             {
-                Send(InventoryPackets.ContainerClose(WindowContainer, 0, serverInitiated: true));
+                CloseWindowFromServer(WindowContainer, 0);
                 return true;
             }
         }
@@ -108,6 +108,18 @@ public sealed partial class BedrockConnection
             _server.WatchFurnace(at, World);
     }
 
+    private int _closingWindow = -1;
+    private long _closingTick;
+
+    // The server closes a window: the client answers with a close of its own, which must not be answered again (it
+    // rejects that: "should have sent the server initiated packet").
+    private void CloseWindowFromServer(byte window, byte type)
+    {
+        _closingWindow = window;
+        _closingTick = _server.CurrentTick;
+        Send(InventoryPackets.ContainerClose(window, type, serverInitiated: true));
+    }
+
     /// <summary>The container was broken or the window was closed.</summary>
     internal void CloseContainer(bool notifyClient)
     {
@@ -117,7 +129,7 @@ public sealed partial class BedrockConnection
                 _server.Events.OnContainerClose(new ContainerCloseEvent(this, WindowContainer));
         }
         if (notifyClient && OpenContainerAt is not null)
-            Send(InventoryPackets.ContainerClose(WindowContainer, 0, serverInitiated: true));
+            CloseWindowFromServer(WindowContainer, 0);
         OpenContainerAt = null;
         Inventory.OpenContainer = null;
         if (_fakeFurnaceAt is var (fx, fy, fz))
