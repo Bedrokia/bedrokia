@@ -14,7 +14,7 @@ Bedrock 26.50 (protocole 2193) · NetherNet / WebRTC · Plugins en C# sans compi
 
 🇬🇧 [English](README.md) · 🇫🇷 **Français**
 
-[📖 Documentation](https://nexiumpvp2.github.io/bedrokia/) · [📝 Changelog](https://nexiumpvp2.github.io/bedrokia/projet/changelog/) · [⬇️ Téléchargements](https://github.com/Nexiumpvp2/bedrokia/releases/latest) · [🦖 Egg Pterodactyl](deploy/pterodactyl/egg-bedrokia.json) · [💬 Discord](https://discord.gg/C2VTugEMMa)
+[⬇️ Téléchargements](https://github.com/Nexiumpvp2/bedrokia/releases/latest) · [🦖 Egg Pterodactyl](deploy/pterodactyl/egg-bedrokia.json) · [💬 Discord](https://discord.gg/C2VTugEMMa)
 
 [![Discord](https://img.shields.io/badge/Discord-rejoindre-5865F2?logo=discord&logoColor=white)](https://discord.gg/C2VTugEMMa)
 
@@ -27,24 +27,6 @@ Bedrock 26.50 (protocole 2193) · NetherNet / WebRTC · Plugins en C# sans compi
 > La quasi-totalité du code de Bedrokia a été écrite par une intelligence artificielle (Claude, d'Anthropic, via
 > Claude Code), guidée, testée en jeu et corrigée par un humain. Le code peut contenir des erreurs que personne n'a
 > encore vues : testez avant de l'utiliser pour un vrai serveur, et signalez les bugs dans les *issues*.
-
-## 📖 Documentation
-
-Toute la doc est sur **[nexiumpvp2.github.io/bedrokia](https://nexiumpvp2.github.io/bedrokia/)**, mise à jour
-automatiquement à chaque version :
-
-| Page | Contenu |
-|---|---|
-| 🚀 [Installation](https://nexiumpvp2.github.io/bedrokia/demarrer/installation/) | Linux, Windows, Docker, systemd, ports à ouvrir |
-| 🦖 [Pterodactyl](https://nexiumpvp2.github.io/bedrokia/demarrer/pterodactyl/) | Installer l'egg et régler les ports |
-| ⚙️ [Configuration](https://nexiumpvp2.github.io/bedrokia/demarrer/configuration/) | `server.properties`, `world.properties`, fichiers du serveur |
-| 💬 [Commandes](https://nexiumpvp2.github.io/bedrokia/demarrer/commandes/) | Toutes les commandes et les permissions |
-| 🌍 [Mondes et packs](https://nexiumpvp2.github.io/bedrokia/demarrer/mondes/) | Mondes plats ou vides, import de mondes Bedrock, packs de ressources |
-| 🧩 [Créer un plugin](https://nexiumpvp2.github.io/bedrokia/plugins/) | `plugin.yml`, événements, commandes, config, API |
-| 🗡️ [Objets](https://nexiumpvp2.github.io/bedrokia/plugins/objets/) et 🧱 [blocs](https://nexiumpvp2.github.io/bedrokia/plugins/blocs/) personnalisés | Contenu moddé depuis un plugin |
-| 📝 [Changelog](https://nexiumpvp2.github.io/bedrokia/projet/changelog/) | Toutes les versions et leurs changements |
-| 🗺️ [Feuille de route](https://nexiumpvp2.github.io/bedrokia/projet/roadmap/) | Ce qui marche, ce qui manque |
-| 🤖 [Le projet et l'IA](https://nexiumpvp2.github.io/bedrokia/projet/ia/) | Pourquoi, comment, contribuer |
 
 ## 🤖 Pourquoi ce projet ?
 
@@ -74,7 +56,7 @@ lisible, c'est cool. 😎
 | **Plugins** | Plugins C# organisés comme Bukkit / PocketMine (`plugin.yml`, `src/`, `resources/config.yml`), **compilés automatiquement au démarrage**, événements annulables, commandes, titres, scoreboard, effets, particules |
 
 Ce qui manque encore : coffres doubles, panneaux éditables, enclume, tailleur de pierre, meule, Nether et End,
-redstone, grottes et structures. Voir la [feuille de route](https://nexiumpvp2.github.io/bedrokia/projet/roadmap/).
+redstone, grottes et structures.
 
 ## 🚀 Démarrage rapide
 
@@ -107,8 +89,7 @@ resource_packs/     packs de ressources (dossiers ou .mcpack)
 ## 🦖 Pterodactyl
 
 Un egg est fourni : [`deploy/pterodactyl/egg-bedrokia.json`](deploy/pterodactyl/egg-bedrokia.json).
-*Admin → Nests → Import Egg*, puis créer un serveur avec. Le serveur n'a besoin que de son port principal (TCP et UDP). Détails :
-[doc Pterodactyl](https://nexiumpvp2.github.io/bedrokia/demarrer/pterodactyl/).
+*Admin → Nests → Import Egg*, puis créer un serveur avec. Le serveur n'a besoin que de son port principal (TCP et UDP).
 
 ## 🧩 Plugins en 30 secondes
 
@@ -149,7 +130,6 @@ public sealed class Main : Plugin
 
 Redémarrer le serveur : le plugin est compilé et chargé, la console l'affiche (ou affiche l'erreur exacte avec le
 fichier et la ligne). Plugins d'exemple complets : [`examples/plugins`](examples/plugins).
-Documentation complète : [plugins](https://nexiumpvp2.github.io/bedrokia/plugins/).
 
 ## 🛠️ Compiler
 
@@ -176,7 +156,6 @@ src/Bedrokia.Cli/                 exécutable `bedrokia`
 tests/Bedrokia.Tests/             tests automatiques
 examples/plugins/                 plugins d'exemple
 deploy/                           service systemd, egg Pterodactyl
-docs/ docs-en/                    documentation en français et en anglais (Material for MkDocs, sur GitHub Pages)
 ```
 
 ## ⚖️ Licence et sources
