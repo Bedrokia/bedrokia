@@ -1457,10 +1457,34 @@ public sealed partial class BedrockConnection
             _server.Logger.Error($"Chunk generation failed: {task.Exception?.GetBaseException()}");
             return;
         }
-        var chunk = task.Result;
+        _readyChunks.Add((task.Result, world)); // sent by SendQueuedChunks, a few a tick
+    }
+
+    // Chunks ready to go. All of them at once (hundreds when joining) crashed the client: like PocketMine
+    // (chunk-sending.per-tick), a few a tick, nearest first.
+    private readonly List<(Chunk Chunk, World World)> _readyChunks = [];
+    private const int ChunksPerTick = 8;
+
+    /// <summary>Every tick: sends the nearest ready chunks, <see cref="ChunksPerTick"/> at most.</summary>
+    internal void SendQueuedChunks()
+    {
+        if (_readyChunks.Count == 0 || _stage == Stage.Closed)
+            return;
+        var (px, pz) = ChunkPosition;
+        _readyChunks.Sort((a, b) => Distance2(a.Chunk.X - px, a.Chunk.Z - pz).CompareTo(Distance2(b.Chunk.X - px, b.Chunk.Z - pz)));
+        var count = Math.Min(ChunksPerTick, _readyChunks.Count);
+        var batch = _readyChunks.GetRange(0, count);
+        _readyChunks.RemoveRange(0, count);
+        foreach (var (chunk, world) in batch)
+            if (world == World)
+                SendChunk(chunk, world);
+    }
+
+    private void SendChunk(Chunk chunk, World world)
+    {
         var key = World.ChunkKey(chunk.X, chunk.Z);
         if (!_requestedChunks.Remove(key))
-            return;
+            return; // out of sight meanwhile
         _sentChunks.Add(key);
         chunk.Viewers.Add(this);
         var (count, payload) = chunk.NetworkPayload(world.Dimension == 1);

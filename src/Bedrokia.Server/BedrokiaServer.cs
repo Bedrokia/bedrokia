@@ -772,6 +772,8 @@ public sealed partial class BedrokiaServer
             // 1. Game thread: each movement applied (events, chunks), its packet filed under its chunk.
             _movesByChunk.Clear();
             for (var i = 0; i < _connections.Count; i++)
+                _connections[i].SendQueuedChunks();
+            for (var i = 0; i < _connections.Count; i++)
             {
                 var conn = _connections[i];
                 if (conn.FlushTickMovement() is not { } packet)
