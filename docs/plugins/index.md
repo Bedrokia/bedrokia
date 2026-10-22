@@ -251,6 +251,27 @@ Les joueurs lancent boules de neige, œufs, perles de l'Ender et potions jetable
 `potion:` donne la potion d'une potion jetable) ou `Server.Projectiles.Spawn(...)` depuis n'importe quelle position.
 Événements : `ProjectileLaunch` (annulable, `Force` modifiable), `ProjectileHit`, `PotionSplash` (`Radius` modifiable).
 
+### Objets jetables moddés
+
+Un objet custom peut se lancer d'un clic droit et devenir une entité moddée (grenade, orbe, bombe collante…) :
+
+```csharp
+CustomItemBuilder.Create("antafac:grenade").WithIcon("grenade").WithThrowable().WithMaxStackSize(16).Register();
+Server.RegisterThrowable("antafac:grenade", new ThrowableType
+{
+    Entity = "antafac:grenade_entity", // son apparence vient du resource pack
+    Speed = 1.2f, Gravity = 0.05f, Damage = 2,
+    OnHit = hit => Server.Explode(hit.At.X, hit.At.Y, hit.At.Z, 2, hit.Projectile.World),
+});
+```
+
+L'entité est annoncée aux joueurs à leur connexion : appelez `RegisterThrowable` au chargement du plugin. Son
+apparence (modèle, texture, animations Blockbench) se déclare dans le resource pack, dans
+`entity/grenade_entity.entity.json` (`"identifier": "antafac:grenade_entity"`), avec sa géométrie, sa texture et ses
+animations. `WithThrowable()` fait balancer le bras au lancer. `Server.Projectiles.Spawn(..., type: grenade)` en lance
+une depuis n'importe où. Derrière Bedrokia Proxy, enregistrez les mêmes entités sur tous les serveurs : le client garde
+la liste du premier.
+
 ## PNJ
 
 `Server.Npcs` affiche des personnages immobiles avec leur propre skin (marchands, caisses...). Les joueurs les voient à
