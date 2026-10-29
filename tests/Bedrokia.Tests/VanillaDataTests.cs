@@ -124,6 +124,27 @@ public class SurvivalRulesTests
         Assert.Equal("minecraft:oak_planks", inventory.Main[0]!.Type.Name);
         Assert.Equal(1, inventory.Ui[28]!.Count);
     }
+
+    [Fact]
+    public void Crafting_in_the_3x3_grid_works_even_if_the_table_flag_was_cleared()
+    {
+        var planks = Enumerable.Range(1, Recipes.Count + 200).Select(id => Recipes.ByNetworkId((uint)id))
+            .First(r => r is { Block: "crafting_table" } && r.Outputs[0].Type.Name == "minecraft:oak_planks"
+                        && r.Inputs.Count(i => !i.Empty) == 1 && r.Inputs.Any(i => i.Matches(ItemStack.Of("oak_log")!)))!;
+        var inventory = new Bedrokia.Server.Network.PlayerInventory { CraftingTableOpen = false };
+        inventory.Ui[33] = ItemStack.Of("oak_log", 2);
+
+        var request = new BedrockWriter().VarUInt32(1).VarInt32(-1).VarUInt32(2)
+            .VarUInt32(10).Byte(12).VarUInt32(planks.NetworkId).Byte(1)
+            .VarUInt32(1).Byte(1).Byte(4).Byte(60).Bool(false).Byte(50).Int32(-1).Byte(28).Bool(false).Byte(0).Int32(0)
+            .VarUInt32(0).Int32(0).ToArray();
+        var reader = new BedrockReader(request);
+        var responses = inventory.HandleRequests(ref reader, Bedrokia.Server.Core.GameMode.Survival, _ => { });
+
+        Assert.Single(responses);
+        Assert.Equal(4, inventory.Main[0]!.Count);
+        Assert.Equal(1, inventory.Ui[33]!.Count);
+    }
 }
 
 public class InventoryMenuTests
