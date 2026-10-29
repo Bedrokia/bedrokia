@@ -86,6 +86,10 @@ public sealed class PlayerInventory
     /// <summary>The crafting tags of the open table ("crafting_table" for a vanilla one and the inventory grid).</summary>
     public IReadOnlyList<string> CraftingTags { get; set; } = ["crafting_table"];
 
+    // The 3x3 grid is in use when a table is open, or when it holds items: the open flag can be cleared by a close the
+    // client sends for another window while its table stays open, and its crafts then looked in the 2x2 grid.
+    private bool LargeGrid => CraftingTableOpen || Enumerable.Range(LargeGridOffset, LargeGridSize).Any(s => Ui[s] is not null);
+
     private const byte ContainerEnchantingInput = 22, ContainerEnchantingMaterial = 23;
     public const int EnchantInputSlot = 14, EnchantLapisSlot = 15;
 
@@ -575,7 +579,7 @@ public sealed class PlayerInventory
                         // Special recipes (fireworks, map copies): the result comes from what is in the grid.
                         if (Recipes.ByNetworkId(c.RecipeId) is null && Recipes.IsMulti(c.RecipeId))
                         {
-                            var (gridOffset, gridSize) = CraftingTableOpen ? (LargeGridOffset, LargeGridSize) : (SmallGridOffset, SmallGridSize);
+                            var (gridOffset, gridSize) = LargeGrid ? (LargeGridOffset, LargeGridSize) : (SmallGridOffset, SmallGridSize);
                             for (var time = 0; time < Math.Max(1, (int)c.Times); time++)
                             {
                                 var cells = Enumerable.Range(gridOffset, gridSize).Where(s => Ui[s] is not null).ToList();
@@ -601,7 +605,7 @@ public sealed class PlayerInventory
                         }
                         // Crafting table and inventory crafting
                         // The recipe must belong to the open table (a custom table's own recipes only there).
-                        if (Recipes.ByNetworkId(c.RecipeId) is not { } recipe || !CraftingTags.Contains(recipe.Block) || c.Times < 1)
+                        if (Recipes.ByNetworkId(c.RecipeId) is not { } recipe || !(LargeGrid ? CraftingTags : ["crafting_table"]).Contains(recipe.Block) || c.Times < 1)
                             throw new InvalidOperationException($"unknown crafting recipe {c.RecipeId}");
                         if (Player is not null)
                         {
@@ -616,7 +620,7 @@ public sealed class PlayerInventory
                                     throw new InvalidOperationException("craft cancelled");
                             }
                         }
-                        var (offset, size) = CraftingTableOpen ? (LargeGridOffset, LargeGridSize) : (SmallGridOffset, SmallGridSize);
+                        var (offset, size) = LargeGrid ? (LargeGridOffset, LargeGridSize) : (SmallGridOffset, SmallGridSize);
                         if (c.Auto)
                             ConsumeAuto(recipe, c.Times, offset, size);
                         else
@@ -686,8 +690,7 @@ public sealed class PlayerInventory
     public List<ItemStack> ReturnCraftingItems()
     {
         var leftover = new List<ItemStack>();
-        CraftingTableOpen = false;
-        CraftingTags = ["crafting_table"];
+        CraftingTableOpen = false; // the tags stay: those of the last table opened (each table sets them)
         Enchanter = null;
         AnvilUsed = null;
         Ui[CreatedOutputSlot] = null;
