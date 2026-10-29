@@ -38,6 +38,7 @@ internal static class EntityPackets
         Metadata(w, flags, width, height, colour, variant, scale, nameTag, displayNbt, leashHolder, showName);
         return w.VarUInt32(0).VarUInt32(0) // entity properties (ints, floats)
             .VarUInt32(0) // links
+            .Bool(false) // passenger of block (1.26.60)
             .ToArray();
     }
 
@@ -122,11 +123,11 @@ internal static class EntityPackets
 
     /// <summary>Animate: 1 = swing arm.</summary>
     public static byte[] Swing(long entityId) =>
-        new BedrockWriter().VarUInt32(AnimateId).Byte(1).VarUInt64((ulong)entityId).Float32(0).Bool(false).ToArray();
+        new BedrockWriter().VarUInt32(AnimateId).Byte(1).VarUInt64((ulong)entityId).Float32(0).Bool(false).Byte(0).ToArray(); // last: hand (1.26.60), main hand
 
     /// <summary>Critical hit stars around the entity hit (Animate action 4).</summary>
     public static byte[] CriticalHit(long entityId) =>
-        new BedrockWriter().VarUInt32(AnimateId).Byte(4).VarUInt64((ulong)entityId).Float32(0).Bool(false).ToArray();
+        new BedrockWriter().VarUInt32(AnimateId).Byte(4).VarUInt64((ulong)entityId).Float32(0).Bool(false).Byte(0).ToArray(); // last: hand (1.26.60), main hand
 
     /// <summary>Respawn state 1 (ready to spawn) at the eye position.</summary>
     public static byte[] Respawn(long entityId, float x, float y, float z) =>

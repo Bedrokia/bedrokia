@@ -10,7 +10,7 @@
 
 **Serveur Minecraft: Bedrock Edition écrit en C# / .NET 10**
 
-Bedrock 26.50 (protocole 2193) · NetherNet / WebRTC · Plugins en C# sans compilation · Apache-2.0
+Bedrock 26.60 (protocole 2225) · NetherNet / WebRTC · Plugins en C# sans compilation · Apache-2.0
 
 🇬🇧 [English](README.md) · 🇫🇷 **Français**
 
