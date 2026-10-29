@@ -248,9 +248,13 @@ public sealed class PlayerInventory
                 r.String();
                 r.Byte();
                 return new Unsupported("loom");
-            case 18:
+            case 18: // craft reserved (1.26.60)
+                r.String();
+                r.Byte();
+                return new Unsupported("reserved craft");
+            case 19:
                 return new Ignored();
-            case 19: // craft results (deprecated, informative only)
+            case 20: // craft results (deprecated, informative only)
             {
                 var items = r.VarUInt32();
                 for (var i = 0; i < items; i++)
