@@ -98,12 +98,16 @@ internal static class InventoryPackets
         return w.ToArray();
     }
 
-    public static byte[] AddItemActor(long entityId, ItemStack stack, float x, float y, float z, float vx, float vy, float vz)
+    public static byte[] AddItemActor(long entityId, ItemStack stack, float x, float y, float z, float vx, float vy, float vz, bool still = false)
     {
         var w = new BedrockWriter().VarUInt32(AddItemActorId).VarInt64(entityId).VarUInt64((ulong)entityId);
         ItemStack.WriteInstance(w, stack);
-        return w.Vec3(x, y, z).Vec3(vx, vy, vz)
-            .VarUInt32(0) // metadata
+        w.Vec3(x, y, z).Vec3(vx, vy, vz);
+        if (still) // flags (key 0, int64): no AI (16) and no gravity flag (49), so the client leaves it where it is
+            w.VarUInt32(1).VarUInt32(0).VarUInt32(7).Byte(7).VarInt64(1L << 16);
+        else
+            w.VarUInt32(0); // metadata
+        return w
             .Bool(false) // from fishing
             .ToArray();
     }

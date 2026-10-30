@@ -81,6 +81,8 @@ public sealed partial class BedrockConnection
             Send(other.AddPlayerPacket());
         foreach (var item in target.DroppedItems.All)
             Send(InventoryPackets.AddItemActor(item.EntityId, item.Stack, item.X, item.Y + DroppedItems.NetworkOffset, item.Z, item.Vx, item.Vy, item.Vz));
+        foreach (var (id, shown) in target.ShownItems)
+            Send(InventoryPackets.AddItemActor(id, shown.Stack, shown.X, shown.Y, shown.Z, 0, 0, 0, still: true));
     }
 
     // --- Nether portals ---

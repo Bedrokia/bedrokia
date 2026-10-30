@@ -55,6 +55,9 @@ public sealed class World
 
     // Per-world simulation, set up by the server when it opens the world.
     public DroppedItems DroppedItems { get; internal set; } = null!;
+
+    // Items shown still in the air (BedrokiaServer.ShowItem): sent to whoever joins or enters this world.
+    internal readonly Dictionary<long, (ItemStack Stack, float X, float Y, float Z)> ShownItems = [];
     public Fluids Fluids { get; internal set; } = null!;
     public Entities.FallingBlocks FallingBlocks { get; internal set; } = null!;
 
