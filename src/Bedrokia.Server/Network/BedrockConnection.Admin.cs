@@ -29,6 +29,9 @@ public sealed partial class BedrockConnection
 
     private bool _canFly, _god, _vanished;
 
+    // Items of BedrokiaServer.ShowItem this client has (it is near them).
+    internal readonly HashSet<long> SeenShownItems = [];
+
     /// <summary>The player may fly in survival and adventure (always true in creative).</summary>
     public bool CanFly
     {

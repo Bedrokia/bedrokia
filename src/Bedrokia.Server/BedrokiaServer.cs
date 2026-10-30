@@ -535,16 +535,19 @@ public sealed partial class BedrokiaServer
         BroadcastIn(world, InventoryPackets.AddItemActor(item.EntityId, stack, item.X, item.Y + DroppedItems.NetworkOffset, item.Z, item.Vx, item.Vy, item.Vz));
     }
 
+    /// <summary>Players see items shown with <see cref="ShowItem"/> within this many blocks.</summary>
+    public const float ShownItemRange = 10;
+
     /// <summary>
-    /// Shows <paramref name="stack"/> floating still at a position to everyone in <paramref name="world"/> (default: the
-    /// overworld), as a crystal chest shows what it holds. Nobody can pick it up. Returns its id, for <see cref="HideItem"/>.
+    /// Shows <paramref name="stack"/> floating still at a position in <paramref name="world"/> (default: the overworld),
+    /// as a crystal chest shows what it holds, to the players within <see cref="ShownItemRange"/> blocks. Nobody can pick
+    /// it up. Returns its id, for <see cref="HideItem"/>.
     /// </summary>
     public long ShowItem(ItemStack stack, float x, float y, float z, World? world = null)
     {
         world ??= World;
         var id = NextEntityId();
-        world.ShownItems[id] = (stack, x, y, z);
-        BroadcastIn(world, InventoryPackets.AddItemActor(id, stack, x, y, z, 0, 0, 0, still: true));
+        world.ShownItems[id] = (stack, x, y, z); // sent by TickShownItems to whoever is near
         return id;
     }
 
@@ -552,8 +555,39 @@ public sealed partial class BedrokiaServer
     public void HideItem(long id, World? world = null)
     {
         world ??= World;
-        if (world.ShownItems.Remove(id))
-            BroadcastIn(world, Packets.RemoveActor(id));
+        if (!world.ShownItems.Remove(id))
+            return;
+        foreach (var player in _players)
+            if (player.SeenShownItems.Remove(id))
+                player.Send(Packets.RemoveActor(id));
+    }
+
+    // Every half second: each player gets the shown items that came within range and loses those now too far.
+    private void TickShownItems()
+    {
+        if (CurrentTick % 10 != 0)
+            return;
+        const float range2 = ShownItemRange * ShownItemRange;
+        foreach (var player in _players)
+        {
+            if (!player.IsInGame)
+                continue;
+            var shownItems = player.World.ShownItems;
+            if (shownItems.Count == 0 && player.SeenShownItems.Count == 0)
+                continue;
+            var (px, py, pz) = player.Position;
+            static float Dist2(float px, float py, float pz, (ItemStack, float X, float Y, float Z) s) =>
+                (s.X - px) * (s.X - px) + (s.Y - py) * (s.Y - py) + (s.Z - pz) * (s.Z - pz);
+            foreach (var id in player.SeenShownItems.ToList())
+                if (!shownItems.TryGetValue(id, out var seen) || Dist2(px, py, pz, seen) > range2)
+                {
+                    player.SeenShownItems.Remove(id);
+                    player.Send(Packets.RemoveActor(id));
+                }
+            foreach (var (id, shown) in shownItems)
+                if (Dist2(px, py, pz, shown) <= range2 && player.SeenShownItems.Add(id))
+                    player.Send(InventoryPackets.AddItemActor(id, shown.Stack, shown.X, shown.Y, shown.Z, 0, 0, 0, still: true));
+        }
     }
 
     internal void TickDroppedItems(World world)
@@ -656,8 +690,11 @@ public sealed partial class BedrokiaServer
                     World.Time++;
 
                 using (Timings.Track(Timings.DroppedItems))
+                {
                     foreach (var world in Worlds)
                         TickDroppedItems(world);
+                    TickShownItems();
+                }
 
                 using (Timings.Track(Timings.Mobs))
                 {
@@ -969,8 +1006,6 @@ public sealed partial class BedrokiaServer
         BroadcastInExcept(connection.World, connection, connection.AddPlayerPacket());
         foreach (var item in connection.World.DroppedItems.All)
             connection.Send(InventoryPackets.AddItemActor(item.EntityId, item.Stack, item.X, item.Y, item.Z, item.Vx, item.Vy, item.Vz));
-        foreach (var (id, shown) in connection.World.ShownItems)
-            connection.Send(InventoryPackets.AddItemActor(id, shown.Stack, shown.X, shown.Y, shown.Z, 0, 0, 0, still: true));
         var joinEv = new PlayerJoinEvent(connection, $"§e{connection.Name} joined the game");
         Events.OnJoin(joinEv);
         if (!string.IsNullOrEmpty(joinEv.BroadcastMessage))
