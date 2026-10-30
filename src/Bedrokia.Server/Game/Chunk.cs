@@ -353,7 +353,7 @@ public sealed class Chunk
                 for (var i = 0; i < palette.Length; i++)
                 {
                     var key = r.ReadString();
-                    palette[i] = (Blocks.ByKey(key) ?? Blocks.Air).Id; // ponytail: unknown blocks become air
+                    palette[i] = (Blocks.ByKeyOrClosest(key) ?? Blocks.Air).Id; // ponytail: blocks that no longer exist become air
                 }
                 var section = new ushort[4096];
                 for (var i = 0; i < 4096; i++)
