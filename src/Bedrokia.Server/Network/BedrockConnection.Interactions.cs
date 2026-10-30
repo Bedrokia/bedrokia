@@ -46,12 +46,10 @@ public sealed partial class BedrockConnection
             return true;
         if (TryOpenContainer(block, x, y, z))
             return true;
-        // A custom crafting table: the client's crafting screen, for its own recipes.
+        // A custom crafting table: the vanilla crafting screen, for its own recipes too.
         if (Game.Custom.Blocks.CustomBlockRegistry.Get(name)?.Components.GetValueOrDefault(Game.Custom.Blocks.BlockComponentIds.CraftingTable) is Game.Custom.Blocks.CraftingTableBlockComponent table)
         {
-            Inventory.CraftingTableOpen = true;
-            Inventory.CraftingTags = table.CraftingTags;
-            Send(InventoryPackets.ContainerOpen(InventoryPackets.WindowCraftingTable, InventoryPackets.ContainerTypeWorkbench, x, y, z));
+            OpenCustomCraftingTable(table.CraftingTags);
             return true;
         }
         switch (name)
