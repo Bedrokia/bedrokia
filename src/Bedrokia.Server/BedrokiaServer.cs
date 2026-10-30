@@ -320,7 +320,10 @@ public sealed partial class BedrokiaServer
             }
 
             foreach (var connection in _connections.ToList())
+            {
                 connection.Disconnect("Server closed.", DisconnectReason.Shutdown);
+                OnConnectionClosed(connection, "Server closed."); // saved and PlayerQuit now: the closes arrive after the last tick
+            }
             Plugins.DisableAll();
             SaveWorld(wait: true);
             await Task.Delay(600); // let NetherNet sessions flush their Disconnect packet
