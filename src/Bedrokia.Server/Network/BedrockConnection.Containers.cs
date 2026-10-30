@@ -71,8 +71,8 @@ public sealed partial class BedrockConnection
         return true;
     }
 
-    // Where the furnace window of a custom furnace is anchored for the client (a vanilla furnace only it sees).
-    private (int X, int Y, int Z)? _fakeFurnaceAt;
+    // Where the window of a custom furnace or crafting table is anchored for the client (a vanilla block only it sees).
+    private (int X, int Y, int Z)? _fakeBlockAt;
 
     // The client opens a furnace window only on a furnace: one is shown under the player, as the menus do with chests;
     // the window works on the custom block's own furnace (OpenContainerAt), which cooks in TickFurnaces.
@@ -80,19 +80,39 @@ public sealed partial class BedrockConnection
     {
         CloseContainer(notifyClient: true);
         var fake = ((int)Math.Floor(Position.X), (int)Math.Floor(Position.Y - EyeHeight) - 2, (int)Math.Floor(Position.Z));
-        _fakeFurnaceAt = fake;
+        _fakeBlockAt = fake;
         Send(Packets.UpdateBlock(fake.Item1, fake.Item2, fake.Item3, Blocks.ByName("furnace")!.NetworkId),
             BlockEntity.DataPacket(fake.Item1, fake.Item2, fake.Item3, entity));
         var world = World;
         _server.Schedule(3, () => // the client needs the furnace before it accepts the window
         {
-            if (_fakeFurnaceAt != fake || !IsInGame || World != world || world.GetBlockEntity(x, y, z) != entity)
+            if (_fakeBlockAt != fake || !IsInGame || World != world || world.GetBlockEntity(x, y, z) != entity)
                 return;
             Inventory.OpenContainer = (entity.Items!, entity.Id);
             OpenContainerAt = (x, y, z);
             Send(InventoryPackets.ContainerOpen(WindowContainer, 2, fake.Item1, fake.Item2, fake.Item3),
                 InventoryPackets.InventoryContent(WindowContainer, entity.Items!));
             _server.WatchFurnace((x, y, z), world);
+        });
+    }
+
+    // A custom crafting table: the client computes no result in its own screen for a custom table (tested with 1.26.60),
+    // so it gets the vanilla crafting screen on a vanilla table only it sees, under the player; the recipes go out as
+    // "crafting_table" ones and the server checks the custom table's tags (PlayerInventory Craft).
+    private void OpenCustomCraftingTable(IReadOnlyList<string> craftingTags)
+    {
+        CloseContainer(notifyClient: true);
+        var fake = ((int)Math.Floor(Position.X), (int)Math.Floor(Position.Y - EyeHeight) - 2, (int)Math.Floor(Position.Z));
+        _fakeBlockAt = fake;
+        Send(Packets.UpdateBlock(fake.Item1, fake.Item2, fake.Item3, Blocks.ByName("crafting_table")!.NetworkId));
+        var world = World;
+        _server.Schedule(3, () => // the client needs the table before it accepts the window
+        {
+            if (_fakeBlockAt != fake || !IsInGame || World != world)
+                return;
+            Inventory.CraftingTableOpen = true;
+            Inventory.CraftingTags = craftingTags;
+            Send(InventoryPackets.ContainerOpen(InventoryPackets.WindowCraftingTable, InventoryPackets.ContainerTypeWorkbench, fake.Item1, fake.Item2, fake.Item3));
         });
     }
 
@@ -132,9 +152,9 @@ public sealed partial class BedrockConnection
             CloseWindowFromServer(WindowContainer, 0);
         OpenContainerAt = null;
         Inventory.OpenContainer = null;
-        if (_fakeFurnaceAt is var (fx, fy, fz))
+        if (_fakeBlockAt is var (fx, fy, fz))
         {
-            _fakeFurnaceAt = null;
+            _fakeBlockAt = null;
             if (World.GetBlock(fx, fy, fz) is { } real) // the real block comes back where the fake furnace was
                 Send(Packets.UpdateBlock(fx, fy, fz, real.NetworkId));
         }
