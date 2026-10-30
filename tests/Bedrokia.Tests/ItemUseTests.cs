@@ -55,6 +55,27 @@ public class ItemUseTests
         return (server, player);
     }
 
+    [Fact]
+    public void Shown_items_reach_only_the_players_within_range()
+    {
+        var (server, player) = Arena();
+        var near = server.ShowItem(ItemStack.Of("diamond")!, 8, Floor, 6);
+        var far = server.ShowItem(ItemStack.Of("emerald")!, 8, Floor, 2 + BedrokiaServer.ShownItemRange + 5);
+        for (var i = 0; i < 10; i++)
+            server.Tick();
+        Assert.Contains(near, player.SeenShownItems);
+        Assert.DoesNotContain(far, player.SeenShownItems);
+
+        player.Position = (8f, Floor + BedrockConnection.EyeHeight, 2 + BedrokiaServer.ShownItemRange + 5);
+        for (var i = 0; i < 10; i++)
+            server.Tick();
+        Assert.Contains(far, player.SeenShownItems);
+        Assert.DoesNotContain(near, player.SeenShownItems);
+
+        server.HideItem(far);
+        Assert.Empty(player.SeenShownItems);
+    }
+
     private static void Hold(BedrockConnection player, string item, int count = 1) =>
         player.Inventory.Main[player.Inventory.SelectedSlot] = ItemStack.Of(item, count);
 
