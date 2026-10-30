@@ -161,6 +161,21 @@ public static class Blocks
 
     public static BlockType? ByKey(string key) => ByKeyMap.GetValueOrDefault(key);
 
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, BlockType?> Closest = new();
+
+    /// <summary>
+    /// A saved state: exact, or when its block gained states since (a plugin added a property to a custom block), the
+    /// first state of that block keeping every saved value, else its default state. Null: the block no longer exists.
+    /// </summary>
+    public static BlockType? ByKeyOrClosest(string key) => ByKey(key) ?? Closest.GetOrAdd(key, static key =>
+    {
+        var open = key.IndexOf('[');
+        var name = open < 0 ? key : key[..open];
+        var saved = open < 0 ? [] : key[(open + 1)..^1].Split(',');
+        return All.FirstOrDefault(b => b.Name == name && saved.All(s => b.States.Any(st => $"{st.Key}={st.Value}" == s)))
+               ?? FirstByName.GetValueOrDefault(name);
+    });
+
     public static BlockType? ByNetworkId(uint networkId) => ByNetworkIdMap.GetValueOrDefault(networkId);
 
     /// <summary>First registered state of a block (its usual default), e.g. "stone" or "minecraft:stone".</summary>

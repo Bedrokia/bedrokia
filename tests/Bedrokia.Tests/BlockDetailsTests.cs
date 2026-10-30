@@ -56,6 +56,17 @@ public class BlockDetailsTests
     }
 
     [Fact]
+    public void A_saved_custom_block_keeps_its_states_when_its_block_gains_one()
+    {
+        foreach (var open in new object[] { 0, 1 })
+            Blocks.RegisterCustom("test:lidded", new OrderedDictionary<string, object> { ["test:rotation"] = 3, ["test:open"] = open });
+        var loaded = Blocks.ByKeyOrClosest("test:lidded[test:rotation=3]"); // saved before "test:open" existed
+        Assert.Equal(3, loaded!.States["test:rotation"]);
+        Assert.Equal(0, loaded.States["test:open"]);
+        Assert.Null(Blocks.ByKeyOrClosest("test:gone[test:rotation=3]"));
+    }
+
+    [Fact]
     public void A_hidden_name_is_not_sent_at_all()
     {
         // A player's name shows even without the name flags: hiding it (hood) must send no name.

@@ -548,6 +548,7 @@ public sealed partial class BedrokiaServer
         world ??= World;
         var id = NextEntityId();
         world.ShownItems[id] = (stack, x, y, z); // sent by TickShownItems to whoever is near
+        Logger.Debug($"Shown item #{id}: {stack.Type.Name} x{stack.Count} at ({x:0.##}, {y:0.##}, {z:0.##}).");
         return id;
     }
 
@@ -557,6 +558,7 @@ public sealed partial class BedrokiaServer
         world ??= World;
         if (!world.ShownItems.Remove(id))
             return;
+        Logger.Debug($"Hidden item #{id}.");
         foreach (var player in _players)
             if (player.SeenShownItems.Remove(id))
                 player.Send(Packets.RemoveActor(id));
