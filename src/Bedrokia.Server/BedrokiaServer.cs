@@ -535,6 +535,27 @@ public sealed partial class BedrokiaServer
         BroadcastIn(world, InventoryPackets.AddItemActor(item.EntityId, stack, item.X, item.Y + DroppedItems.NetworkOffset, item.Z, item.Vx, item.Vy, item.Vz));
     }
 
+    /// <summary>
+    /// Shows <paramref name="stack"/> floating still at a position to everyone in <paramref name="world"/> (default: the
+    /// overworld), as a crystal chest shows what it holds. Nobody can pick it up. Returns its id, for <see cref="HideItem"/>.
+    /// </summary>
+    public long ShowItem(ItemStack stack, float x, float y, float z, World? world = null)
+    {
+        world ??= World;
+        var id = NextEntityId();
+        world.ShownItems[id] = (stack, x, y, z);
+        BroadcastIn(world, InventoryPackets.AddItemActor(id, stack, x, y, z, 0, 0, 0, still: true));
+        return id;
+    }
+
+    /// <summary>Removes an item shown with <see cref="ShowItem"/>.</summary>
+    public void HideItem(long id, World? world = null)
+    {
+        world ??= World;
+        if (world.ShownItems.Remove(id))
+            BroadcastIn(world, Packets.RemoveActor(id));
+    }
+
     internal void TickDroppedItems(World world)
     {
         var items = world.DroppedItems;
@@ -948,6 +969,8 @@ public sealed partial class BedrokiaServer
         BroadcastInExcept(connection.World, connection, connection.AddPlayerPacket());
         foreach (var item in connection.World.DroppedItems.All)
             connection.Send(InventoryPackets.AddItemActor(item.EntityId, item.Stack, item.X, item.Y, item.Z, item.Vx, item.Vy, item.Vz));
+        foreach (var (id, shown) in connection.World.ShownItems)
+            connection.Send(InventoryPackets.AddItemActor(id, shown.Stack, shown.X, shown.Y, shown.Z, 0, 0, 0, still: true));
         var joinEv = new PlayerJoinEvent(connection, $"§e{connection.Name} joined the game");
         Events.OnJoin(joinEv);
         if (!string.IsNullOrEmpty(joinEv.BroadcastMessage))
