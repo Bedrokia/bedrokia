@@ -61,6 +61,12 @@ public sealed partial class BedrokiaServer
     /// <summary>Mobs of the overworld (spawning, AI, combat).</summary>
     public MobManager Mobs { get; }
 
+    /// <summary>Boats and minecarts, and players riding them or saddled mobs.</summary>
+    public VehicleManager Vehicles { get; }
+
+    /// <summary>Filled maps: their pixels, drawn from the world.</summary>
+    public MapManager Maps { get; }
+
     /// <summary>Non-player characters spawned by plugins.</summary>
     public NpcManager Npcs { get; }
 
@@ -95,6 +101,8 @@ public sealed partial class BedrokiaServer
         world.DroppedItems = new DroppedItems(world);
         world.Fluids = new Fluids(this, world);
         world.FallingBlocks = new FallingBlocks(this, world);
+        Mobs.Load(world); // its animals appear when their chunks are loaded
+        Vehicles.Load(world);
     }
 
     internal long NextEntityId() => Interlocked.Increment(ref _nextEntityId);
@@ -119,11 +127,13 @@ public sealed partial class BedrokiaServer
             logger.Error(permissionsError);
         Commands = new CommandManager(logger);
         Mobs = new MobManager(this);
+        Vehicles = new VehicleManager(this);
+        Maps = new MapManager(this);
         Npcs = new NpcManager(this);
         Projectiles = new ProjectileManager(this);
         CustomEntities = new CustomEntityManager(this);
-        Events = new ServerEvents(logger);
-        Scheduler = new ServerScheduler(logger);
+        Events = new ServerEvents(logger) { Timings = Timings };
+        Scheduler = new ServerScheduler(logger) { Timings = Timings };
         Plugins = new PluginManager(this);
         RegisterBuiltinCommands();
     }
@@ -151,7 +161,18 @@ public sealed partial class BedrokiaServer
     private int _tickThread;
 
     /// <summary>True on the game thread while a tick runs (other threads see false: what they send is not buffered).</summary>
-    public bool IsTicking => _ticking && Environment.CurrentManagedThreadId == _tickThread;
+    public bool IsTicking => _ticking && (Environment.CurrentManagedThreadId == _tickThread || _tickWorker);
+
+    // A worker of the tick's parallel network steps, each on its own player: it counts as the game thread for that player
+    // (sends are buffered, flushes happen). Without it a worker saw IsTicking false: from 4 players nothing was flushed
+    // and the movements went out unbatched, ahead of what was queued before.
+    [ThreadStatic] private static bool _tickWorker;
+
+    private static void AsTickWorker(Action action)
+    {
+        _tickWorker = true;
+        try { action(); } finally { _tickWorker = false; }
+    }
 
     /// <summary>The overworld; available once <see cref="Started"/> has completed.</summary>
     public World World { get; private set; } = null!;
@@ -189,6 +210,31 @@ public sealed partial class BedrokiaServer
     /// <summary>NetherNet signaling address, available after <see cref="Started"/> when NetherNet is enabled.</summary>
     public IPEndPoint? NetherNetEndPoint => _netherNet?.LocalEndPoint;
 
+    /// <summary>
+    /// Like vanilla's "preparing spawn area": the chunks within view-distance of the spawn are loaded (or generated)
+    /// before players can join, and stay loaded: the first players do not wait for them nor see holes.
+    /// </summary>
+    private async Task PrepareSpawnAsync()
+    {
+        var started = Stopwatch.GetTimestamp();
+        var (sx, _, sz) = World.Spawn;
+        var chunks = Preload(World, sx >> 4, sz >> 4, Config.ViewDistance);
+        await Task.WhenAll(chunks);
+        Logger.Info($"Spawn area ready: {chunks.Count} chunks in {Stopwatch.GetElapsedTime(started).TotalSeconds:F1} s.");
+    }
+
+    /// <summary>Starts loading the chunks within <paramref name="radius"/> of a chunk, nearest first.</summary>
+    internal List<Task<Chunk>> Preload(World world, int centerX, int centerZ, int radius)
+    {
+        var chunks = new List<(int X, int Z, int D)>();
+        for (var dx = -radius; dx <= radius; dx++)
+        for (var dz = -radius; dz <= radius; dz++)
+            if (dx * dx + dz * dz <= radius * radius)
+                chunks.Add((centerX + dx, centerZ + dz, dx * dx + dz * dz));
+        chunks.Sort((a, b) => a.D.CompareTo(b.D));
+        return chunks.ConvertAll(c => world.GetChunkAsync(c.X, c.Z));
+    }
+
     /// <summary>Runs until <see cref="Stop"/> is called.</summary>
     /// <exception cref="System.Net.Sockets.SocketException">The port cannot be bound.</exception>
     public async Task RunAsync()
@@ -210,13 +256,15 @@ public sealed partial class BedrokiaServer
             Attach(Nether);
             Plugins.LoadAll(PluginsDirectory, PluginDataDirectory);
             Logger.Info($"World '{Config.LevelName}': seed {World.Generator.Seed}, spawn {World.Spawn}.");
+            if (Config.Port != 0) // not for the tests' in-memory servers
+                await PrepareSpawnAsync();
             _netherNet = new NetherNetListener(new IPEndPoint(IPAddress.Any, Config.Port),
                     ServerIdentityKey.LoadOrCreate(Path.Combine("data", "nethernet-identity.pem")),
                     VerifyNetherNetToken, allowAnonymous: !Config.OnlineMode, Config.ParseWebRtcPorts(),
                     sharedUdpPort: Config.SharesWebRtcPort ? Config.Port : null)
             {
                 // Pterodactyl gives 0.0.0.0 for an allocation on every address: not one players can reach.
-                PublicAddress = IPAddress.TryParse(Config.PublicIp, out var publicIp) && !publicIp.Equals(IPAddress.Any) ? publicIp : null,
+                PublicAddress = IPAddress.TryParse(Config.PublicIp, out var publicIp) && !publicIp.Equals(IPAddress.Any) ? publicIp : DetectPublicIp(),
             };
         }
         catch (Exception e)
@@ -244,8 +292,25 @@ public sealed partial class BedrokiaServer
             using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1.0 / TicksPerSecond));
             try
             {
-                while (await timer.WaitForNextTickAsync(_stop.Token))
+                while (true)
                 {
+                    var nextTick = timer.WaitForNextTickAsync(_stop.Token).AsTask();
+                    while (!nextTick.IsCompleted)
+                    {
+                        var packets = _mainThread.Reader.WaitToReadAsync(_stop.Token).AsTask();
+                        if (await Task.WhenAny(nextTick, packets) != packets || !await packets)
+                            break;
+                        try
+                        {
+                            HandleBetweenTicks();
+                        }
+                        catch (Exception ex)
+                        {
+                            Logger.Error($"Unhandled error between ticks: {ex}");
+                        }
+                    }
+                    if (!await nextTick)
+                        break;
                     try
                     {
                         Tick();
@@ -261,9 +326,12 @@ public sealed partial class BedrokiaServer
             }
 
             foreach (var connection in _connections.ToList())
+            {
                 connection.Disconnect("Server closed.", DisconnectReason.Shutdown);
+                OnConnectionClosed(connection, "Server closed."); // saved and PlayerQuit now: the closes arrive after the last tick
+            }
             Plugins.DisableAll();
-            SaveWorld();
+            SaveWorld(wait: true);
             await Task.Delay(600); // let NetherNet sessions flush their Disconnect packet
             _networkStop.Cancel();
             await signaling;
@@ -306,92 +374,81 @@ public sealed partial class BedrokiaServer
 
     public void BroadcastMessage(string message) => Broadcast(Packets.Text(TextType.Raw, message), StripFormatting(message));
 
-    /// <summary>Sends <paramref name="packet"/> to every player in game (encoded once for all targets).</summary>
+    public void BroadcastTip(string text) => Broadcast(Packets.Text(TextType.Tip, text));
+
+    public void BroadcastPopup(string text) => Broadcast(Packets.Text(TextType.Popup, text));
+
+    public void BroadcastActionBar(string text) => ForEachInGame(p => p.SendActionBar(text));
+
+    public void BroadcastTitle(string title, string subtitle = "", int fadeIn = 10, int stay = 60, int fadeOut = 20) =>
+        ForEachInGame(p => p.SendTitle(title, subtitle, fadeIn, stay, fadeOut));
+
+    private void ForEachInGame(Action<BedrockConnection> action)
+    {
+        foreach (var player in _players)
+            if (player.IsInGame)
+                action(player);
+    }
+
+    // Broadcasts go into each player's batch of the tick (one compressed message per player per tick). Encoding a
+    // packet once and sending it on its own to everyone flushed each player's batch and multiplied the messages.
+
+    /// <summary>Sends <paramref name="packet"/> to every player in game.</summary>
     public void Broadcast(byte[] packet)
     {
-        var targets = _players.Where(p => p.IsInGame).ToList();
-        if (targets.Count == 0)
-            return;
-        if (targets.Count == 1)
-        {
-            targets[0].Send(packet);
-            return;
-        }
-        var preEncoded = targets[0].Codec.Encode(packet);
-        foreach (var player in targets)
-            player.SendRawBatch(preEncoded);
+        foreach (var player in _players)
+            if (player.IsInGame)
+                player.Send(packet);
     }
 
     public void BroadcastExcept(BedrockConnection except, byte[] packet)
     {
-        var targets = _players.Where(p => p.IsInGame && p != except).ToList();
-        if (targets.Count == 0)
-            return;
-        if (targets.Count == 1)
-        {
-            targets[0].Send(packet);
-            return;
-        }
-        var preEncoded = targets[0].Codec.Encode(packet);
-        foreach (var player in targets)
-            player.SendRawBatch(preEncoded);
+        foreach (var player in _players)
+            if (player.IsInGame && player != except)
+                player.Send(packet);
     }
 
     /// <summary>Sends <paramref name="packet"/> to the players in <paramref name="world"/> only (blocks, entities, effects).</summary>
     public void BroadcastIn(World world, byte[] packet)
     {
-        var targets = _players.Where(p => p.IsInGame && p.World == world).ToList();
-        if (targets.Count == 0)
-            return;
-        if (targets.Count == 1)
-        {
-            targets[0].Send(packet);
-            return;
-        }
-        var preEncoded = targets[0].Codec.Encode(packet);
-        foreach (var player in targets)
-            player.SendRawBatch(preEncoded);
+        foreach (var player in _players)
+            if (player.IsInGame && player.World == world)
+                player.Send(packet);
     }
 
     public void BroadcastInExcept(World world, BedrockConnection except, byte[] packet)
     {
-        var targets = _players.Where(p => p.IsInGame && p != except && p.World == world).ToList();
-        if (targets.Count == 0)
-            return;
-        if (targets.Count == 1)
-        {
-            targets[0].Send(packet);
-            return;
-        }
-        var preEncoded = targets[0].Codec.Encode(packet);
-        foreach (var player in targets)
-            player.SendRawBatch(preEncoded);
+        foreach (var player in _players)
+            if (player.IsInGame && player != except && player.World == world)
+                player.Send(packet);
     }
 
     /// <summary>Sends <paramref name="packet"/> to viewers of chunk (chunkX, chunkZ), or world-wide if chunk not cached.</summary>
     public void BroadcastInChunk(World world, int chunkX, int chunkZ, byte[] packet)
     {
-        var chunk = world.LoadedChunk(chunkX, chunkZ);
-        if (chunk is not null)
+        if (world.LoadedChunk(chunkX, chunkZ) is not { } chunk)
         {
-            if (chunk.Viewers.Count == 0)
-                return;
-            if (chunk.Viewers.Count == 1)
-            {
-                var single = chunk.Viewers.First();
-                if (single.IsInGame)
-                    single.Send(packet);
-                return;
-            }
-            var preEncoded = chunk.Viewers.First().Codec.Encode(packet);
-            foreach (var viewer in chunk.Viewers)
-                if (viewer.IsInGame)
-                    viewer.SendRawBatch(preEncoded);
+            BroadcastIn(world, packet);
             return;
         }
-        BroadcastIn(world, packet);
+        foreach (var viewer in chunk.Viewers)
+            if (viewer.IsInGame)
+                viewer.Send(packet);
     }
 
+
+    /// <summary>Like <see cref="BroadcastInChunk"/>, without <paramref name="except"/>.</summary>
+    public void BroadcastInChunkExcept(World world, int chunkX, int chunkZ, BedrockConnection except, byte[] packet)
+    {
+        if (world?.LoadedChunk(chunkX, chunkZ) is not { } chunk)
+        {
+            BroadcastInExcept(world!, except, packet);
+            return;
+        }
+        foreach (var viewer in chunk.Viewers)
+            if (viewer.IsInGame && viewer != except)
+                viewer.Send(packet);
+    }
 
     // "§e" colour codes are for the game, not for the console.
     private static string StripFormatting(string text) => System.Text.RegularExpressions.Regex.Replace(text, "§.", "");
@@ -412,11 +469,17 @@ public sealed partial class BedrokiaServer
         }
     }
 
-    private void SaveWorld()
+    private void SaveWorld(bool wait = false)
     {
         try
         {
-            var saved = Worlds.Sum(w => w.Save());
+            var saved = Worlds.Sum(w => w.Save(wait));
+            Maps.Save();
+            foreach (var world in Worlds)
+            {
+                Mobs.Save(world);
+                Vehicles.Save(world);
+            }
             foreach (var player in _players.Where(p => p.IsInGame))
                 player.Snapshot().Write(player.Info!.Uuid);
             if (saved > 0)
@@ -482,74 +545,139 @@ public sealed partial class BedrokiaServer
         BroadcastIn(world, InventoryPackets.AddItemActor(item.EntityId, stack, item.X, item.Y + DroppedItems.NetworkOffset, item.Z, item.Vx, item.Vy, item.Vz));
     }
 
+    /// <summary>Players see items shown with <see cref="ShowItem"/> within this many blocks.</summary>
+    public const float ShownItemRange = 10;
+
+    /// <summary>
+    /// Shows <paramref name="stack"/> floating still at a position in <paramref name="world"/> (default: the overworld),
+    /// as a crystal chest shows what it holds, to the players within <see cref="ShownItemRange"/> blocks. Nobody can pick
+    /// it up. Returns its id, for <see cref="HideItem"/>.
+    /// </summary>
+    public long ShowItem(ItemStack stack, float x, float y, float z, World? world = null)
+    {
+        world ??= World;
+        var id = NextEntityId();
+        world.ShownItems[id] = (stack, x, y, z); // sent by TickShownItems to whoever is near
+        Logger.Debug($"Shown item #{id}: {stack.Type.Name} x{stack.Count} at ({x:0.##}, {y:0.##}, {z:0.##}).");
+        return id;
+    }
+
+    /// <summary>Removes an item shown with <see cref="ShowItem"/>.</summary>
+    public void HideItem(long id, World? world = null)
+    {
+        world ??= World;
+        if (!world.ShownItems.Remove(id))
+            return;
+        Logger.Debug($"Hidden item #{id}.");
+        foreach (var player in _players)
+            if (player.SeenShownItems.Remove(id))
+                player.Send(Packets.RemoveActor(id));
+    }
+
+    // Every half second: each player gets the shown items that came within range and loses those now too far.
+    private void TickShownItems()
+    {
+        if (CurrentTick % 10 != 0)
+            return;
+        const float range2 = ShownItemRange * ShownItemRange;
+        foreach (var player in _players)
+        {
+            if (!player.IsInGame)
+                continue;
+            var shownItems = player.World.ShownItems;
+            if (shownItems.Count == 0 && player.SeenShownItems.Count == 0)
+                continue;
+            var (px, py, pz) = player.Position;
+            static float Dist2(float px, float py, float pz, (ItemStack, float X, float Y, float Z) s) =>
+                (s.X - px) * (s.X - px) + (s.Y - py) * (s.Y - py) + (s.Z - pz) * (s.Z - pz);
+            foreach (var id in player.SeenShownItems.ToList())
+                if (!shownItems.TryGetValue(id, out var seen) || Dist2(px, py, pz, seen) > range2)
+                {
+                    player.SeenShownItems.Remove(id);
+                    player.Send(Packets.RemoveActor(id));
+                }
+            foreach (var (id, shown) in shownItems)
+                if (Dist2(px, py, pz, shown) <= range2 && player.SeenShownItems.Add(id))
+                    player.Send(InventoryPackets.AddItemActor(id, shown.Stack, shown.X, shown.Y, shown.Z, 0, 0, 0, still: true));
+        }
+    }
+
     internal void TickDroppedItems(World world)
     {
         var items = world.DroppedItems;
         if (items is null)
             return;
         items.Tick();
-        // Only what changed, with the item's network offset (Dragonfly Movement.Send / ViewEntityMovement).
+        // Moving items: their position every other tick to the players who see their chunk (the client simulates
+        // them in between); at rest: once, with a zero motion. A motion every tick made them jitter.
+        var everyOther = CurrentTick % 2 == 0;
         foreach (var item in items.All)
         {
-            var position = (item.X, item.Y, item.Z);
+            var resting = item.OnGround && item.Vx == 0 && item.Vz == 0;
             var (sx, sy, sz) = item.SentPosition;
-            if (float.IsNaN(sx) || MathF.Abs(position.X - sx) + MathF.Abs(position.Y - sy) + MathF.Abs(position.Z - sz) > 0.001f)
+            var moved = float.IsNaN(sx) || MathF.Abs(item.X - sx) + MathF.Abs(item.Y - sy) + MathF.Abs(item.Z - sz) > 0.001f;
+            if (!moved || !resting && !everyOther)
+                continue;
+            item.SentPosition = (item.X, item.Y, item.Z);
+            int cx = (int)MathF.Floor(item.X) >> 4, cz = (int)MathF.Floor(item.Z) >> 4;
+            BroadcastInChunk(world, cx, cz, EntityPackets.MoveAbsolute(item.EntityId, item.X, item.Y + DroppedItems.NetworkOffset, item.Z, 0, 0, item.OnGround));
+            if (resting && item.SentVelocity != (0, 0, 0))
             {
-                item.SentPosition = position;
-                BroadcastIn(world, EntityPackets.MoveAbsolute(item.EntityId, item.X, item.Y + DroppedItems.NetworkOffset, item.Z, 0, 0, item.OnGround));
-            }
-            var velocity = (item.Vx, item.Vy, item.Vz);
-            if (velocity != item.SentVelocity)
-            {
-                item.SentVelocity = velocity;
-                BroadcastIn(world, EntityPackets.Motion(item.EntityId, item.Vx, item.Vy, item.Vz));
+                item.SentVelocity = (0, 0, 0);
+                BroadcastInChunk(world, cx, cz, EntityPackets.Motion(item.EntityId, 0, 0, 0));
             }
         }
 
-        foreach (var item in items.Expire(CurrentTick))
-            BroadcastIn(world, Packets.RemoveActor(item.EntityId));
-
-        var worldPlayers = _players.Where(p => p.IsInGame && p.World == world).ToList();
-        if (worldPlayers.Count == 0 || items.All.Count == 0)
-            return;
-
-        var pickedUp = new HashSet<DroppedItem>();
-        foreach (var player in worldPlayers)
+        if (CurrentTick % 20 == 0)
         {
+            foreach (var item in items.Expire(CurrentTick))
+                BroadcastIn(world, Packets.RemoveActor(item.EntityId));
+            foreach (var item in items.Merge(CurrentTick))
+                BroadcastIn(world, Packets.RemoveActor(item.EntityId));
+        }
+
+        if (items.All.Count == 0)
+            return;
+        foreach (var player in _players)
+        {
+            if (!player.IsInGame || player.World != world || player.Dead)
+                continue;
             var (pcx, pcz) = player.ChunkPosition;
             for (var dx = -1; dx <= 1; dx++)
             for (var dz = -1; dz <= 1; dz++)
             {
-                var candidateItems = items.InChunk(pcx + dx, pcz + dz);
-                if (candidateItems is null || candidateItems.Count == 0)
+                if (items.InChunk(pcx + dx, pcz + dz) is not { Count: > 0 } candidateItems)
                     continue;
-
-                foreach (var item in candidateItems.ToList())
+                // Backwards: a picked up item leaves this list.
+                for (var i = candidateItems.Count - 1; i >= 0; i--)
                 {
-                    if (pickedUp.Contains(item) || CurrentTick - item.SpawnTick < item.PickupDelay)
+                    if (i >= candidateItems.Count)
+                        continue;
+                    var item = candidateItems[i];
+                    if (CurrentTick - item.SpawnTick < item.PickupDelay)
                         continue; // just dropped: not yet (the player who threw it would take it back at once)
-                    if (Math.Abs(player.Position.X - item.X) < 1.5 && Math.Abs(player.Position.Z - item.Z) < 1.5
-                        && Math.Abs(player.Position.Y - 1.62 - item.Y) < 2)
+                    // Dragonfly checkNearby sideways (item box grown by 1 touches the player's); up to 2 blocks above or below the feet.
+                    var feet = player.Position.Y - BedrockConnection.EyeHeight;
+                    if (Math.Abs(player.Position.X - item.X) >= 1.425 || Math.Abs(player.Position.Z - item.Z) >= 1.425
+                        || Math.Abs(feet - item.Y) >= 2)
+                        continue;
+                    var stack = item.Stack;
+                    if (Events.HasPlayerPickupItem)
                     {
-                        var stack = item.Stack;
-                        if (Events.HasPlayerPickupItem)
-                        {
-                            var ev = new PlayerPickupItemEvent(player, item);
-                            if (!Events.OnPlayerPickupItem(ev))
-                                continue;
-                            stack = ev.Item; // a plugin may change what is picked up
-                        }
-                        var (packets, remaining) = player.Inventory.Add(stack);
-                        if (remaining == stack.Count)
-                            continue; // inventory full
-                        player.Send([.. packets]);
-                        items.Remove(item);
-                        pickedUp.Add(item);
-                        BroadcastIn(world, InventoryPackets.TakeItemActor(item.EntityId, player.EntityId));
-                        BroadcastIn(world, Packets.RemoveActor(item.EntityId));
-                        if (remaining > 0)
-                            DropItem(stack.Split(remaining), item.X, item.Y, item.Z, world: world); // ponytail: leftover respawns as a new entity
+                        var ev = new PlayerPickupItemEvent(player, item);
+                        if (!Events.OnPlayerPickupItem(ev))
+                            continue;
+                        stack = ev.Item; // a plugin may change what is picked up
                     }
+                    var (packets, remaining) = player.Inventory.Add(stack);
+                    if (remaining == stack.Count)
+                        continue; // inventory full
+                    player.Send([.. packets]);
+                    items.Remove(item);
+                    BroadcastIn(world, InventoryPackets.TakeItemActor(item.EntityId, player.EntityId));
+                    BroadcastIn(world, Packets.RemoveActor(item.EntityId));
+                    if (remaining > 0)
+                        DropItem(stack.Split(remaining), item.X, item.Y, item.Z, world: world); // ponytail: leftover respawns as a new entity
                 }
             }
         }
@@ -574,15 +702,21 @@ public sealed partial class BedrokiaServer
                     World.Time++;
 
                 using (Timings.Track(Timings.DroppedItems))
+                {
                     foreach (var world in Worlds)
                         TickDroppedItems(world);
+                    TickShownItems();
+                }
 
                 using (Timings.Track(Timings.Mobs))
                 {
                     Mobs.Tick(CurrentTick);
+                    Vehicles.Tick(CurrentTick);
+                    Maps.Tick(CurrentTick);
                     Npcs.Tick(CurrentTick);
                     CustomEntities.Tick(CurrentTick);
                     Projectiles.Tick();
+                    TickFireworks();
                 }
 
                 using (Timings.Track(Timings.FallingBlocks))
@@ -615,8 +749,11 @@ public sealed partial class BedrokiaServer
                     using (Timings.Track(Timings.World))
                     {
                         SaveWorld();
+                        var (spawnX, spawnZ) = (World.Spawn.X >> 4, World.Spawn.Z >> 4);
                         foreach (var world in Worlds)
-                            world.Unload((x, z) => _players.Any(p =>
+                            world.Unload((x, z) => world == World && Math.Abs(x - spawnX) <= Config.ViewDistance
+                                                                   && Math.Abs(z - spawnZ) <= Config.ViewDistance // the spawn stays ready
+                                                  || _players.Any(p =>
                         {
                             if (p.World != world)
                                 return false;
@@ -628,38 +765,7 @@ public sealed partial class BedrokiaServer
                 }
 
                 using (Timings.Track(Timings.MainThread))
-                {
-                    var reader = _mainThread.Reader;
-                    while (reader.TryRead(out var item))
-                    {
-                        if (item.ControlAction is { } action)
-                        {
-                            try
-                            {
-                                action();
-                            }
-                            catch (Exception e)
-                            {
-                                Logger.Error($"Unhandled error in tick {CurrentTick}: {e}");
-                            }
-                        }
-                        else if (item.Connection is { } conn && item.PooledPacket is { } pooled)
-                        {
-                            try
-                            {
-                                conn.HandlePacket(pooled, item.Length);
-                            }
-                            catch (Exception e)
-                            {
-                                Logger.Error($"Packet handling error in tick {CurrentTick}: {e}");
-                            }
-                            finally
-                            {
-                                ArrayPool<byte>.Shared.Return(pooled);
-                            }
-                        }
-                    }
-                }
+                    DrainMainThread();
 
                 FlushAllConnections();
             }
@@ -674,15 +780,125 @@ public sealed partial class BedrokiaServer
         Performance.OnTick(elapsedMs, intervalMs);
     }
 
-    private void FlushAllConnections()
+    /// <summary>
+    /// Packets that arrive between two ticks are handled at once and their answers sent, instead of waiting up to
+    /// 50 ms for the next tick: a hit shows its damage and knockback right away (PvP). Movement stays per tick.
+    /// </summary>
+    internal void HandleBetweenTicks()
     {
-        for (var i = 0; i < _connections.Count; i++)
+        var wasTicking = _ticking;
+        _ticking = true;
+        _tickThread = Environment.CurrentManagedThreadId;
+        try
         {
-            var conn = _connections[i];
-            conn.FlushTickMovement();
-            conn.FlushOutgoing();
+            DrainMainThread();
+            FlushOutgoingAll();
+        }
+        finally
+        {
+            _ticking = wasTicking;
         }
     }
+
+    private void DrainMainThread()
+    {
+        var reader = _mainThread.Reader;
+        while (reader.TryRead(out var item))
+        {
+            if (item.ControlAction is { } action)
+            {
+                try
+                {
+                    action();
+                }
+                catch (Exception e)
+                {
+                    Logger.Error($"Unhandled error in tick {CurrentTick}: {e}");
+                }
+            }
+            else if (item.Connection is { } conn && item.PooledPacket is { } pooled)
+            {
+                try
+                {
+                    conn.HandlePacket(pooled, item.Length);
+                }
+                catch (Exception e)
+                {
+                    Logger.Error($"Packet handling error in tick {CurrentTick}: {e}");
+                }
+                finally
+                {
+                    ArrayPool<byte>.Shared.Return(pooled);
+                }
+            }
+        }
+    }
+
+    // Movement first (game logic, this thread), then each player's packets compressed, encrypted and sent: every
+    // connection has its own codec and transport, so with several players this runs on all the cores at once.
+    private void FlushAllConnections()
+    {
+        using (Timings.Track(Timings.Movement))
+        {
+            // 1. Game thread: each movement applied (events, chunks), its packet filed under its chunk.
+            _movesByChunk.Clear();
+            for (var i = 0; i < _connections.Count; i++)
+                _connections[i].SendQueuedChunks();
+            for (var i = 0; i < _connections.Count; i++)
+            {
+                var conn = _connections[i];
+                if (conn.FlushTickMovement() is not { } packet)
+                    continue;
+                var key = (conn.World, World.ChunkKey(conn.ChunkPosition.X, conn.ChunkPosition.Z));
+                if (!_movesByChunk.TryGetValue(key, out var moves))
+                    _movesByChunk[key] = moves = [];
+                moves.Add((conn, packet));
+            }
+            // 2. All cores: every player takes the movements of the chunks it sees. A worker only writes to the
+            // queue of its own player and only reads the rest: no locks, nothing shared changes.
+            if (_movesByChunk.Count > 0)
+            using (Timings.Track(Timings.MovementDelivery))
+            {
+                if (_connections.Count < ParallelFlushPlayers)
+                    for (var i = 0; i < _connections.Count; i++)
+                        DeliverMoves(_connections[i]);
+                else
+                    Parallel.For(0, _connections.Count, i => AsTickWorker(() => DeliverMoves(_connections[i])));
+            }
+        }
+        using (Timings.Track(Timings.Network))
+            FlushOutgoingAll();
+    }
+
+    private readonly Dictionary<(World, long), List<(BedrockConnection Mover, byte[] Packet)>> _movesByChunk = [];
+
+    private void DeliverMoves(BedrockConnection viewer)
+    {
+        if (!viewer.IsInGame)
+            return;
+        var world = viewer.World;
+        foreach (var chunk in viewer.SentChunks)
+        {
+            if (!_movesByChunk.TryGetValue((world, chunk), out var moves))
+                continue;
+            foreach (var (mover, packet) in moves)
+                if (mover != viewer)
+                    viewer.Send(packet);
+        }
+    }
+
+    private void FlushOutgoingAll()
+    {
+        if (_connections.Count < ParallelFlushPlayers)
+        {
+            for (var i = 0; i < _connections.Count; i++)
+                _connections[i].FlushOutgoing();
+            return;
+        }
+        Parallel.For(0, _connections.Count, i => AsTickWorker(_connections[i].FlushOutgoing));
+    }
+
+    private const int ParallelFlushPlayers = 4; // below, starting the workers costs more than it saves
 
     // Network thread: subscribe right away (no packet may be missed), then hand everything to the game thread.
     // Signaling thread.
@@ -706,6 +922,30 @@ public sealed partial class BedrokiaServer
     }
 
     // Signaling thread. Online: token signed by the authorization service; offline: unverified.
+    /// <summary>
+    /// In Docker (Pterodactyl) without public-ip, the container's 172.x address would be sent to players and WebRTC
+    /// fails: ask a STUN server for the public address instead. Outside Docker the local addresses work.
+    /// </summary>
+    private IPAddress? DetectPublicIp()
+    {
+        if (!File.Exists("/.dockerenv") && Environment.GetEnvironmentVariable("P_SERVER_UUID") is null)
+            return null;
+        try
+        {
+            if (SIPSorcery.Net.STUNClient.GetPublicIPAddress("stun.l.google.com", 19302) is { } ip)
+            {
+                Logger.Info($"public-ip is empty: players will connect to {ip} (found with STUN). Set public-ip in server.properties to choose it.");
+                return ip;
+            }
+        }
+        catch (Exception e)
+        {
+            Logger.Debug($"STUN failed: {e.Message}");
+        }
+        Logger.Warn("public-ip is empty and the public address could not be found: set public-ip in server.properties, or players will get \"WebRTC connection failed\".");
+        return null;
+    }
+
     private ECDsa VerifyNetherNetToken(string token)
     {
         var keys = AuthKeys;
@@ -720,7 +960,9 @@ public sealed partial class BedrokiaServer
             return;
         var wasInGame = connection.IsInGame; // read before OnClosed() changes the stage
         connection.OnClosed();
+        Vehicles.Dismount(connection, teleport: false);
         Mobs.Forget(connection);
+        Vehicles.Forget(connection);
         Npcs.Forget(connection);
         CustomEntities.Forget(connection);
         _players.Remove(connection);
@@ -1034,7 +1276,7 @@ public sealed partial class BedrokiaServer
         Add("stop", "Stops the server cleanly.", "", "bedrokia.command.stop", (_, _) => Stop());
         Add("save-all", "Saves the world and the players now.", "", "bedrokia.command.saveall", (sender, _) =>
         {
-            SaveWorld();
+            SaveWorld(wait: true);
             sender.Reply("World saved.");
         });
         Add("say", "Sends a message to every player.", "<message...>", "bedrokia.command.say", (sender, args) =>
@@ -1222,7 +1464,11 @@ public sealed partial class BedrokiaServer
             }
             
             var (x, y, z) = Self(sender).Position;
-            Mobs.Spawn(kind, x, y - BedrockConnection.EyeHeight, z);
+            if (Mobs.Spawn(kind, x, y - BedrockConnection.EyeHeight, z, Self(sender).World) is null)
+            {
+                sender.Reply(Config.Mobs ? "§cThe mob could not be summoned." : "§cMobs are off (mobs=off in server.properties).");
+                return;
+            }
             sender.Reply($"Summoned {kind.Id["minecraft:".Length..]}.");
         });
         Add("enchant", "Enchants the held item.", "<enchantment> [level:int]", "bedrokia.command.enchant", (sender, args) =>

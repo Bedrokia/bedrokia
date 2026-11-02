@@ -96,11 +96,19 @@ public sealed class ServerConfig
 
     public Difficulty Difficulty { get; set; } = Difficulty.Normal;
     public bool Pvp { get; set; } = true;
+    /// <summary>Mobs at all: off removes them (animals stay saved and come back when it is on again).</summary>
+    public bool Mobs { get; set; } = true;
     public bool SpawnAnimals { get; set; } = true;
     public bool SpawnMonsters { get; set; } = true;
 
     /// <summary>Radius around the world spawn where only operators may build (0 = off).</summary>
     public int SpawnProtection { get; set; } = 16;
+
+    /// <summary>Longest melee hit between players, eyes to the victim's box, with lag compensation (0 = no check).</summary>
+    public double PvpReach { get; set; } = 4;
+
+    /// <summary>Explosions that break an obsidian block (factions raids; 0 = vanilla, obsidian resists TNT).</summary>
+    public int ObsidianDurability { get; set; }
 
     /// <summary>Players always join in <see cref="GameMode"/> instead of their saved one.</summary>
     public bool ForceGameMode { get; set; }
@@ -145,9 +153,12 @@ public sealed class ServerConfig
         ("level-seed", "Seed for a NEW world (number or text, empty = random); an existing world keeps its seed", c => c.Seed?.ToString() ?? "", (c, v) => c.Seed = ParseSeed(v)),
         ("difficulty", "peaceful, easy, normal or hard", c => c.Difficulty.ToString().ToLowerInvariant(), (c, v) => c.Difficulty = Enum.Parse<Difficulty>(v, ignoreCase: true)),
         ("pvp", "on/off: players can hurt each other", c => OnOff(c.Pvp), (c, v) => c.Pvp = ParseBool(v)),
+        ("mobs", "on/off: mobs in the world (off: no mob at all, natural, spawn egg or summoned; saved animals come back when on)", c => OnOff(c.Mobs), (c, v) => c.Mobs = ParseBool(v)),
         ("spawn-animals", "on/off: animals spawn naturally", c => OnOff(c.SpawnAnimals), (c, v) => c.SpawnAnimals = ParseBool(v)),
-        ("spawn-monsters", "on/off: monsters spawn at night (never in peaceful)", c => OnOff(c.SpawnMonsters), (c, v) => c.SpawnMonsters = ParseBool(v)),
+        ("spawn-monsters", "on/off: monsters spawn in the dark: at night, in caves, in the Nether (never in peaceful)", c => OnOff(c.SpawnMonsters), (c, v) => c.SpawnMonsters = ParseBool(v)),
         ("spawn-protection", "Radius around the world spawn where only operators can build (0 = off)", c => c.SpawnProtection.ToString(), (c, v) => c.SpawnProtection = int.Parse(v)),
+        ("pvp-reach", "Longest melee hit between players in blocks, lag compensated (0 = no check)", c => c.PvpReach.ToString(System.Globalization.CultureInfo.InvariantCulture), (c, v) => c.PvpReach = double.Parse(v, System.Globalization.CultureInfo.InvariantCulture)),
+        ("obsidian-durability", "TNT explosions needed to break obsidian (factions raids; 0 = never, as vanilla)", c => c.ObsidianDurability.ToString(), (c, v) => c.ObsidianDurability = int.Parse(v)),
         ("force-gamemode", "on/off: players always join in the gamemode above instead of their saved one", c => OnOff(c.ForceGameMode), (c, v) => c.ForceGameMode = ParseBool(v)),
         ("keep-inventory", "on/off: players keep their items when they die", c => OnOff(c.KeepInventory), (c, v) => c.KeepInventory = ParseBool(v)),
         ("force-resources", "on/off: players must accept the server's resource packs to join", c => OnOff(c.ForceResourcePacks), (c, v) => c.ForceResourcePacks = ParseBool(v)),
@@ -299,6 +310,8 @@ public sealed class ServerConfig
             throw new InvalidDataException($"{source}: webrtc-ports must be auto or look like 19132-19160 (ports 1024-65535).");
         if (AutosaveInterval < 10)
             throw new InvalidDataException($"{source}: autosave-interval must be at least 10 seconds.");
+        if (PvpReach < 0 || ObsidianDurability < 0)
+            throw new InvalidDataException($"{source}: pvp-reach and obsidian-durability cannot be negative.");
         if (SpawnProtection < 0)
             throw new InvalidDataException($"{source}: spawn-protection cannot be negative.");
         if (ViewDistance is < 2 or > 32)

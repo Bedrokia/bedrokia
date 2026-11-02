@@ -155,7 +155,7 @@ public sealed record LightEmissionBlockComponent(byte LightLevel) : IBlockCompon
     public string Name => BlockComponentIds.LightEmission;
     public OrderedDictionary<string, object> BuildNbt() => new()
     {
-        ["emission"] = (int)LightLevel
+        ["emission"] = LightLevel // a byte, as Customies sends it
     };
 }
 
@@ -164,7 +164,7 @@ public sealed record LightDampeningBlockComponent(byte LightFilter) : IBlockComp
     public string Name => BlockComponentIds.LightDampening;
     public OrderedDictionary<string, object> BuildNbt() => new()
     {
-        ["lightLevel"] = (int)LightFilter
+        ["lightLevel"] = LightFilter
     };
 }
 
@@ -184,13 +184,17 @@ public sealed record ReplaceableBlockComponent : IBlockComponent
     public OrderedDictionary<string, object> BuildNbt() => [];
 }
 
-public sealed record CraftingTableBlockComponent(IReadOnlyList<string> CraftingTags, int GridSize = 3) : IBlockComponent
+/// <summary>
+/// The block is a crafting table: a right click opens the client's own crafting screen titled <see cref="TableName"/>,
+/// which crafts the recipes made for one of its <see cref="CraftingTags"/> ("crafting_table": the vanilla ones).
+/// </summary>
+public sealed record CraftingTableBlockComponent(IReadOnlyList<string> CraftingTags, string TableName = "") : IBlockComponent
 {
     public string Name => BlockComponentIds.CraftingTable;
     public OrderedDictionary<string, object> BuildNbt() => new()
     {
         ["crafting_tags"] = new NbtList(Nbt.String, CraftingTags.Cast<object>().ToList()),
-        ["grid_size"] = GridSize
+        ["table_name"] = TableName,
     };
 }
 
@@ -217,9 +221,11 @@ public sealed record TransformationBlockComponent(
     public string Name => BlockComponentIds.Transformation;
     public OrderedDictionary<string, object> BuildNbt() => new()
     {
-        ["rotation"] = new NbtList(Nbt.Float, [(float)RotationX, (float)RotationY, (float)RotationZ]),
-        ["scale"] = new NbtList(Nbt.Float, [ScaleX, ScaleY, ScaleZ]),
-        ["translation"] = new NbtList(Nbt.Float, [TranslationX, TranslationY, TranslationZ])
+        // The network form (Customies RotatableTrait), not the pack's JSON one: rotations in quarter turns.
+        // The JSON form made the client refuse the custom blocks, and with them every custom item.
+        ["RX"] = RotationX / 90 % 4, ["RY"] = RotationY / 90 % 4, ["RZ"] = RotationZ / 90 % 4,
+        ["SX"] = ScaleX, ["SY"] = ScaleY, ["SZ"] = ScaleZ,
+        ["TX"] = TranslationX, ["TY"] = TranslationY, ["TZ"] = TranslationZ,
     };
 }
 

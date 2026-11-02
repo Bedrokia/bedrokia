@@ -32,7 +32,8 @@ public sealed partial class BedrockConnection
     /// <summary>Opens the container at (x, y, z) if the block is one; returns false otherwise.</summary>
     internal bool TryOpenContainer(BlockType block, int x, int y, int z)
     {
-        if (!ContainerBlocks.Contains(block.Name))
+        var custom = BlockEntity.FurnaceSpeed(block.Name) is not null;
+        if (!custom && !ContainerBlocks.Contains(block.Name))
             return false;
         var world = World;
         var entity = world.GetBlockEntity(x, y, z);
@@ -51,11 +52,16 @@ public sealed partial class BedrockConnection
             var openEv = new ContainerOpenEvent(this, WindowContainer, type, new BlockPos(x, y, z), entity.Id, contents);
             if (!_server.Events.OnContainerOpen(openEv))
             {
-                Send(InventoryPackets.ContainerClose(WindowContainer, 0, serverInitiated: true));
+                CloseWindowFromServer(WindowContainer, 0);
                 return true;
             }
         }
 
+        if (custom)
+        {
+            OpenCustomFurnace(entity, x, y, z);
+            return true;
+        }
         Inventory.OpenContainer = (contents, entity.Id);
         OpenContainerAt = (x, y, z);
         Send(InventoryPackets.ContainerOpen(WindowContainer, type, x, y, z),
@@ -63,6 +69,51 @@ public sealed partial class BedrockConnection
         if (entity.Id is "Furnace" or "BlastFurnace" or "Smoker")
             _server.WatchFurnace((x, y, z), World);
         return true;
+    }
+
+    // Where the window of a custom furnace or crafting table is anchored for the client (a vanilla block only it sees).
+    private (int X, int Y, int Z)? _fakeBlockAt;
+
+    // The client opens a furnace window only on a furnace: one is shown under the player, as the menus do with chests;
+    // the window works on the custom block's own furnace (OpenContainerAt), which cooks in TickFurnaces.
+    private void OpenCustomFurnace(BlockEntity entity, int x, int y, int z)
+    {
+        CloseContainer(notifyClient: true);
+        var fake = ((int)Math.Floor(Position.X), (int)Math.Floor(Position.Y - EyeHeight) - 2, (int)Math.Floor(Position.Z));
+        _fakeBlockAt = fake;
+        Send(Packets.UpdateBlock(fake.Item1, fake.Item2, fake.Item3, Blocks.ByName("furnace")!.NetworkId),
+            BlockEntity.DataPacket(fake.Item1, fake.Item2, fake.Item3, entity));
+        var world = World;
+        _server.Schedule(3, () => // the client needs the furnace before it accepts the window
+        {
+            if (_fakeBlockAt != fake || !IsInGame || World != world || world.GetBlockEntity(x, y, z) != entity)
+                return;
+            Inventory.OpenContainer = (entity.Items!, entity.Id);
+            OpenContainerAt = (x, y, z);
+            Send(InventoryPackets.ContainerOpen(WindowContainer, 2, fake.Item1, fake.Item2, fake.Item3),
+                InventoryPackets.InventoryContent(WindowContainer, entity.Items!));
+            _server.WatchFurnace((x, y, z), world);
+        });
+    }
+
+    // A custom crafting table: the client computes no result in its own screen for a custom table (tested with 1.26.60),
+    // so it gets the vanilla crafting screen on a vanilla table only it sees, under the player; the recipes go out as
+    // "crafting_table" ones and the server checks the custom table's tags (PlayerInventory Craft).
+    private void OpenCustomCraftingTable(IReadOnlyList<string> craftingTags)
+    {
+        CloseContainer(notifyClient: true);
+        var fake = ((int)Math.Floor(Position.X), (int)Math.Floor(Position.Y - EyeHeight) - 2, (int)Math.Floor(Position.Z));
+        _fakeBlockAt = fake;
+        Send(Packets.UpdateBlock(fake.Item1, fake.Item2, fake.Item3, Blocks.ByName("crafting_table")!.NetworkId));
+        var world = World;
+        _server.Schedule(3, () => // the client needs the table before it accepts the window
+        {
+            if (_fakeBlockAt != fake || !IsInGame || World != world)
+                return;
+            Inventory.CraftingTableOpen = true;
+            Inventory.CraftingTags = craftingTags;
+            Send(InventoryPackets.ContainerOpen(InventoryPackets.WindowCraftingTable, InventoryPackets.ContainerTypeWorkbench, fake.Item1, fake.Item2, fake.Item3));
+        });
     }
 
     /// <summary>After an inventory request: other players looking into the same container see the change.</summary>
@@ -77,6 +128,18 @@ public sealed partial class BedrockConnection
             _server.WatchFurnace(at, World);
     }
 
+    private int _closingWindow = -1;
+    private long _closingTick;
+
+    // The server closes a window: the client answers with a close of its own, which must not be answered again (it
+    // rejects that: "should have sent the server initiated packet").
+    private void CloseWindowFromServer(byte window, byte type)
+    {
+        _closingWindow = window;
+        _closingTick = _server.CurrentTick;
+        Send(InventoryPackets.ContainerClose(window, type, serverInitiated: true));
+    }
+
     /// <summary>The container was broken or the window was closed.</summary>
     internal void CloseContainer(bool notifyClient)
     {
@@ -86,7 +149,7 @@ public sealed partial class BedrockConnection
                 _server.Events.OnContainerClose(new ContainerCloseEvent(this, WindowContainer));
         }
         if (notifyClient && OpenContainerAt is not null)
-            Send(InventoryPackets.ContainerClose(WindowContainer, 0, serverInitiated: true));
+            CloseWindowFromServer(WindowContainer, 0);
         OpenContainerAt = null;
         Inventory.OpenContainer = null;
         Inventory.CraftingTableOpen = false;
@@ -97,6 +160,12 @@ public sealed partial class BedrockConnection
         Inventory.GrindstonePos = null;
         Inventory.StonecutterOpen = false;
         Inventory.StonecutterPos = null;
+        if (_fakeBlockAt is var (fx, fy, fz))
+        {
+            _fakeBlockAt = null;
+            if (World.GetBlock(fx, fy, fz) is { } real)
+                Send(Packets.UpdateBlock(fx, fy, fz, real.NetworkId));
+        }
         CloseMenu();
     }
 

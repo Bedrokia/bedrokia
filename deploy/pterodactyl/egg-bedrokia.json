@@ -13,7 +13,7 @@
         "Debian": "ghcr.io/parkervcp/yolks:debian"
     },
     "file_denylist": [],
-    "startup": "chmod +x ./bedrokia && ./bedrokia",
+    "startup": "cp -f ./bedrokia ./.bedrokia-run && chmod +x ./.bedrokia-run && exec ./.bedrokia-run",
     "config": {
         "files": "{\r\n    \"server.properties\": {\r\n        \"parser\": \"properties\",\r\n        \"find\": {\r\n            \"server-port\": \"{{server.build.default.port}}\",\r\n            \"max-players\": \"{{server.build.env.MAX_PLAYERS}}\",\r\n            \"motd\": \"{{server.build.env.MOTD}}\",\r\n            \"gamemode\": \"{{server.build.env.GAMEMODE}}\",\r\n            \"difficulty\": \"{{server.build.env.DIFFICULTY}}\",\r\n            \"level-name\": \"{{server.build.env.LEVEL_NAME}}\",\r\n            \"xbox-auth\": \"{{server.build.env.XBOX_AUTH}}\",\r\n            \"webrtc-ports\": \"{{server.build.env.WEBRTC_PORTS}}\",\r\n            \"public-ip\": \"{{server.build.default.ip}}\"\r\n        }\r\n    }\r\n}",
         "startup": "{\r\n    \"done\": \"Listening on port\"\r\n}",

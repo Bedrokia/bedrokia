@@ -1,4 +1,3 @@
-<!-- Copie de docs/ia.md -->
 # Le projet et l'IA
 
 ## Un projet codé par l'IA

@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Bedrokia">
-  <!-- An isometric block: top, left and right faces. -->
-  <path d="M32 6 56 19 32 32 8 19Z" fill="#7ee0b0"/>
-  <path d="M8 19 32 32v26L8 45Z" fill="#2fa36b"/>
-  <path d="M56 19 32 32v26l24-13Z" fill="#1d6e47"/>
-  <path d="M32 6 56 19v26L32 58 8 45V19Z" fill="none" stroke="#0d3b26" stroke-width="2" stroke-linejoin="round"/>
-</svg>

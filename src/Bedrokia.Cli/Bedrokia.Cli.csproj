@@ -4,6 +4,8 @@
     <AssemblyName>bedrokia</AssemblyName>
     <InvariantGlobalization>true</InvariantGlobalization>
     <TieredPGO>true</TieredPGO>
+    <!-- Precompiled code: no slow first ticks while the JIT warms up (lag spikes on a fresh start). -->
+    <PublishReadyToRun>true</PublishReadyToRun>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Bedrokia.Server\Bedrokia.Server.csproj" />

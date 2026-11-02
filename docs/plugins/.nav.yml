@@ -1,8 +1,0 @@
-nav:
-  - Créer un plugin: index.md
-  - objets.md
-  - blocs.md
-  - entites.md
-  - formulaires.md
-  - glob: "*"
-    ignore_no_matches: true # no new page yet: fine

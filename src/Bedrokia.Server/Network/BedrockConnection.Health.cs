@@ -61,14 +61,15 @@ public sealed partial class BedrockConnection
         .Float32(0).Float32(maxHealth).Float32(Health).Float32(0).Float32(maxHealth).Float32(20f).String("minecraft:health").VarUInt32(0)
         .VarUInt64(0).ToArray());
 
-    public bool AddEffect(EffectInstance effect, EffectChangeCause cause = EffectChangeCause.Plugin)
+    /// <param name="potency">For instant health or damage: the share applied (a splash potion landing further away).</param>
+    public bool AddEffect(EffectInstance effect, EffectChangeCause cause = EffectChangeCause.Plugin, float potency = 1)
     {
         if (Dead)
             return false;
 
         if (effect.Type is EffectType.InstantHealth or EffectType.InstantDamage)
         {
-            ApplyInstantEffect(effect.Type, effect.Amplifier, cause);
+            ApplyInstantEffect(effect.Type, effect.Amplifier, potency);
             return true;
         }
 
@@ -232,16 +233,16 @@ public sealed partial class BedrockConnection
         }
     }
 
-    private void ApplyInstantEffect(EffectType type, int amplifier, EffectChangeCause cause)
+    private void ApplyInstantEffect(EffectType type, int amplifier, float potency)
     {
         if (type == EffectType.InstantHealth)
         {
-            var heal = 4f * (1 << amplifier);
+            var heal = 4f * (1 << amplifier) * potency;
             Heal(heal, HealCause.Effect);
         }
         else if (type == EffectType.InstantDamage)
         {
-            var damage = 6f * (1 << amplifier);
+            var damage = 6f * (1 << amplifier) * potency;
             _hurtTicks = 0;
             Damage(damage, Position.X, Position.Z, armour: false, source: DamageSource.Magic());
         }
@@ -259,7 +260,7 @@ public sealed partial class BedrockConnection
     /// Hurts the player (survival/adventure only) with knockback away from (fromX, fromZ). Attacks are reduced by
     /// armour points (4 % each, up to 80 %) and Protection enchantments (4 % per level, up to 80 %).
     /// </summary>
-    public void Damage(float amount, double fromX, double fromZ, bool armour = true, DamageSource? source = null)
+    public void Damage(float amount, double fromX, double fromZ, bool armour = true, DamageSource? source = null, float knockback = 0.4f)
     {
         if (Dead || GameMode is GameMode.Creative or GameMode.Spectator || _god || _hurtTicks > 0 || amount <= 0)
             return;
@@ -270,12 +271,14 @@ public sealed partial class BedrockConnection
         if ((source.Cause is DamageCause.Fire or DamageCause.Lava) && _activeEffects.ContainsKey(EffectType.FireResistance))
             return;
 
-        var ev = new PlayerDamageEvent(this, source, amount, (fromX, fromZ));
+        var ev = new PlayerDamageEvent(this, source, amount, (fromX, fromZ)) { Knockback = knockback };
         if (!_server.Events.OnPlayerDamage(ev))
             return;
 
         amount = ev.Damage;
         if (amount <= 0)
+            return;
+        if (BlockedByShield(source, amount, fromX, fromZ))
             return;
 
         // Resistance reduces damage by 20% * (amplifier + 1) (except void/starvation)
@@ -289,30 +292,9 @@ public sealed partial class BedrockConnection
 
         if (armour)
         {
-            amount *= 1 - Math.Min(ArmourPoints(), 20) / 25f;
+            WearArmour(amount);
+            amount *= 1 - ArmourReduction(ArmourPoints());
             amount *= 1 - Math.Min(ProtectionPoints(source), 20) * 0.04f;
-
-            // Armor durability loss with Unbreaking
-            for (var s = 0; s < Inventory.Armour.Size; s++)
-            {
-                if (Inventory.Armour[s] is { } piece && piece.MaxDurability > 0)
-                {
-                    var unb = Enchanting.Level(piece, "unbreaking");
-                    if (unb == 0 || Random.Shared.Next(100) >= (60 + 40 / (unb + 1)))
-                    {
-                        var newDmg = piece.Damage + 1;
-                        if (newDmg >= piece.MaxDurability)
-                        {
-                            Inventory.Armour[s] = null;
-                            _server.PlaySound("random.break", Position.X, Position.Y, Position.Z, World);
-                        }
-                        else
-                        {
-                            Inventory.Armour[s] = piece.WithDamage(newDmg);
-                        }
-                    }
-                }
-            }
         }
 
         if (source?.Attacker is BedrockConnection attacker && attacker != this)
@@ -335,11 +317,18 @@ public sealed partial class BedrockConnection
             var dx = Position.X - ev.KnockbackOrigin.X;
             var dz = Position.Z - ev.KnockbackOrigin.Z;
             var length = Math.Max(0.01, Math.Sqrt(dx * dx + dz * dz));
-            Send(EntityPackets.Motion(EntityId, dx / length * 0.4, 0.36, dz / length * 0.4));
+            // PocketMine Living::knockBack: force away from the hitter, the same force upward but at most 0.4.
+            Send(EntityPackets.Motion(EntityId, dx / length * ev.Knockback, Math.Min(ev.Knockback, 0.4f), dz / length * ev.Knockback));
         }
-        if (Health <= 0)
+        if (Health <= 0 && !UseTotem(source ?? DamageSource.Custom()))
             Die();
     }
+
+    /// <summary>
+    /// Share of the damage the armour takes: vanilla 4 % a point up to 20 (full diamond: 80 %), then 1 % per point
+    /// above (custom armours stronger than diamond), 90 % at most.
+    /// </summary>
+    internal static float ArmourReduction(int points) => Math.Min(0.9f, Math.Min(points, 20) / 25f + Math.Max(0, points - 20) * 0.01f);
 
     // Vanilla defence points of the worn armour (helmet, chestplate, leggings, boots).
     private int ArmourPoints() => Inventory.Armour.Slots.Sum(piece =>
@@ -488,6 +477,7 @@ public sealed partial class BedrockConnection
 
     private void Die()
     {
+        _server.Vehicles.Dismount(this, teleport: false);
         Dead = true;
         ClearEffects(EffectChangeCause.Death);
         CloseAllForms(FormCancelReason.UserClosed);
@@ -561,6 +551,11 @@ public sealed partial class BedrockConnection
             PruneExpiredForms(_server.CurrentTick);
         TickPortal();
         TickEffects();
+        TickBreaking();
+        TickGliding();
+        SyncEquipment();
+        SyncActionFlags();
+        _positionHistory[(int)(_server.CurrentTick % PositionHistoryTicks)] = Position;
 
         if (FireTicks > 0)
         {
@@ -805,7 +800,10 @@ public sealed partial class BedrockConnection
     /// <summary>Fall damage from the vertical movement reported by the client: 1 per block beyond 3.</summary>
     private void TrackFall(float previousY, float y)
     {
-        if (GameMode == GameMode.Creative || Dead)
+        // No fall at all (vanilla): in water or lava, on a ladder, vine or scaffolding, in cobweb or powder snow,
+        // gliding with an elytra, flying or riding. Checked on every move: sinking in water no longer adds up.
+        var feetBlock = World?.GetBlock((int)Math.Floor(Position.X), (int)Math.Floor(y - EyeHeight), (int)Math.Floor(Position.Z));
+        if (GameMode is GameMode.Creative or GameMode.Spectator || Dead || _gliding || _flying || Riding is not null || BreaksFall(feetBlock))
         {
             _fallPeak = float.NaN;
             return;
@@ -822,13 +820,27 @@ public sealed partial class BedrockConnection
             return;
         var fallen = _fallPeak - y;
         _fallPeak = float.NaN;
-        var feet = World.GetBlock((int)Math.Floor(Position.X), (int)Math.Floor(y - EyeHeight), (int)Math.Floor(Position.Z));
-        if (fallen > 3.5f && feet != Blocks.Water)
+        // What it lands on: slime cancels the fall, hay and honey keep 20 %, a bed 50 %.
+        var landedOn = World!.GetBlock((int)Math.Floor(Position.X), (int)Math.Floor(y - EyeHeight - 0.1f), (int)Math.Floor(Position.Z))?.Name;
+        var share = landedOn switch
+        {
+            "minecraft:slime" => 0f,
+            "minecraft:hay_block" or "minecraft:honey_block" => 0.2f,
+            "minecraft:bed" => 0.5f,
+            _ => 1f,
+        };
+        var damage = (float)Math.Floor((fallen - 3) * share);
+        if (fallen > 3.5f && damage > 0)
         {
             _hurtTicks = 0;
-            Damage((float)Math.Floor(fallen - 3) * (1 - Math.Min(Enchanting.Level(Inventory.Armour[3], "feather_falling") * 3 + ProtectionPoints(), 20) * 0.04f), Position.X, Position.Z, armour: false, source: DamageSource.Fall(fallen));
+            Damage(damage * (1 - Math.Min(Enchanting.Level(Inventory.Armour[3], "feather_falling") * 3 + ProtectionPoints(), 20) * 0.04f), Position.X, Position.Z, armour: false, source: DamageSource.Fall(fallen));
         }
     }
+
+    private static bool BreaksFall(BlockType? block) => block is not null && (Fluids.IsLiquid(block) || block.Name is "minecraft:ladder"
+        or "minecraft:vine" or "minecraft:scaffolding" or "minecraft:web" or "minecraft:powder_snow" or "minecraft:twisting_vines"
+        or "minecraft:weeping_vines" or "minecraft:cave_vines" or "minecraft:cave_vines_body_with_berries" or "minecraft:cave_vines_head_with_berries"
+        or "minecraft:sweet_berry_bush" or "minecraft:bubble_column");
 
     /// <summary>Spawn egg used on a block: the mob appears on the clicked face (egg consumed in survival).</summary>
     private void UseSpawnEgg(ItemStack egg, int x, int y, int z, int face)
@@ -854,7 +866,7 @@ public sealed partial class BedrockConnection
             return;
         }
         // A plugin can cancel the spawn (EntitySpawn): then the egg is not used up.
-        if (_server.Mobs.Spawn(kind, x + dx + 0.5, y + dy, z + dz + 0.5) is not null && GameMode != GameMode.Creative)
+        if (_server.Mobs.Spawn(kind, x + dx + 0.5, y + dy, z + dz + 0.5, World) is not null && GameMode != GameMode.Creative)
             Send(Inventory.ConsumeHeld());
     }
 
@@ -870,10 +882,56 @@ public sealed partial class BedrockConnection
         OnUseItemOnEntity(ref reader);
     }
 
+    // Where this player was over the last second, one position (eyes) per tick: what laggy attackers saw.
+    private const int PositionHistoryTicks = 20;
+    private readonly (float X, float Y, float Z)[] _positionHistory = new (float, float, float)[PositionHistoryTicks];
+
+    /// <summary>
+    /// pvp-reach with lag compensation: an attacker sees its victim where it was up to its ping ago, so the hit
+    /// counts when the attacker's eyes were within reach of the victim's box (0.6 x 1.8, 0.1 margin) now or at any
+    /// position of the last second. Stops long-reach hacks without refusing the hits of players with ping.
+    /// </summary>
+    internal bool InReach(BedrockConnection victim)
+    {
+        var reach = _server.Config.PvpReach;
+        if (reach <= 0)
+            return true;
+        if (BoxDistanceSquared(victim.Position) <= reach * reach)
+            return true;
+        foreach (var at in victim._positionHistory)
+            if (at != default && BoxDistanceSquared(at) <= reach * reach)
+                return true;
+        return false;
+    }
+
+    private double BoxDistanceSquared((float X, float Y, float Z) victimEyes)
+    {
+        const double half = 0.3 + 0.1, margin = 0.1;
+        var feet = victimEyes.Y - EyeHeight;
+        var dx = Math.Max(0, Math.Abs(Position.X - victimEyes.X) - half);
+        var dz = Math.Max(0, Math.Abs(Position.Z - victimEyes.Z) - half);
+        var dy = Position.Y < feet - margin ? feet - margin - Position.Y : Position.Y > feet + 1.8 + margin ? Position.Y - feet - 1.8 - margin : 0;
+        return dx * dx + dy * dy + dz * dz;
+    }
+
     internal void OnUseItemOnEntity(ref BedrockReader reader)
     {
+        ApplyPendingMovementNow(); // the attacker's position of this same moment (PocketMine handles movement at once)
         var target = (long)reader.VarUInt64();
         var action = reader.VarInt32();
+        if (_server.Vehicles.Find(target) is { } vehicle && vehicle.World == World)
+        {
+            if (action == 0)
+                _server.Vehicles.Mount(this, vehicle);
+            else if (action == 1)
+                _server.Vehicles.Hit(this, vehicle);
+            return;
+        }
+        if (_server.Mobs.FindKnot(target) is { } knot)
+        {
+            _server.Mobs.BreakKnot(knot); // clicking or hitting a knot frees its mobs
+            return;
+        }
         if (_server.Npcs.Find(target) is { } npc)
         {
             if (action is 0 or 1)
@@ -887,13 +945,16 @@ public sealed partial class BedrockConnection
                 customEntToInteract.Interact(this);
                 return;
             }
-            if (_server.Events.HasPlayerInteractEntity)
-                _server.Events.OnPlayerInteractEntity(new PlayerInteractEntityEvent(this, target));
+            var clicked = _server.Mobs.Find(target);
+            if (_server.Events.HasPlayerInteractEntity && !_server.Events.OnPlayerInteractEntity(new PlayerInteractEntityEvent(this, target, clicked)))
+                return;
+            if (clicked is not null)
+                _server.Mobs.Interact(this, clicked); // feeding, shearing, milking
             return;
         }
         if (action != 1 || Dead)
             return;
-        var damage = AttackDamage(Inventory.Held);
+        var damage = AttackDamage(Inventory.Held) + MaceBonus(Inventory.Held);
         if (_activeEffects.TryGetValue(EffectType.Strength, out var str))
             damage += 3f * (str.Amplifier + 1);
         if (_activeEffects.TryGetValue(EffectType.Weakness, out var weak))
@@ -909,11 +970,11 @@ public sealed partial class BedrockConnection
                 var held = Inventory.Held;
                 damage += 1.25f * Enchanting.Level(held, "sharpness");
                 customEnt.Damage(damage, (Position.X, Position.Z), damager: this, source: DamageSource.PlayerAttack(this));
-                ApplyWeaponWear();
+                WearWeapon();
             }
             return;
         }
-        if (_server.Mobs.Find(target) is { } mob)
+        if (_server.Mobs.Find(target) is { } mob && mob.World == World)
         {
             var dx = mob.X - Position.X;
             var dz = mob.Z - Position.Z;
@@ -926,43 +987,28 @@ public sealed partial class BedrockConnection
             if (mob.Kind == MobKind.Spider)
                 damage += 2.5f * Enchanting.Level(held, "bane_of_arthropods");
             if (_server.Mobs.Damage(mob, damage, (Position.X, Position.Z), this, Enchanting.Level(held, "knockback"), Enchanting.Level(held, "looting"), source: DamageSource.PlayerAttack(this)))
+            {
                 mob.FireTicks = Math.Max(mob.FireTicks, 80 * Enchanting.Level(held, "fire_aspect"));
-            ApplyWeaponWear();
+                WearWeapon();
+            }
             return;
         }
         if (_server.Config.Pvp && _server.Players.FirstOrDefault(p => p.EntityId == target && p.IsInGame) is { } victim && victim != this)
         {
-            var dx = victim.Position.X - Position.X;
-            var dz = victim.Position.Z - Position.Z;
-            if (dx * dx + dz * dz <= 6 * 6)
+            if (InReach(victim))
             {
-                victim.Damage(damage + 1.25f * Enchanting.Level(Inventory.Held, "sharpness"), Position.X, Position.Z, source: DamageSource.PlayerAttack(this));
-                if (Enchanting.Level(Inventory.Held, "fire_aspect") is var fa && fa > 0)
-                    victim.FireTicks = Math.Max(victim.FireTicks, 80 * fa);
-                ApplyWeaponWear();
-            }
-        }
-    }
-
-    private void ApplyWeaponWear()
-    {
-        var held = Inventory.Held;
-        if (held is not null && held.MaxDurability > 0 && GameMode != GameMode.Creative)
-        {
-            var unb = Enchanting.Level(held, "unbreaking");
-            if (unb == 0 || Random.Shared.Next(unb + 1) == 0)
-            {
-                var newDmg = held.Damage + 1;
-                if (newDmg >= held.MaxDurability)
-                {
-                    Inventory.Main[Inventory.SelectedSlot] = null;
-                    _server.PlaySound("random.break", Position.X, Position.Y, Position.Z, World);
-                }
-                else
-                {
-                    Inventory.Main[Inventory.SelectedSlot] = held.WithDamage(newDmg);
-                }
-                Send(InventoryPackets.InventorySlot(InventoryPackets.WindowInventory, Inventory.SelectedSlot, Inventory.Main[Inventory.SelectedSlot]));
+                damage += 1.25f * Enchanting.Level(Inventory.Held, "sharpness");
+                // Critical hit (PocketMine/vanilla): falling, not in water, not riding, not blind: x1.5 and stars.
+                var critical = !float.IsNaN(_fallPeak) && _fallPeak > Position.Y && Riding is null && !_activeEffects.ContainsKey(EffectType.Blindness)
+                               && World.GetBlock((int)Math.Floor(Position.X), (int)Math.Floor(Position.Y - EyeHeight), (int)Math.Floor(Position.Z)) != Blocks.Water;
+                if (critical)
+                    damage *= 1.5f;
+                var health = victim.Health;
+                victim.Damage(damage, Position.X, Position.Z, source: DamageSource.PlayerAttack(this),
+                    knockback: 0.4f + 0.5f * Enchanting.Level(Inventory.Held, "knockback"));
+                if (critical && victim.Health < health)
+                    _server.BroadcastIn(World, EntityPackets.CriticalHit(victim.EntityId));
+                WearWeapon();
             }
         }
     }
@@ -973,6 +1019,10 @@ public sealed partial class BedrockConnection
         var name = held?.Type.Name ?? "";
         if (CustomItemRegistry.Get(name)?.GetProperty<DamageItemProperty>() is { } customDamage)
             return customDamage.Damage;
+        if (name == "minecraft:trident")
+            return 9;
+        if (name == "minecraft:mace")
+            return 6;
         var tier = name.Split(':')[^1].Split('_')[0] switch
         {
             "wooden" or "golden" => 0,

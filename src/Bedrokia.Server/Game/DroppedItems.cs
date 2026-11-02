@@ -30,7 +30,7 @@ public sealed class DroppedItem(long entityId, ItemStack stack, float x, float y
 
     // What the clients were last told, so that only changes are sent (like Dragonfly's Movement.Send).
     internal (float X, float Y, float Z) SentPosition = (float.NaN, 0, 0);
-    internal (float X, float Y, float Z) SentVelocity;
+    internal (float X, float Y, float Z) SentVelocity = (float.NaN, 0, 0); // unknown: the zero motion at rest is always sent once
 }
 
 /// <summary>
@@ -105,10 +105,44 @@ public sealed class DroppedItems(World world)
         return expired;
     }
 
+    /// <summary>
+    /// Merging: an item on the ground takes in the same items lying within a block (up to a full stack), as Bedrock does.
+    /// Returns the items merged away, removed from the list.
+    /// </summary>
+    public List<DroppedItem> Merge(long tick)
+    {
+        var merged = new List<DroppedItem>();
+        foreach (var list in _byChunk.Values)
+        {
+            for (var i = 0; i < list.Count; i++)
+            {
+                var into = list[i];
+                if (!into.OnGround || into.Stack.Count >= into.Stack.MaxCount)
+                    continue;
+                for (var j = list.Count - 1; j > i; j--)
+                {
+                    var other = list[j];
+                    if (!other.OnGround || MathF.Abs(other.X - into.X) > 1f || MathF.Abs(other.Z - into.Z) > 1f
+                        || MathF.Abs(other.Y - into.Y) > 0.5f || !into.Stack.StacksWith(other.Stack)
+                        || into.Stack.Count + other.Stack.Count > into.Stack.MaxCount)
+                        continue;
+                    into.Stack.SetCount(into.Stack.Count + other.Stack.Count);
+                    list.RemoveAt(j);
+                    _items.Remove(other);
+                    merged.Add(other);
+                }
+            }
+        }
+        return merged;
+    }
+
     public void Tick()
     {
         foreach (var item in _items)
         {
+            // An item at rest on a block costs one check: is its block still there?
+            if (item.OnGround && item.Vx == 0 && item.Vz == 0 && item.Vy == 0 && Collides(item.X, item.Y - 0.01f, item.Z))
+                continue;
             var oldCx = (int)MathF.Floor(item.X) >> 4;
             var oldCz = (int)MathF.Floor(item.Z) >> 4;
             if (world.LoadedChunk(oldCx, oldCz) is null)
@@ -130,6 +164,14 @@ public sealed class DroppedItems(World world)
                     item.OnGround = true;
                 }
                 item.Vy = 0;
+                if (item.OnGround)
+                {
+                    // Ground friction stops slow items at once instead of letting them crawl for seconds.
+                    if (MathF.Abs(item.Vx) < 0.01f)
+                        item.Vx = 0;
+                    if (MathF.Abs(item.Vz) < 0.01f)
+                        item.Vz = 0;
+                }
             }
             else
             {

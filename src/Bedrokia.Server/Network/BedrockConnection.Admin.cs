@@ -29,6 +29,9 @@ public sealed partial class BedrockConnection
 
     private bool _canFly, _god, _vanished;
 
+    // Items of BedrokiaServer.ShowItem this client has (it is near them).
+    internal readonly HashSet<long> SeenShownItems = [];
+
     /// <summary>The player may fly in survival and adventure (always true in creative).</summary>
     public bool CanFly
     {
@@ -65,13 +68,96 @@ public sealed partial class BedrockConnection
                 return;
             _nameTag = value;
             if (IsInGame)
-                _server.BroadcastInExcept(World, this, PlayerPackets.SetPlayerData(EntityId, NameTag, _nameTagVisible));
+                _server.BroadcastInExcept(World, this, DataPacket());
         }
     }
 
     /// <summary>AddPlayer for another client: this player as it stands, name tag included.</summary>
-    internal byte[] AddPlayerPacket() =>
-        PlayerPackets.AddPlayer(Info!, Position.X, Position.Y, Position.Z, Pitch, Yaw, (int)GameMode, _nameTagVisible, NameTag);
+    internal byte[] AddPlayerPacket()
+    {
+        _equipmentShown = false; // whoever gets this player now also needs its armour and held item (next tick)
+        return PlayerPackets.AddPlayer(Info!, Position.X, Position.Y, Position.Z, Pitch, Yaw, (int)GameMode, _nameTagVisible, NameTag, ActionFlags);
+    }
+
+    // What the others see of this player: name, riding seat and actions (sneaking, sprinting, swimming, gliding).
+    internal byte[] DataPacket() => PlayerPackets.SetPlayerData(EntityId, NameTag, _nameTagVisible, _seatY, ActionFlags);
+
+    private float? _seatY;
+    private bool _sprinting, _swimming, _gliding;
+    private long _shownActionFlags;
+
+    // Entity flags (gophertunnel EntityDataFlag): sneaking 1, sprinting 3, gliding 32, swimming 57.
+    private long ActionFlags => (Sneaking ? 1L << 1 : 0) | (_sprinting ? 1L << 3 : 0) | (_gliding ? 1L << 32 : 0) | (_swimming ? 1L << 57 : 0);
+
+    /// <summary>Whether the player is flying with an elytra.</summary>
+    public bool Gliding => _gliding;
+
+    // Held item and armour as last shown to the others: sent again when one of them is another item.
+    private bool _equipmentShown;
+    private readonly Game.ItemStack?[] _shownEquipment = new Game.ItemStack?[6];
+
+    private void SyncEquipment()
+    {
+        var held = Inventory.Held;
+        var armour = Inventory.Armour;
+        var offhand = Inventory.Offhand[0];
+        if (_equipmentShown && ReferenceEquals(_shownEquipment[0], held) && ReferenceEquals(_shownEquipment[1], armour[0])
+            && ReferenceEquals(_shownEquipment[2], armour[1]) && ReferenceEquals(_shownEquipment[3], armour[2]) && ReferenceEquals(_shownEquipment[4], armour[3]) && ReferenceEquals(_shownEquipment[5], offhand))
+            return;
+        _equipmentShown = true;
+        (_shownEquipment[0], _shownEquipment[1], _shownEquipment[2], _shownEquipment[3], _shownEquipment[4], _shownEquipment[5]) = (held, armour[0], armour[1], armour[2], armour[3], offhand);
+        if (Vanished)
+            return;
+        _server.BroadcastInExcept(World, this, InventoryPackets.MobEquipment(EntityId, held, Inventory.SelectedSlot, Inventory.SelectedSlot));
+        _server.BroadcastInExcept(World, this, InventoryPackets.MobArmourEquipment(EntityId, armour[0], armour[1], armour[2], armour[3]));
+        // The second hand (totem, shield...): MobEquipment on the offhand window, as PocketMine.
+        _server.BroadcastInExcept(World, this, InventoryPackets.MobEquipment(EntityId, offhand, 0, 0, InventoryPackets.WindowOffhand));
+    }
+
+    private void SyncActionFlags()
+    {
+        if (ActionFlags == _shownActionFlags)
+            return;
+        var glidingChanged = ((ActionFlags ^ _shownActionFlags) & 1L << 32) != 0;
+        _shownActionFlags = ActionFlags;
+        _server.BroadcastInExcept(World, this, DataPacket());
+        if (glidingChanged)
+            Send(DataPacket()); // as PocketMine: the glider is told too, or its client keeps flying on its own
+    }
+
+    // PocketMine Player::toggleGlide: only with a working elytra (one durability point left is a broken one).
+    private bool CanGlide() => Inventory.Armour[1] is { Type.Name: "minecraft:elytra" } elytra
+                               && Game.Durability.Damage(elytra) < Game.Durability.Max(elytra) - 1 && GameMode != GameMode.Spectator;
+
+    private void StartGliding()
+    {
+        _gliding = CanGlide();
+        if (!_gliding)
+            Send(DataPacket()); // refused: the client stops gliding
+    }
+
+    private int _glideTicks;
+
+    // Every tick while gliding: the elytra wears one point a second (vanilla) and stops working at its last point;
+    // without one (taken off, broken) or back on the ground, the glide ends.
+    private void TickGliding()
+    {
+        if (!_gliding)
+            return;
+        if (!CanGlide() || _onGround && _glideTicks > 10)
+        {
+            _gliding = false;
+            _glideTicks = 0;
+            return;
+        }
+        if (++_glideTicks % 20 != 0 || GameMode == GameMode.Creative || Inventory.Armour[1] is not { } elytra)
+            return;
+        var nbt = elytra.Nbt is null ? new OrderedDictionary<string, object>() : new OrderedDictionary<string, object>(elytra.Nbt);
+        nbt["Damage"] = Math.Min(Game.Durability.Damage(elytra) + 1, Game.Durability.Max(elytra) - 1);
+        var worn = new Game.ItemStack(elytra.Type, elytra.Count, elytra.Meta, elytra.BlockRuntimeId, nbt);
+        Inventory.Armour[1] = worn;
+        Send(InventoryPackets.InventorySlot(InventoryPackets.WindowArmour, 1, worn));
+    }
 
     /// <summary>Whether the other players see this player's name above the head (PocketMine setNameTagVisible).</summary>
     public bool NameTagVisible
@@ -83,7 +169,7 @@ public sealed partial class BedrockConnection
                 return;
             _nameTagVisible = value;
             if (IsInGame)
-                _server.BroadcastInExcept(World, this, PlayerPackets.SetPlayerData(EntityId, NameTag, value));
+                _server.BroadcastInExcept(World, this, DataPacket());
         }
     }
 
@@ -135,6 +221,9 @@ public sealed partial class BedrockConnection
             Inventory.Armour.Clear();
         SyncInventory();
     }
+
+    /// <summary>Moves the player to another server; plugins save what must follow them before calling this.</summary>
+    public void Transfer(string address, ushort port = 19132) => Send(Packets.Transfer(address, port));
 
     /// <summary>Sends the whole inventory again, after a plugin changed slots directly.</summary>
     public void SyncInventory() => Send([.. Inventory.ContentPackets()]);

@@ -32,7 +32,7 @@ public sealed class NetherNetLoginTests : IAsyncDisposable
 
     public NetherNetLoginTests()
     {
-        _server = new BedrokiaServer(new ServerConfig { WorldsDirectory = TestWorlds.NewDirectory(), Seed = 42, Port = 0, OnlineMode = false, ViewDistance = 2 }, _logger);
+        _server = new BedrokiaServer(new ServerConfig { WorldsDirectory = TestWorlds.NewDirectory(), Seed = 42, Port = 0, OnlineMode = false, ViewDistance = 2, SpawnAnimals = false, SpawnMonsters = false }, _logger);
         _run = _server.RunAsync();
     }
 

@@ -23,7 +23,7 @@ public static class CustomEntityRegistry
 {
     private static int _nextNetworkId = 10000;
     private static readonly Dictionary<string, CustomEntity> ByIdentifier = [];
-    private static readonly Dictionary<int, CustomEntity> ByNetworkId = [];
+    internal static readonly Dictionary<int, CustomEntity> ByNetworkId = [];
     private static readonly Dictionary<string, int> NetworkIdByIdentifier = [];
 
     /// <summary>

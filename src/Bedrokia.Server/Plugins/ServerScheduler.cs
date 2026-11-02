@@ -44,6 +44,9 @@ public sealed class ScheduledTask
 /// </summary>
 public sealed class ServerScheduler(Logger logger)
 {
+    /// <summary>While /timings runs: the time of each plugin's tasks.</summary>
+    internal Performance.TimingsManager? Timings { get; set; }
+
     private long _nextTaskId;
     private long _currentTick;
     private readonly SortedDictionary<long, List<ScheduledTask>> _tasksByTick = [];
@@ -132,7 +135,10 @@ public sealed class ServerScheduler(Logger logger)
 
                 try
                 {
-                    task.Action();
+                    using (Timings is { IsEnabled: true } timings && task.Owner is { } plugin
+                               ? timings.Track(timings.GetOrCreate($"{plugin.Name}: scheduled tasks", "Plugin:" + plugin.Name))
+                               : default)
+                        task.Action();
                 }
                 catch (Exception ex)
                 {

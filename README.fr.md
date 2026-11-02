@@ -74,7 +74,7 @@ lisible, c'est cool. 😎
 | **Plugins** | Plugins C# organisés comme Bukkit / PocketMine (`plugin.yml`, `src/`, `resources/config.yml`), **compilés automatiquement au démarrage**, événements annulables, commandes, titres, scoreboard, effets, particules |
 
 Ce qui manque encore : coffres doubles, panneaux éditables, Nether et End,
-redstone, grottes et structures. Voir la [feuille de route](https://nexiumpvp2.github.io/bedrokia/projet/roadmap/).
+redstone, grottes et structures.
 
 ## 🚀 Démarrage rapide
 

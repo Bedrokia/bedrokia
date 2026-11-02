@@ -47,16 +47,19 @@ public static class BlockPlacement
             object? value = key switch
             {
                 "pillar_axis" => face switch { 0 or 1 => "y", 2 or 3 => "z", _ => "x" },
-                // Doors and gates face where the player looks; containers, pumpkins... face the player.
-                "minecraft:cardinal_direction" => name.EndsWith("_door") || name.Contains("fence_gate") || name == "minecraft:anvil"
-                    ? Cardinals[look] : Cardinals[(look + 2) & 3],
+                // Doors and gates face where the player looks; anvils lie across it (Dragonfly RotateLeft: the
+                // client's own prediction, else the anvil turned after being placed); containers, pumpkins... face the player.
+                "minecraft:cardinal_direction" => name.EndsWith("anvil") ? Cardinals[(look + 3) & 3]
+                    : name.EndsWith("_door") || name.Contains("fence_gate") ? Cardinals[look] : Cardinals[(look + 2) & 3],
                 "weirdo_direction" => look switch { 0 => 2, 1 => 1, 2 => 3, _ => 0 }, // stairs climb away from the player
                 "upside_down_bit" => (byte)(upper ? 1 : 0),
                 "minecraft:vertical_half" => upper ? "top" : "bottom",
                 "torch_facing_direction" => face switch { 2 => "north", 3 => "south", 4 => "west", 5 => "east", _ => "top" },
                 "facing_direction" => FacingDirection(block, face, look, pitch),
                 "minecraft:facing_direction" => pitch > 45 ? "up" : pitch < -45 ? "down" : Cardinals[(look + 2) & 3],
-                "direction" => name.Contains("trapdoor") ? look switch { 0 => 3, 1 => 0, 2 => 2, _ => 1 } : look,
+                "direction" => name.Contains("trapdoor") ? look switch { 0 => 3, 1 => 0, 2 => 2, _ => 1 }
+                    : name is "minecraft:loom" or "minecraft:beehive" or "minecraft:bee_nest" or "minecraft:grindstone" ? (look + 2) & 3 // they face the player
+                    : look,
                 "ground_sign_direction" => (int)Math.Floor((yaw + 180) * 16 / 360 + 0.5) & 15,
                 "lever_direction" => face switch
                 {
@@ -69,6 +72,8 @@ public static class BlockPlacement
                 "attached_bit" => (byte)0,
                 "persistent_bit" => (byte)1, // leaves placed by a player never decay
                 "upper_block_bit" or "head_piece_bit" => (byte)0,
+                // Custom blocks (Customies "customies:rotation"): 2 north, 3 south, 4 west, 5 east, the front facing the player.
+                _ when key.EndsWith(":rotation") => ((look + 2) & 3) switch { 0 => 3, 1 => 4, 2 => 2, _ => 5 },
                 _ => null,
             };
             if (value is not null)

@@ -47,6 +47,7 @@ public static class PacketId
     public const uint Animate = 44;
     public const uint Respawn = 45;
     public const uint ContainerClose = 47;
+    public const uint Transfer = 85;
     public const uint AdventureSettings = 55;
     public const uint BlockActorData = 56;
     public const uint LevelChunk = 58;
@@ -100,9 +101,9 @@ public static class PacketId
 
 public static class ProtocolInfo
 {
-    /// <summary>Not validated against a real client yet (see docs/ROADMAP.md).</summary>
-    public const int Version = 2193;
-    public const string GameVersion = "1.26.50";
+    /// <summary>Not validated against a real client yet.</summary>
+    public const int Version = 2225;
+    public const string GameVersion = "1.26.60";
 }
 
 public static class PlayStatus
@@ -167,6 +168,14 @@ public static class Packets
     public static byte[] ServerToClientHandshake(string jwt) =>
         Begin(PacketId.ServerToClientHandshake).ByteArray(System.Text.Encoding.UTF8.GetBytes(jwt)).ToArray();
 
+    /// <summary>Sends the client to another server (address and port), like typing it in the server list.</summary>
+    public static byte[] Transfer(string address, ushort port) => Begin(PacketId.Transfer)
+        .String(address)
+        .UInt16(port)
+        .Bool(false) // reload the world: false keeps the loading screen short
+        .Bool(false) // no gathering join info (optional)
+        .ToArray();
+
     public static byte[] Disconnect(int reason, string message) => Begin(PacketId.Disconnect)
         .VarInt32(reason)
         .Bool(false) // show the disconnection screen
@@ -213,6 +222,7 @@ public static class Packets
         .Bool(false) // blob cache disabled
         .VarUInt32(0) // blob hashes
         .ByteArray(payload)
+        .Bool(false) // client biome update (1.26.60)
         .ToArray();
 
     public static byte[] SetPlayerGameType(int gameMode) => Begin(PacketId.SetPlayerGameType).VarInt32(gameMode).ToArray();
@@ -337,6 +347,7 @@ public static class Packets
             .BlockPos(d.SpawnX, d.SpawnY, d.SpawnZ)
             .Bool(true) // achievements disabled
             .VarInt32(0).Bool(false).Bool(false) // editor world type, created in / exported from editor
+            .Byte(0) // editor level migration version: legacy (1.26.60)
             .VarInt32(0) // day cycle lock time
             .VarUInt32(0).Bool(false).String("") // education offer, features, product id
             .Float32(0).Float32(0) // rain, lightning

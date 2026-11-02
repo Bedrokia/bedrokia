@@ -79,6 +79,27 @@ public sealed class Chunk
         return section is null ? Blocks.Air : Blocks.ById(section[Index(x, y, z)]);
     }
 
+    /// <summary>True when section <paramref name="index"/> (0 = the bottom one) holds nothing but air.</summary>
+    internal bool SectionEmpty(int index) => _sections[index] is null;
+
+    /// <summary>
+    /// The highest non-air block of column (x, z) at or below <paramref name="below"/> and its height; air when none.
+    /// Empty sections are skipped whole: cheap enough to draw a map.
+    /// </summary>
+    public (BlockType Block, int Y) TopBlock(int x, int z, int below = MaxY)
+    {
+        for (var s = Math.Min(Sections - 1, (Math.Min(below, MaxY) - MinY) >> 4); s >= 0; s--)
+        {
+            if (_sections[s] is not { } section)
+                continue;
+            var top = Math.Min(15, Math.Min(below, MaxY) - MinY - s * 16);
+            for (var ly = top; ly >= 0; ly--)
+                if (section[(x << 8) | (z << 4) | ly] is var id and not 0)
+                    return (Blocks.ById(id), MinY + s * 16 + ly);
+        }
+        return (Blocks.Air, MinY);
+    }
+
     public void SetBlock(int x, int y, int z, BlockType block)
     {
         if (y is < MinY or > MaxY)
@@ -332,7 +353,7 @@ public sealed class Chunk
                 for (var i = 0; i < palette.Length; i++)
                 {
                     var key = r.ReadString();
-                    palette[i] = (Blocks.ByKey(key) ?? Blocks.Air).Id; // ponytail: unknown blocks become air
+                    palette[i] = (Blocks.ByKeyOrClosest(key) ?? Blocks.Air).Id; // ponytail: blocks that no longer exist become air
                 }
                 var section = new ushort[4096];
                 for (var i = 0; i < 4096; i++)

@@ -180,7 +180,7 @@ public class CustomContentTests
         var comps = (OrderedDictionary<string, object>)nbt["components"];
         Assert.True(comps.ContainsKey("minecraft:destructible_by_mining"));
         Assert.True(comps.ContainsKey("minecraft:geometry"));
-        Assert.Equal(3, ((OrderedDictionary<string, object>)comps["minecraft:light_emission"])["emission"]);
+        Assert.Equal((byte)3, ((OrderedDictionary<string, object>)comps["minecraft:light_emission"])["emission"]);
         Assert.False(comps.ContainsKey("minecraft:breathability"));
         Assert.True(((OrderedDictionary<string, object>)comps["minecraft:material_instances"]).ContainsKey("mappings"));
     }
@@ -256,5 +256,15 @@ public class CustomContentTests
         var reader = new BedrockReader(packet);
         var packetId = reader.VarUInt32();
         Assert.Equal((uint)PacketId.StartGame, packetId);
+    }
+
+    [Fact]
+    public void Block_transformation_is_sent_in_the_network_form()
+    {
+        var nbt = new TransformationBlockComponent(RotationY: 270).BuildNbt();
+        Assert.Equal(3, nbt["RY"]); // quarter turns, as Customies: the pack's JSON form made the client refuse every custom block
+        Assert.Equal(1f, nbt["SX"]);
+        Assert.False(nbt.ContainsKey("rotation"));
+        Assert.IsType<byte>(new LightEmissionBlockComponent(15).BuildNbt()["emission"]);
     }
 }

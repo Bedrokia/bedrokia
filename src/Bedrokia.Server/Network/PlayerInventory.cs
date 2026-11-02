@@ -85,7 +85,6 @@ public sealed class PlayerInventory
     private sealed record CreativeCraft(uint CreativeId) : Op;
     private sealed record Craft(uint RecipeId, int Times, bool Auto) : Op;
     private sealed record Create(int ResultSlot) : Op;
-    private sealed record AnvilCraft(uint RecipeId, int FilterTextIndex) : Op;
     private sealed record GrindstoneCraft(int RecipeId, byte Times, int Xp) : Op;
 
     // Crafting grid in the UI inventory (Dragonfly session/player.go): 2x2 at 28, 3x3 (crafting table) at 32.
@@ -93,6 +92,13 @@ public sealed class PlayerInventory
 
     /// <summary>True while a crafting table is open (3x3 grid).</summary>
     public bool CraftingTableOpen { get; set; }
+
+    /// <summary>The crafting tags of the open table ("crafting_table" for a vanilla one and the inventory grid).</summary>
+    public IReadOnlyList<string> CraftingTags { get; set; } = ["crafting_table"];
+
+    // The 3x3 grid is in use when a table is open, or when it holds items: the open flag can be cleared by a close the
+    // client sends for another window while its table stays open, and its crafts then looked in the 2x2 grid.
+    private bool LargeGrid => CraftingTableOpen || Enumerable.Range(LargeGridOffset, LargeGridSize).Any(s => Ui[s] is not null);
 
     /// <summary>True while an anvil is open.</summary>
     public bool AnvilOpen { get; set; }
@@ -111,6 +117,13 @@ public sealed class PlayerInventory
 
     /// <summary>The open enchanting table (options, level costs), or null.</summary>
     public IEnchanter? Enchanter { get; set; }
+
+
+    /// <summary>Set while an anvil is open: called after each use (sound, the anvil wearing out).</summary>
+    public Action? AnvilUsed { get; set; }
+
+    private sealed record AnvilCraft(int FilterIndex) : Op;
+    private readonly List<string> _filters = [];
 
     /// <summary>Called with the reason when a request is refused (for the server log).</summary>
     public Action<string>? Rejected { get; set; }
@@ -159,9 +172,14 @@ public sealed class PlayerInventory
             actions.Add(action);
         }
         var filters = reader.VarUInt32();
+        _filters.Clear();
         var filterStrings = new string[filters];
         for (var f = 0; f < filters; f++)
-            filterStrings[f] = reader.String();
+        {
+            var str = reader.String();
+            filterStrings[f] = str;
+            _filters.Add(str);
+        }
         reader.Int32(); // filter cause
 
         responses.Add(Process(requestId, actions, filterStrings, mode, drop, out var ok));
@@ -246,17 +264,22 @@ public sealed class PlayerInventory
                 r.Byte(); // number of crafts
                 return new CreativeCraft(creativeId);
             }
-            case 15:
-                return new AnvilCraft(r.VarUInt32(), r.Int32());
+            case 15: // craft recipe optional: the anvil (the filter string is the new name)
+                r.VarUInt32();
+                return new AnvilCraft(r.Int32());
             case 16:
                 return new GrindstoneCraft(r.Int32(), r.Byte(), r.VarInt32());
             case 17:
                 r.String();
                 r.Byte();
                 return new Unsupported("loom");
-            case 18:
+            case 18: // craft reserved (1.26.60)
+                r.String();
+                r.Byte();
+                return new Unsupported("reserved craft");
+            case 19:
                 return new Ignored();
-            case 19: // craft results (deprecated, informative only)
+            case 20: // craft results (deprecated, informative only)
             {
                 var items = r.VarUInt32();
                 for (var i = 0; i < items; i++)
@@ -295,9 +318,9 @@ public sealed class PlayerInventory
         ContainerArmor => (Armour, slot.Slot),
         ContainerOffhand => (Offhand, 0),
         ContainerCursor or ContainerCreatedOutput or ContainerCraftingInput or ContainerEnchantingInput or ContainerEnchantingMaterial
-            or ContainerAnvilInput or ContainerAnvilMaterial or ContainerAnvilResultPreview
             or ContainerGrindstoneInput or ContainerGrindstoneAdditional or ContainerGrindstoneResultPreview
             or ContainerStonecutterInput or ContainerStonecutterResultPreview => (Ui, slot.Slot),
+        ContainerAnvilInput or ContainerAnvilMaterial when AnvilUsed is not null || AnvilOpen => (Ui, slot.Slot),
         // The open chest, barrel or ender chest; furnaces: ingredient 0, fuel 1, result 2.
         ContainerLevelEntity or ContainerBarrel when OpenContainer is { } open => (open.Items, slot.Slot),
         ContainerFurnaceIngredient or ContainerBlastFurnaceIngredient or ContainerSmokerIngredient when OpenContainer is { } open => (open.Items, 0),
@@ -521,6 +544,33 @@ public sealed class PlayerInventory
                         CreateResult(template.Split(template.MaxCount));
                         break;
                     }
+                    case AnvilCraft a when AnvilUsed is not null:
+                    {
+                        var input = Ui[AnvilInputSlot] ?? throw new InvalidOperationException("nothing in the anvil");
+                        var material = Ui[AnvilMaterialSlot];
+                        var rename = a.FilterIndex >= 0 && a.FilterIndex < _filters.Count ? _filters[a.FilterIndex] : null;
+                        var (repaired, cost, used) = Anvil.Combine(input, material, rename) ?? throw new InvalidOperationException("nothing to do on the anvil");
+                        if (Player is not null && Player.Server.Events.HasAnvilUse)
+                        {
+                            var anvilEv = new AnvilUseEvent(Player, repaired, rename ?? "", cost);
+                            if (!Player.Server.Events.OnAnvilUse(anvilEv))
+                                throw new InvalidOperationException("anvil use cancelled");
+                            cost = anvilEv.CostLevels;
+                        }
+                        if (mode != GameMode.Creative && (cost >= 40 || Player is null || !Player.SpendLevels(cost, cost)))
+                            throw new InvalidOperationException("too expensive or not enough experience levels");
+                        Remember((Ui, AnvilInputSlot));
+                        Set(new SlotRef(ContainerAnvilInput, AnvilInputSlot, 0), (Ui, AnvilInputSlot), null);
+                        if (material is not null)
+                        {
+                            Remember((Ui, AnvilMaterialSlot));
+                            material.SetCount(material.Count - used);
+                            Set(new SlotRef(ContainerAnvilMaterial, AnvilMaterialSlot, 0), (Ui, AnvilMaterialSlot), material.Count > 0 ? material : null);
+                        }
+                        CreateResult(repaired);
+                        AnvilUsed();
+                        break;
+                    }
                     case Craft c when Enchanter is not null && c.RecipeId <= 2:
                     {
                         // Ported from Dragonfly session/handler_enchanting.go: the "recipe" is the chosen option 0..2.
@@ -545,58 +595,6 @@ public sealed class PlayerInventory
                         Remember((Ui, EnchantInputSlot));
                         Set(new SlotRef(ContainerEnchantingInput, EnchantInputSlot, 0), (Ui, EnchantInputSlot), null);
                         CreateResult(Enchanting.With(input, options[c.RecipeId]));
-                        break;
-                    }
-                    case AnvilCraft ac:
-                    {
-                        if (!AnvilOpen)
-                            throw new InvalidOperationException("anvil is not open");
-                        var input = Ui[AnvilInputSlot] ?? throw new InvalidOperationException("nothing in anvil input slot");
-                        var material = Ui[AnvilMaterialSlot];
-                        string? newName = (ac.FilterTextIndex >= 0 && ac.FilterTextIndex < filters.Length) ? filters[ac.FilterTextIndex] : null;
-
-                        var calc = Anvil.Calculate(input, material, newName, mode == GameMode.Creative)
-                            ?? throw new InvalidOperationException("invalid anvil craft");
-
-                        if (mode != GameMode.Creative)
-                        {
-                            if (Player is not null && Player.ExperienceLevel < calc.Cost)
-                                throw new InvalidOperationException("not enough experience levels");
-                            Player?.SetExperienceLevel(Player.ExperienceLevel - calc.Cost);
-                        }
-
-                        if (Player is not null && Player.Server.Events.HasAnvilUse)
-                        {
-                            var ev = new AnvilUseEvent(Player, calc.Result, newName ?? "", calc.Cost);
-                            if (!Player.Server.Events.OnAnvilUse(ev))
-                                throw new InvalidOperationException("anvil use cancelled");
-                        }
-
-                        Remember((Ui, AnvilInputSlot));
-                        Set(new SlotRef(ContainerAnvilInput, AnvilInputSlot, 0), (Ui, AnvilInputSlot), null);
-                        if (calc.MaterialConsumed > 0 && material is not null)
-                        {
-                            Take(ContainerAnvilMaterial, Ui, AnvilMaterialSlot, calc.MaterialConsumed);
-                        }
-
-                        if (mode != GameMode.Creative && Player is not null && AnvilPos is { } apos && Random.Shared.NextDouble() < 0.12)
-                        {
-                            var curBlock = Player.World.GetBlock(apos.X, apos.Y, apos.Z);
-                            if (curBlock is not null && Anvil.NextDamageState(curBlock) is { } nextBlock)
-                            {
-                                Player.Server.SetBlockAndUpdate(apos.X, apos.Y, apos.Z, nextBlock, Player.World);
-                                if (nextBlock.IsAir)
-                                    Player.Server.PlaySound("random.anvil_break", apos.X, apos.Y, apos.Z, Player.World);
-                                else
-                                    Player.Server.PlaySound("random.anvil_use", apos.X, apos.Y, apos.Z, Player.World);
-                            }
-                        }
-                        else if (Player is not null && AnvilPos is { } apos2)
-                        {
-                            Player.Server.PlaySound("random.anvil_use", apos2.X, apos2.Y, apos2.Z, Player.World);
-                        }
-
-                        CreateResult(calc.Result);
                         break;
                     }
                     case GrindstoneCraft:
@@ -654,8 +652,36 @@ public sealed class PlayerInventory
                     }
                     case Craft c:
                     {
+                        // Special recipes (fireworks, map copies): the result comes from what is in the grid.
+                        if (Recipes.ByNetworkId(c.RecipeId) is null && Recipes.IsMulti(c.RecipeId))
+                        {
+                            var (gridOffset, gridSize) = LargeGrid ? (LargeGridOffset, LargeGridSize) : (SmallGridOffset, SmallGridSize);
+                            for (var time = 0; time < Math.Max(1, (int)c.Times); time++)
+                            {
+                                var cells = Enumerable.Range(gridOffset, gridSize).Where(s => Ui[s] is not null).ToList();
+                                if (SpecialRecipes.Craft([.. cells.Select(s => Ui[s]!)]) is not { } special)
+                                {
+                                    if (time == 0)
+                                        throw new InvalidOperationException($"nothing to craft with recipe {c.RecipeId}");
+                                    break;
+                                }
+                                if (Player is not null && !Player.Server.Events.OnInventoryTransaction(
+                                        new InventoryTransactionEvent(Player, InventoryTransactionType.Craft, special, special.Count, (0, 0))))
+                                    throw new InvalidOperationException("craft cancelled");
+                                foreach (var cell in cells)
+                                    Take(ContainerCraftingInput, Ui, cell, 1);
+                                pending.Add(special);
+                            }
+                            if (pending.Count == 1)
+                            {
+                                CreateResult(pending[0]);
+                                pending.Clear();
+                            }
+                            break;
+                        }
                         // Crafting table and inventory crafting
-                        if (Recipes.ByNetworkId(c.RecipeId) is not { Block: "crafting_table" } recipe || c.Times < 1)
+                        // The recipe must belong to the open table (a custom table's own recipes only there).
+                        if (Recipes.ByNetworkId(c.RecipeId) is not { } recipe || !(LargeGrid ? CraftingTags : ["crafting_table"]).Contains(recipe.Block) || c.Times < 1)
                             throw new InvalidOperationException($"unknown crafting recipe {c.RecipeId}");
                         if (Player is not null)
                         {
@@ -670,7 +696,7 @@ public sealed class PlayerInventory
                                     throw new InvalidOperationException("craft cancelled");
                             }
                         }
-                        var (offset, size) = CraftingTableOpen ? (LargeGridOffset, LargeGridSize) : (SmallGridOffset, SmallGridSize);
+                        var (offset, size) = LargeGrid ? (LargeGridOffset, LargeGridSize) : (SmallGridOffset, SmallGridSize);
                         if (c.Auto)
                             ConsumeAuto(recipe, c.Times, offset, size);
                         else
@@ -740,8 +766,9 @@ public sealed class PlayerInventory
     public List<ItemStack> ReturnCraftingItems()
     {
         var leftover = new List<ItemStack>();
-        CraftingTableOpen = false;
+        CraftingTableOpen = false; // the tags stay: those of the last table opened (each table sets them)
         Enchanter = null;
+        AnvilUsed = null;
         AnvilOpen = false;
         AnvilPos = null;
         GrindstoneOpen = false;
