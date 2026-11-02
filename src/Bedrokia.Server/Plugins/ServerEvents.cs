@@ -809,9 +809,9 @@ public sealed class ServerEvents(Logger logger)
     internal bool OnStonecutterUse(StonecutterUseEvent e) => Fire(StonecutterUse, e);
     internal bool OnLeavesDecay(LeavesDecayEvent e) => Fire(LeavesDecay, e);
     internal bool OnMoistureChange(MoistureChangeEvent e) => Fire(MoistureChange, e);
-    internal void OnVehicleCreate(VehicleCreateEvent e) => Fire(VehicleCreate, e);
+    internal bool OnVehicleCreate(VehicleCreateEvent e) => Fire(VehicleCreate, e);
     internal bool OnVehicleDamage(VehicleDamageEvent e) => Fire(VehicleDamage, e);
-    internal void OnVehicleDestroy(VehicleDestroyEvent e) => Fire(VehicleDestroy, e);
+    internal bool OnVehicleDestroy(VehicleDestroyEvent e) => Fire(VehicleDestroy, e);
     internal bool OnVehicleEnter(VehicleEnterEvent e) => Fire(VehicleEnter, e);
     internal bool OnVehicleExit(VehicleExitEvent e) => Fire(VehicleExit, e);
     internal bool OnSheepShear(SheepShearEvent e) => Fire(SheepShear, e);
@@ -1098,3 +1098,4 @@ public sealed class ServerEvents(Logger logger)
         }
     }
 }
+

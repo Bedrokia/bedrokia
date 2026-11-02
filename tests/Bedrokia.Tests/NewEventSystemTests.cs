@@ -1,4 +1,4 @@
-créeusing System.Net;
+﻿using System.Net;
 using System.Security.Cryptography;
 using Bedrokia.Protocol;
 using Bedrokia.Server;
@@ -745,3 +745,4 @@ public sealed class NewEventSystemTests
         Assert.True(fireworkFired);
     }
 }
+
