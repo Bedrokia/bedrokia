@@ -58,10 +58,17 @@ public sealed partial class BedrokiaServer
 
     // --- Leaves: without a log within 6 blocks (through other leaves, as in Java; the generated trees need it), they decay ---
 
+    // Reused by every search (game thread only): leaves are random ticked often, allocating each time was costly.
+    private static readonly Queue<(int X, int Y, int Z, int Distance)> LeafQueue = new();
+    private static readonly HashSet<(int, int, int)> LeafSeen = [];
+
     private static bool LogNearby(World world, int x, int y, int z)
     {
-        var queue = new Queue<(int X, int Y, int Z, int Distance)>();
-        var seen = new HashSet<(int, int, int)> { (x, y, z) };
+        var queue = LeafQueue;
+        var seen = LeafSeen;
+        queue.Clear();
+        seen.Clear();
+        seen.Add((x, y, z));
         queue.Enqueue((x, y, z, 0));
         while (queue.Count > 0)
         {

@@ -1,8 +1,0 @@
-nav:
-  - installation.md
-  - pterodactyl.md
-  - configuration.md
-  - commandes.md
-  - mondes.md
-  - glob: "*"
-    ignore_no_matches: true # no new page yet: fine

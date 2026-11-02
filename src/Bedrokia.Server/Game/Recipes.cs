@@ -54,6 +54,7 @@ public static class Recipes
         var userData = new BedrockWriter();
         var multi = new BedrockWriter();
         uint shapedCount = 0, shapelessCount = 0, userDataCount = 0, multiCount = 0, next = 1;
+        var multiIds = new HashSet<uint>();
 
         void IndexRecipe(Recipe r)
         {
@@ -91,28 +92,103 @@ public static class Recipes
         {
             if (id is not string text || !Guid.TryParse(text, out var uuid))
                 continue;
+            multiIds.Add(next);
             multi.Uuid(uuid).VarUInt32(next++);
             multiCount++;
         }
+        MultiIds = multiIds.ToFrozenSet();
 
         ById = byIdTemp.ToFrozenDictionary();
         ByResultItem = byResultTemp.ToFrozenDictionary(k => k.Key, k => k.Value.ToArray());
 
-        var packet = new BedrockWriter().VarUInt32(CraftingDataId)
-            .VarUInt32(shapedCount).Bytes(shaped.ToArray())
-            .VarUInt32(shapelessCount).Bytes(shapeless.ToArray())
+        VanillaShapelessCount = shapelessCount;
+        VanillaShapeless = shapeless.ToArray();
+        var rest = new BedrockWriter()
             .VarUInt32(multiCount).Bytes(multi.ToArray())
             .VarUInt32(userDataCount).Bytes(userData.ToArray());
         for (var i = 0; i < 7; i++) // chemistry x2, smithing transform/trim, potions, potion containers, material reducers
-            packet.VarUInt32(0);
-        CraftingDataPacket = packet.Bool(true).ToArray(); // clear recipes
+            rest.VarUInt32(0);
+        rest.Bool(true); // clear recipes
+        VanillaShapedCount = shapedCount;
+        VanillaShaped = shaped.ToArray();
+        AfterShapeless = rest.ToArray();
+        _nextAddedId = next;
         Count = ById.Count;
     }
 
-    public static ReadOnlySpan<Recipe> ByResult(string itemName) => ByResultItem.GetValueOrDefault(itemName) ?? [];
+    public static ReadOnlySpan<Recipe> ByResult(string itemName) => Added.Count == 0
+        ? ByResultItem.GetValueOrDefault(itemName) ?? []
+        : [.. ByResultItem.GetValueOrDefault(itemName) ?? [], .. Added.Values.Where(r => r.Outputs.Any(o => o.Type.Name == itemName))];
 
-    /// <summary>CraftingData packet with every recipe; send once at spawn.</summary>
-    public static byte[] CraftingDataPacket { get; }
+    private static readonly uint VanillaShapedCount, VanillaShapelessCount;
+    private static readonly byte[] VanillaShaped, VanillaShapeless, AfterShapeless;
+
+    // Shaped recipes of plugins (AntaCore's chests and chest upgrades...), after the vanilla ones.
+    private static readonly Dictionary<uint, Recipe> Added = [];
+    private static readonly BedrockWriter AddedShaped = new(), AddedShapeless = new();
+    private static uint _addedShapedCount, _addedShapelessCount;
+    private static uint _nextAddedId;
+    private static byte[]? _packet;
+
+    /// <summary>CraftingData packet with every recipe, plugins' included; send once at spawn.</summary>
+    public static byte[] CraftingDataPacket => _packet ??= new BedrockWriter().VarUInt32(CraftingDataId)
+        .VarUInt32(VanillaShapedCount + _addedShapedCount).Bytes(VanillaShaped).Bytes(AddedShaped.ToArray())
+        .VarUInt32(VanillaShapelessCount + _addedShapelessCount).Bytes(VanillaShapeless).Bytes(AddedShapeless.ToArray())
+        .Bytes(AfterShapeless).ToArray();
+
+    /// <summary>
+    /// Adds a shaped crafting table recipe, as PocketMine's ShapedRecipe: <paramref name="pattern"/> rows ("AAA", "ABA",
+    /// "AAA"), each letter an item name of <paramref name="key"/> ("tag:minecraft:planks" for an item tag), a space
+    /// for an empty cell. <paramref name="block"/> is the table that crafts it: "crafting_table" (vanilla tables and
+    /// the inventory), or the crafting tag of a custom table (<see cref="Custom.Blocks.CustomBlockBuilder.WithCraftingTable"/>).
+    /// Add recipes before players join (plugins' OnEnable): the recipe list is sent at spawn.
+    /// </summary>
+    /// <exception cref="ArgumentException">A letter has no item in <paramref name="key"/>.</exception>
+    public static void AddShaped(string[] pattern, IReadOnlyDictionary<char, string> key, ItemStack output, string block = "crafting_table")
+    {
+        var width = pattern.Max(row => row.Length);
+        var inputs = new List<Ingredient>();
+        foreach (var row in pattern)
+            for (var column = 0; column < width; column++)
+            {
+                var letter = column < row.Length ? row[column] : ' ';
+                if (letter == ' ')
+                    inputs.Add(new Ingredient("minecraft:air", 0, "", 0));
+                else if (!key.TryGetValue(letter, out var item))
+                    throw new ArgumentException($"No item for '{letter}' in the recipe of {output.Type.Name}.", nameof(key));
+                else
+                    inputs.Add(item.StartsWith("tag:") ? new Ingredient("", 0, item[4..], 1) : new Ingredient(item, Ingredient.AnyMeta, "", 1));
+            }
+        var recipe = new Recipe(_nextAddedId++, inputs, [output], block);
+        Added[recipe.NetworkId] = recipe;
+        AddedShaped.String(RecipeId(recipe.NetworkId)).VarInt32(width).VarInt32(pattern.Length);
+        WriteRecipeBody(AddedShaped, AsSent(recipe), 0, shapedSymmetry: true);
+        _addedShapedCount++;
+        _packet = null;
+    }
+
+    /// <summary>
+    /// Adds a shapeless recipe: each item of <paramref name="ingredients"/> as many times as its count, in any cells
+    /// of the grid (9 at most), for the table <paramref name="block"/> (see <see cref="AddShaped"/>).
+    /// </summary>
+    /// <exception cref="ArgumentException">More than 9 items.</exception>
+    public static void AddShapeless(IReadOnlyDictionary<string, int> ingredients, ItemStack output, string block = "crafting_table")
+    {
+        var inputs = ingredients.SelectMany(i => Enumerable.Repeat(
+            i.Key.StartsWith("tag:") ? new Ingredient("", 0, i.Key[4..], 1) : new Ingredient(i.Key, Ingredient.AnyMeta, "", 1), i.Value)).ToList();
+        if (inputs.Count is 0 or > 9)
+            throw new ArgumentException($"A shapeless recipe takes 1 to 9 items, not {inputs.Count} ({output.Type.Name}).", nameof(ingredients));
+        var recipe = new Recipe(_nextAddedId++, inputs, [output], block);
+        Added[recipe.NetworkId] = recipe;
+        AddedShapeless.String(RecipeId(recipe.NetworkId));
+        WriteRecipeBody(AddedShapeless, AsSent(recipe), 0, shapedSymmetry: false);
+        _addedShapelessCount++;
+        _packet = null;
+    }
+
+    // The client shows a custom table's recipes only as "crafting_table" ones (it opens the table the server opened as a
+    // plain crafting table, its tags unused): they go out so, and the server checks the table (PlayerInventory Craft).
+    private static Recipe AsSent(Recipe recipe) => recipe.Block == "crafting_table" ? recipe : recipe with { Block = "crafting_table" };
 
     private static string RecipeId(uint networkId) => $"bedrokia:recipe_{networkId}";
 
@@ -146,9 +222,14 @@ public static class Recipes
 
     public static int Count { get; }
 
-    public static Recipe? ByNetworkId(uint id) => ById.GetValueOrDefault(id);
+    public static Recipe? ByNetworkId(uint id) => ById.GetValueOrDefault(id) ?? Added.GetValueOrDefault(id);
 
-    public static IEnumerable<Recipe> All => ById.Values;
+    private static readonly FrozenSet<uint> MultiIds;
+
+    /// <summary>A "multi" recipe (fireworks, map copies...): its result comes from <see cref="SpecialRecipes"/>.</summary>
+    public static bool IsMulti(uint id) => MultiIds.Contains(id);
+
+    public static IEnumerable<Recipe> All => ById.Values.Concat(Added.Values);
 
     internal static bool TagContains(string tag, string item) => Tags.TryGetValue(tag, out var items) && items.Contains(item);
 

@@ -84,6 +84,31 @@ public sealed partial class BedrockConnection
     public void PlaySound(string name, float volume = 1, float pitch = 1) =>
         Send(BedrokiaServer.SoundPacket(name, Position.X, Position.Y, Position.Z, volume, pitch));
 
+    /// <summary>
+    /// Shows <paramref name="block"/> at (x, y, z) to this player only: the world does not change, and the next change of
+    /// that block (or the chunk sent again) shows the real one. For views such as seeing through the ground.
+    /// </summary>
+    public void ShowBlock(int x, int y, int z, BlockType block) => Send(Packets.UpdateBlock(x, y, z, block.NetworkId));
+
+    /// <summary>
+    /// <see cref="ShowBlock"/> for many blocks at once: one UpdateSubChunkBlocks packet per sub-chunk (16 x 16 x 16), so
+    /// the client rebuilds each sub-chunk once. Thousands of UpdateBlock packets made it rebuild thousands of times, and
+    /// crash (the cave block).
+    /// </summary>
+    public void ShowBlocks(IEnumerable<(int X, int Y, int Z, BlockType Block)> blocks)
+    {
+        const uint updateSubChunkBlocksId = 172, flagNetwork = 2;
+        foreach (var section in blocks.GroupBy(b => (b.X >> 4, b.Y >> 4, b.Z >> 4)))
+        {
+            var entries = section.ToList();
+            var w = new BedrockWriter().VarUInt32(updateSubChunkBlocksId)
+                .BlockPos(section.Key.Item1 << 4, section.Key.Item2 << 4, section.Key.Item3 << 4).VarUInt32((uint)entries.Count);
+            foreach (var (x, y, z, block) in entries)
+                w.BlockPos(x, y, z).VarUInt32(block.NetworkId).VarUInt32(flagNetwork).VarUInt64(0).VarUInt32(0);
+            Send(w.VarUInt32(0).ToArray()); // no second layer
+        }
+    }
+
     /// <summary>Pushes the player (blocks per tick; 1.0 up is a big jump).</summary>
     public void SetMotion(double vx, double vy, double vz) => Send(EntityPackets.Motion(EntityId, vx, vy, vz));
 

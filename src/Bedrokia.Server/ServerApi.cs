@@ -30,6 +30,18 @@ public sealed partial class BedrokiaServer
     public void PlaySound(string name, double x, double y, double z, Game.World? world = null, float volume = 1, float pitch = 1) =>
         BroadcastIn(world ?? World, SoundPacket(name, x, y, z, volume, pitch));
 
+    /// <summary>Makes a custom block a furnace cooking <paramref name="speed"/> times as fast (see <see cref="Game.BlockEntity.RegisterFurnace"/>).</summary>
+    public void RegisterFurnace(string blockId, float speed) => Game.BlockEntity.RegisterFurnace(blockId, speed);
+
+    /// <summary>
+    /// Makes the clients know a resource pack entity (e.g. "antafac:statue") so plugins can spawn it
+    /// (<see cref="NpcManager.SpawnEntity"/>). Call it when the plugin loads: the clients learn the list when they join.
+    /// </summary>
+    public void RegisterEntity(string identifier) => ActorIdentifiers.Register(identifier);
+
+    /// <summary>Makes an item throwable as a custom entity (see <see cref="ThrowableType"/>).</summary>
+    public void RegisterThrowable(string itemId, ThrowableType type) => ProjectileManager.RegisterThrowable(itemId, type);
+
     internal static byte[] SoundPacket(string name, double x, double y, double z, float volume, float pitch) =>
         new BedrockWriter().VarUInt32(86).String(name).BlockPos((int)(x * 8), (int)(y * 8), (int)(z * 8)) // position in 1/8 blocks
             .Float32(volume).Float32(pitch).VarInt32(0).Bool(false).Bool(false).Bool(false).ToArray(); // no loop, no handle
@@ -47,8 +59,8 @@ public sealed partial class BedrokiaServer
             if (Math.Abs(px - x) < 3 && Math.Abs(py - Network.BedrockConnection.EyeHeight - y) < 4 && Math.Abs(pz - z) < 3)
                 player.Damage(5, x, z, source: DamageSource.Custom("lightning"));
         }
-        foreach (var mob in world == World ? Mobs.All.ToList() : [])
-            if (Math.Abs(mob.X - x) < 3 && Math.Abs(mob.Y - y) < 4 && Math.Abs(mob.Z - z) < 3)
+        foreach (var mob in Mobs.All.ToList())
+            if (mob.World == world && Math.Abs(mob.X - x) < 3 && Math.Abs(mob.Y - y) < 4 && Math.Abs(mob.Z - z) < 3)
                 Mobs.Damage(mob, 5, (x, z), source: DamageSource.Custom("lightning"));
     }
 }

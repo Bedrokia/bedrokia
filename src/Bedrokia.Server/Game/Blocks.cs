@@ -49,6 +49,10 @@ public sealed class BlockType
     /// <summary>Cannot be broken in survival.</summary>
     public bool Unbreakable => Blocks.UnbreakableNames.Contains(Name);
 
+    /// <summary>The same block with one state changed (facing, lit...), or this block when no such state exists.</summary>
+    public BlockType WithState(string key, object value) =>
+        Blocks.ByKey(new BlockType(0, Name, new OrderedDictionary<string, object>(States) { [key] = value }).Key) ?? this;
+
     public override string ToString() => Key;
 }
 
@@ -156,6 +160,21 @@ public static class Blocks
     public static BlockType ById(ushort id) => All[id];
 
     public static BlockType? ByKey(string key) => ByKeyMap.GetValueOrDefault(key);
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, BlockType?> Closest = new();
+
+    /// <summary>
+    /// A saved state: exact, or when its block gained states since (a plugin added a property to a custom block), the
+    /// first state of that block keeping every saved value, else its default state. Null: the block no longer exists.
+    /// </summary>
+    public static BlockType? ByKeyOrClosest(string key) => ByKey(key) ?? Closest.GetOrAdd(key, static key =>
+    {
+        var open = key.IndexOf('[');
+        var name = open < 0 ? key : key[..open];
+        var saved = open < 0 ? [] : key[(open + 1)..^1].Split(',');
+        return All.FirstOrDefault(b => b.Name == name && saved.All(s => b.States.Any(st => $"{st.Key}={st.Value}" == s)))
+               ?? FirstByName.GetValueOrDefault(name);
+    });
 
     public static BlockType? ByNetworkId(uint networkId) => ByNetworkIdMap.GetValueOrDefault(networkId);
 

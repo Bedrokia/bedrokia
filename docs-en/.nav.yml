@@ -1,8 +1,0 @@
-# Menu order (mkdocs-awesome-nav). The "*" glob adds any other page or folder automatically.
-nav:
-  - index.md
-  - Getting started: getting-started
-  - Plugins: plugins
-  - Project: project
-  - glob: "*"
-    ignore_no_matches: true

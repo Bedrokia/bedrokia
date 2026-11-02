@@ -23,5 +23,9 @@ public sealed class PlayerDamageEvent(BedrockConnection player, DamageSource sou
     public DamageSource Source => source;
     public float Damage { get; set; } = damage;
     public (double X, double Z) KnockbackOrigin { get; set; } = knockbackOrigin;
-    public bool ApplyKnockback { get; set; } = true;
+    /// <summary>Only hits from a player or a mob push back (falls, fire, void... do not).</summary>
+    public bool ApplyKnockback { get; set; } = source.Attacker is not null;
+
+    /// <summary>Horizontal push (0.4 = a normal hit, + 0.5 per Knockback level); the upward push is capped at 0.4.</summary>
+    public float Knockback { get; set; } = 0.4f;
 }

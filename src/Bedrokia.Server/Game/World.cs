@@ -56,6 +56,9 @@ public sealed class World
     // Per-world simulation, set up by the server when it opens the world.
     public BedrokiaServer? Server { get; internal set; }
     public DroppedItems DroppedItems { get; internal set; } = null!;
+
+    // Items shown still in the air (BedrokiaServer.ShowItem): sent to whoever joins or enters this world.
+    internal readonly Dictionary<long, (ItemStack Stack, float X, float Y, float Z)> ShownItems = [];
     public Fluids Fluids { get; internal set; } = null!;
     public Entities.FallingBlocks FallingBlocks { get; internal set; } = null!;
 
@@ -104,7 +107,7 @@ public sealed class World
         var (x, _, z) = world.Generator.FindSpawn();
         var chunk = world.Generator.Generate(x >> 4, z >> 4);
         world.Spawn = (x, chunk.Height(x & 15, z & 15) + 1, z);
-        world.SaveLevel();
+        WriteAtomically(world.LevelFile, world.LevelBytes());
         return world;
     }
 
@@ -116,9 +119,27 @@ public sealed class World
     // Half the cores generate; the rest keep the game running (disk loads are not limited).
     private static readonly SemaphoreSlim GenerationSlots = new(Math.Max(1, Environment.ProcessorCount / 2));
 
+    // The last chunk looked up: block loops (collisions, light, maps, mobs) read the same chunk again and again.
+    private sealed class CachedChunk(long key, Chunk chunk)
+    {
+        public readonly long Key = key;
+        public readonly Chunk Chunk = chunk;
+    }
+
+    private CachedChunk? _lastChunk;
+
     /// <summary>The chunk if it is already in memory and ready, otherwise null.</summary>
-    public Chunk? LoadedChunk(int x, int z) =>
-        _chunks.TryGetValue(ChunkKey(x, z), out var lazy) && lazy.IsValueCreated && lazy.Value.IsCompletedSuccessfully ? lazy.Value.Result : null;
+    public Chunk? LoadedChunk(int x, int z)
+    {
+        var key = ChunkKey(x, z);
+        if (_lastChunk is { } last && last.Key == key)
+            return last.Chunk;
+        if (!_chunks.TryGetValue(key, out var lazy) || !lazy.IsValueCreated || !lazy.Value.IsCompletedSuccessfully)
+            return null;
+        var chunk = lazy.Value.Result;
+        _lastChunk = new CachedChunk(key, chunk);
+        return chunk;
+    }
 
     /// <summary>Block at a world position, or null when its chunk is not loaded.</summary>
     public BlockType? GetBlock(int x, int y, int z) => LoadedChunk(x >> 4, z >> 4)?.GetBlock(x & 15, y, z & 15);
@@ -141,8 +162,18 @@ public sealed class World
 
     public void SetBlockEntity(int x, int y, int z, BlockEntity? entity) => LoadedChunk(x >> 4, z >> 4)?.SetBlockEntity(x & 15, y, z & 15, entity);
 
+    // The chunk, with its network payload already built: done here, on a pool thread, before the game sees the
+    // chunk (no race), so the game thread only sends it.
     private async Task<Chunk> LoadOrGenerateAsync(int x, int z)
     {
+        var chunk = await ReadOrGenerateAsync(x, z);
+        chunk.NetworkPayload(Dimension == 1);
+        return chunk;
+    }
+
+    private async Task<Chunk> ReadOrGenerateAsync(int x, int z)
+    {
+        await _writes; // a chunk dropped after its save must not be read back before its file is written
         var file = ChunkFile(x, z);
         if (File.Exists(file))
         {
@@ -171,9 +202,22 @@ public sealed class World
 
     /// <summary>Writes every modified chunk and level.json. Game thread: snapshots, then writes files.</summary>
     /// <returns>Number of chunks written.</returns>
-    public int Save()
+    // Disk writes of the saves, one after the other, off the tick: an autosave of hundreds of chunks froze the
+    // game for 200 ms. The chunks are serialized during the tick, so what is written is a consistent copy.
+    private Task _writes = Task.CompletedTask;
+    private Exception? _writeError;
+
+    /// <summary>
+    /// Saves the changed chunks and level.json; the files are written in the background, or before returning with
+    /// <paramref name="wait"/> (server stop). A failed background write is thrown by the next save, and its chunks
+    /// are saved again.
+    /// </summary>
+    /// <exception cref="IOException">The last background write failed.</exception>
+    public int Save(bool wait = true)
     {
-        var saved = 0;
+        if (Interlocked.Exchange(ref _writeError, null) is { } error)
+            throw new IOException(error.Message, error);
+        var files = new List<(string Path, byte[] Data, Chunk? Chunk)>();
         foreach (var (key, lazy) in _chunks)
         {
             if (!lazy.IsValueCreated || !lazy.Value.IsCompletedSuccessfully)
@@ -182,12 +226,35 @@ public sealed class World
             if (!chunk.Dirty)
                 continue;
             var (cx, cz) = UnpackChunkKey(key);
-            WriteAtomically(ChunkFile(cx, cz), chunk.Serialize());
+            files.Add((ChunkFile(cx, cz), chunk.Serialize(), chunk));
             chunk.Dirty = false;
-            saved++;
         }
-        SaveLevel();
-        return saved;
+        files.Add((LevelFile, LevelBytes(), null));
+        var previous = _writes;
+        _writes = Task.Run(async () =>
+        {
+            await previous;
+            foreach (var (path, data, chunk) in files)
+            {
+                try
+                {
+                    WriteAtomically(path, data);
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+                {
+                    if (chunk is not null)
+                        chunk.Dirty = true; // written again next time
+                    _writeError = e;
+                }
+            }
+        });
+        if (wait)
+        {
+            _writes.GetAwaiter().GetResult();
+            if (Interlocked.Exchange(ref _writeError, null) is { } failed)
+                throw new IOException(failed.Message, failed);
+        }
+        return files.Count - 1;
     }
 
     /// <summary>Drops clean chunks nobody is near, to bound memory.</summary>
@@ -202,10 +269,11 @@ public sealed class World
                 continue;
             _chunks.TryRemove(key, out _);
         }
+        _lastChunk = null; // it may be one of the dropped chunks
     }
 
-    private void SaveLevel() => WriteAtomically(LevelFile,
-        JsonSerializer.SerializeToUtf8Bytes(new LevelData(Generator.Seed, Time, Spawn.X, Spawn.Y, Spawn.Z, Product.CreatedBy), new JsonSerializerOptions { WriteIndented = true }));
+    private byte[] LevelBytes() =>
+        JsonSerializer.SerializeToUtf8Bytes(new LevelData(Generator.Seed, Time, Spawn.X, Spawn.Y, Spawn.Z, Product.CreatedBy), new JsonSerializerOptions { WriteIndented = true });
 
     // Write to a temp file then rename, so a crash never leaves a half-written save.
     private static void WriteAtomically(string path, byte[] data)

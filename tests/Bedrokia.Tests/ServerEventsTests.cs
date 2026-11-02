@@ -511,6 +511,11 @@ public sealed class ServerEventsTests
         server.AddPlayer(player);
 
         var dirt = Blocks.ByName("dirt")!;
+        // Open air around the player: explosion rays are stopped by the generated terrain.
+        for (var x = 7; x <= 13; x++)
+        for (var y = 64; y <= 68; y++)
+        for (var z = 7; z <= 13; z++)
+            server.World.SetBlock(x, y, z, Blocks.Air);
         server.World.SetBlock(10, 63, 10, dirt);
 
         // 1. Cancelled explosion

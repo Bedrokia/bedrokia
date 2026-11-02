@@ -81,6 +81,7 @@ public sealed partial class BedrockConnection
             Send(other.AddPlayerPacket());
         foreach (var item in target.DroppedItems.All)
             Send(InventoryPackets.AddItemActor(item.EntityId, item.Stack, item.X, item.Y + DroppedItems.NetworkOffset, item.Z, item.Vx, item.Vy, item.Vz));
+        SeenShownItems.Clear(); // the client dropped them with the old dimension; TickShownItems sends the near ones
     }
 
     // --- Nether portals ---

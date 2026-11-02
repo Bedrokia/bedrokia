@@ -37,6 +37,40 @@ public sealed class Fluids(BedrokiaServer server, World world)
 
     public static BlockType Source(string kind) => Liquid(kind, 0, still: true);
 
+    // How full a water block is: 8 for a source or falling water, less as it spreads (Java FlowingFluid amount).
+    private static int Amount(BlockType block) => Depth(block) is var d && d >= 8 ? 8 : 8 - d;
+
+    /// <summary>
+    /// Direction the water at (x, y, z) flows, normalised (zero for still water or no water): towards the lower
+    /// neighbours, down for falling water (Java FlowingFluid.getFlow). What pushes TNT and items in streams.
+    /// </summary>
+    public static (double X, double Y, double Z) Flow(World world, int x, int y, int z)
+    {
+        if (world.GetBlock(x, y, z) is not { } block || !IsLiquid(block) || !IsWater(block))
+            return (0, 0, 0);
+        var own = Amount(block);
+        double fx = 0, fy = 0, fz = 0;
+        foreach (var (sx, sz) in Sides)
+        {
+            var side = world.GetBlock(x + sx, y, z + sz);
+            int difference;
+            if (side is not null && IsLiquid(side) && IsWater(side))
+                difference = own - Amount(side);
+            else if (side is null || Entities.BlockPhysics.IsSolid(side))
+                continue;
+            else if (world.GetBlock(x + sx, y - 1, z + sz) is { } below && IsLiquid(below) && IsWater(below))
+                difference = own - (Amount(below) - 8); // spilling down the edge
+            else
+                continue;
+            fx += sx * difference;
+            fz += sz * difference;
+        }
+        if (Depth(block) >= 8)
+            fy -= 6;
+        var length = Math.Sqrt(fx * fx + fy * fy + fz * fz);
+        return length < 1e-6 ? (0, 0, 0) : (fx / length, fy / length, fz / length);
+    }
+
     private static BlockType Liquid(string kind, int depth, bool still = false)
     {
         var name = still ? $"minecraft:{kind}" : $"minecraft:flowing_{kind}";
@@ -179,9 +213,10 @@ public sealed class Fluids(BedrokiaServer server, World world)
         }
         if (target is not null && IsLiquid(target) && IsWater(target) != (kind == "water"))
         {
-            // Water touching lava: a lava source turns to obsidian, flowing lava (or lava onto water) to cobblestone.
+            // Water touching lava (vanilla): a lava source turns to obsidian, flowing lava to cobblestone, and lava
+            // falling down onto water makes stone (cobblestone generators, stone generators).
             var lavaSource = !IsWater(target) && Depth(target) == 0;
-            Set(x, y, z, Blocks.ByName(lavaSource ? "obsidian" : kind == "lava" && y < 0 ? "stone" : "cobblestone")!);
+            Set(x, y, z, Blocks.ByName(lavaSource ? "obsidian" : kind == "lava" && fromY > y ? "stone" : "cobblestone")!);
             server.BroadcastIn(world, Protocol.Packets.LevelEvent(1004, x, y, z, 0)); // fizz
             return;
         }

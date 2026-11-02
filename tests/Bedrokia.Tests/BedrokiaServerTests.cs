@@ -29,6 +29,8 @@ public class BedrokiaServerTests
         var run = server.RunAsync();
         await server.Started.WaitAsync(Timeout);
         Assert.NotNull(server.NetherNetEndPoint);
+        while (server.CurrentTick == 0) // console commands and packets now run as soon as they arrive, even before the first tick
+            await Task.Delay(10);
 
         server.EnqueueCommand("stop");
         await run.WaitAsync(Timeout);

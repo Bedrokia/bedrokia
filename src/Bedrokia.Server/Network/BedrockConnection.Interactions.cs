@@ -41,21 +41,29 @@ public sealed partial class BedrockConnection
             }
         }
         var name = block.Name;
+        // Mobs on a lead get tied to the fence.
+        if (name.EndsWith("_fence") && _server.Mobs.TieToFence(this, x, y, z))
+            return true;
         if (TryOpenContainer(block, x, y, z))
             return true;
+        // A custom crafting table: the vanilla crafting screen, for its own recipes too.
+        if (Game.Custom.Blocks.CustomBlockRegistry.Get(name)?.Components.GetValueOrDefault(Game.Custom.Blocks.BlockComponentIds.CraftingTable) is Game.Custom.Blocks.CraftingTableBlockComponent table)
+        {
+            OpenCustomCraftingTable(table.CraftingTags);
+            return true;
+        }
         switch (name)
         {
             case "minecraft:enchanting_table":
                 OpenEnchantingTable(x, y, z);
                 return true;
+            case "minecraft:anvil" or "minecraft:chipped_anvil" or "minecraft:damaged_anvil":
+                OpenAnvil(x, y, z);
+                return true;
             case "minecraft:crafting_table":
                 Inventory.CraftingTableOpen = true;
+                Inventory.CraftingTags = ["crafting_table"];
                 Send(InventoryPackets.ContainerOpen(InventoryPackets.WindowCraftingTable, InventoryPackets.ContainerTypeWorkbench, x, y, z));
-                return true;
-            case "minecraft:anvil" or "minecraft:chipped_anvil" or "minecraft:damaged_anvil":
-                Inventory.AnvilOpen = true;
-                Inventory.AnvilPos = (x, y, z);
-                Send(InventoryPackets.ContainerOpen(InventoryPackets.WindowAnvil, InventoryPackets.ContainerTypeAnvil, x, y, z));
                 return true;
             case "minecraft:grindstone":
                 Inventory.GrindstoneOpen = true;
@@ -117,16 +125,20 @@ public sealed partial class BedrockConnection
         var (fx, fy, fz) = FaceOffset(face);
         var world = World;
         var survival = GameMode != GameMode.Creative;
+        if (UseSpecialItemOn(item, clicked, x, y, z, face))
+            return true;
 
         if (item.EndsWith("_hoe") && clicked.Name is "minecraft:grass_block" or "minecraft:dirt" or "minecraft:dirt_path"
             && face != 0 && world.GetBlock(x, y + 1, z) is { IsAir: true })
         {
             _server.SetBlockAndUpdate(x, y, z, Blocks.ByName("farmland")!, World);
+            WearHeld(1);
             return true;
         }
         if (item.EndsWith("_shovel") && clicked.Name == "minecraft:grass_block" && face != 0 && world.GetBlock(x, y + 1, z) is { IsAir: true })
         {
             _server.SetBlockAndUpdate(x, y, z, Blocks.ByName("grass_path") ?? Blocks.ByName("dirt_path") ?? clicked, World);
+            WearHeld(1);
             return true;
         }
         if (item == "bone_meal")
@@ -153,6 +165,7 @@ public sealed partial class BedrockConnection
             else
                 return false;
             _server.BroadcastIn(World, Packets.LevelEvent(LevelEventFizz, x, y, z, 0));
+            WearHeld(1);
             return true;
         }
         if (item == "bucket")

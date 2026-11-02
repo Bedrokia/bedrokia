@@ -45,4 +45,26 @@ public class EnchantingTests
         Assert.Null(Enchanting.Options(pickaxe, 15, 1)); // already enchanted
         Assert.True(DropRules.BreakTicks(Blocks.Stone, pickaxe) < DropRules.BreakTicks(Blocks.Stone, ItemStack.Of("iron_pickaxe")));
     }
+
+    [Fact]
+    public void Anvil_renames_repairs_and_applies_books()
+    {
+        var sword = ItemStack.Of("diamond_sword")!;
+        var (named, cost, _) = Anvil.Combine(sword, null, "Excalibur")!.Value;
+        Assert.Equal("Excalibur", named.CustomName);
+        Assert.Equal(1, cost);
+        Assert.Null(Anvil.Combine(sword, null, null)); // nothing to do
+
+        var worn = new ItemStack(sword.Type, 1, 0, 0, new OrderedDictionary<string, object> { ["Damage"] = 1000 });
+        var (repaired, _, used) = Anvil.Combine(worn, ItemStack.Of("diamond")!.Split(2), null)!.Value;
+        Assert.Equal(1000 - 2 * (Durability.Max(sword) / 4), Durability.Damage(repaired)); // a quarter per diamond
+        Assert.Equal(2, used);
+        Assert.Null(Anvil.Combine(worn, ItemStack.Of("iron_ingot"), null)); // not its material
+
+        var book = Enchanting.With(ItemStack.Of("enchanted_book")!, [(9, 3)]); // sharpness III
+        var (sharp, bookCost, _) = Anvil.Combine(sword, book, null)!.Value;
+        Assert.Equal(3, Enchanting.Level(sharp, "sharpness"));
+        Assert.True(bookCost > 0);
+        Assert.Equal(1, Anvil.RepairCost(sharp)); // the next use costs more
+    }
 }

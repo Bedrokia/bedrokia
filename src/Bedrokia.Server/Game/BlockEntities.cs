@@ -32,8 +32,21 @@ public sealed class BlockEntity(string id, int slots)
     // Furnaces: ticks cooked so far, fuel ticks left and the total of the current fuel.
     public int CookTicks, BurnTicks, BurnDuration;
 
+    // Custom blocks that work as furnaces (plugins, e.g. AntaCore's tiered furnaces): their cooking speed.
+    private static readonly Dictionary<string, float> FurnaceSpeeds = [];
+
+    /// <summary>
+    /// Makes the custom block <paramref name="blockId"/> a furnace: same window, fuels and recipes as the vanilla one,
+    /// cooking <paramref name="speed"/> times as fast (AntaCore: 1 + 2 x (speed - 1) cook ticks a tick). A
+    /// "...:lit" property (0/1) of the block, if any, is set while it burns.
+    /// </summary>
+    public static void RegisterFurnace(string blockId, float speed) => FurnaceSpeeds[blockId] = Math.Max(1, speed);
+
+    /// <summary>The cooking speed of a custom furnace, or null when the block is not one.</summary>
+    public static float? FurnaceSpeed(string? blockName) => blockName is not null && FurnaceSpeeds.TryGetValue(blockName, out var speed) ? speed : null;
+
     /// <summary>The block entity a block needs, or null.</summary>
-    public static BlockEntity? For(BlockType block) =>
+    public static BlockEntity? For(BlockType block) => FurnaceSpeeds.ContainsKey(block.Name) ? new BlockEntity("Furnace", 3) :
         !block.Name.StartsWith("minecraft:") ? null : block.Name["minecraft:".Length..] switch
         {
             "chest" or "trapped_chest" => new BlockEntity("Chest", 27),
