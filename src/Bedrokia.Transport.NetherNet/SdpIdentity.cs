@@ -28,7 +28,7 @@ internal static class SdpIdentity
         Encoding.UTF8.GetBytes("{\"fingerprint\":[{\"algorithm\":" + JsonSerializer.Serialize(algorithm)
                                + ",\"digest\":" + JsonSerializer.Serialize(digest) + "}]}");
 
-    /// <summary>Reads "a=&lt;name&gt;:&lt;value&gt;" (first occurrence) from an SDP.</summary>
+    /// <summary>Reads "a=<name>:<value>" (first occurrence) from an SDP.</summary>
     public static string? Attribute(string sdp, string name)
     {
         foreach (var line in sdp.Split('\n'))
@@ -66,25 +66,47 @@ internal static class SdpIdentity
         try
         {
             using var identity = JsonDocument.Parse(Convert.FromBase64String(encoded));
-            if (identity.RootElement.GetProperty("idp").GetProperty("protocol").GetString() != "default")
+            if (!identity.RootElement.TryGetProperty("idp", out var idp)
+                || !idp.TryGetProperty("protocol", out var proto)
+                || proto.GetString() != "default")
                 throw new LoginException("Unsupported identity protocol.");
-            using var assertion = JsonDocument.Parse(identity.RootElement.GetProperty("assertion").GetString()!);
-            fingerprints = assertion.RootElement.GetProperty("fingerprints").GetString()!;
-            token = assertion.RootElement.GetProperty("token").GetString()!;
+
+            if (!identity.RootElement.TryGetProperty("assertion", out var assertionEl)
+                || assertionEl.GetString() is not { } assertionJson)
+                throw new LoginException("Malformed NetherNet identity.");
+
+            using var assertion = JsonDocument.Parse(assertionJson);
+            if (!assertion.RootElement.TryGetProperty("fingerprints", out var fpEl)
+                || fpEl.GetString() is not { } fp
+                || !assertion.RootElement.TryGetProperty("token", out var tokEl)
+                || tokEl.GetString() is not { } tok)
+                throw new LoginException("Malformed NetherNet identity.");
+
+            fingerprints = fp;
+            token = tok;
+        }
+        catch (LoginException)
+        {
+            throw;
         }
         catch (Exception e) when (e is FormatException or JsonException or KeyNotFoundException or InvalidOperationException or ArgumentNullException)
         {
             throw new LoginException("Malformed NetherNet identity.");
         }
 
-        var key = verifyToken(token);
         var (algorithm, digest) = Fingerprint(offer);
-        if (!Jwt.VerifyDetachedEs384(fingerprints, FingerprintPayload(algorithm, digest), key))
+        var key = verifyToken(token);
+        try
+        {
+            if (!Jwt.VerifyDetachedEs384(fingerprints, FingerprintPayload(algorithm, digest), key))
+                throw new LoginException("NetherNet identity does not match the connection.");
+            return key;
+        }
+        catch
         {
             key.Dispose();
-            throw new LoginException("NetherNet identity does not match the connection.");
+            throw;
         }
-        return key;
     }
 
     /// <summary>Adds the server's identity to <paramref name="answer"/> (as a session-level attribute).</summary>

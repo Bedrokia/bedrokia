@@ -130,7 +130,7 @@ internal sealed class UdpMux : IDisposable
                 var colon = username.IndexOf(':');
                 return colon < 0 ? username : username[..colon];
             }
-            pos += 4 + (length + 3 & ~3);
+            pos += 4 + ((length + 3) & ~3);
         }
         return null;
     }
