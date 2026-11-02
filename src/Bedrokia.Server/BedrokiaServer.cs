@@ -1657,3 +1657,4 @@ public sealed partial class BedrokiaServer
         Alias("permission", "perm", "<target:user|group> [args...]", "bedrokia.command.permission");
     }
 }
+
