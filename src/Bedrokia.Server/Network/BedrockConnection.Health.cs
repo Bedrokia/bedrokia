@@ -1,4 +1,4 @@
-// ┌───────────────────────────────────────────────────────────────────┐
+﻿// ┌───────────────────────────────────────────────────────────────────┐
 // │  ____  _____ ____  ____   ___  _  __ ___    _                     │
 // │ | __ )| ____|  _ \|  _ \ / _ \| |/ /|_ _|  / \                    │
 // │ |  _ \|  _| | | | | |_) | | | | ' /  | |  / _ \                   │
@@ -434,6 +434,12 @@ public sealed partial class BedrockConnection
     {
         if (Dead || GameMode == GameMode.Creative || _god)
             return;
+        if (Server?.Events is { HasPlayerExhaust: true } exEvs)
+        {
+            var exhaustEv = new PlayerExhaustEvent(this, amount);
+            if (!exEvs.OnPlayerExhaust(exhaustEv)) return;
+            amount = exhaustEv.Amount;
+        }
         _exhaustion += amount;
         if (_exhaustion < 4)
             return;
@@ -832,8 +838,18 @@ public sealed partial class BedrockConnection
         var damage = (float)Math.Floor((fallen - 3) * share);
         if (fallen > 3.5f && damage > 0)
         {
-            _hurtTicks = 0;
-            Damage(damage * (1 - Math.Min(Enchanting.Level(Inventory.Armour[3], "feather_falling") * 3 + ProtectionPoints(), 20) * 0.04f), Position.X, Position.Z, armour: false, source: DamageSource.Fall(fallen));
+            if (Server?.Events is { HasPlayerFall: true } fallEvs)
+            {
+                var fallEv = new PlayerFallEvent(this, fallen, damage);
+                if (!fallEvs.OnPlayerFall(fallEv)) return;
+                fallen = fallEv.Distance;
+                damage = fallEv.Damage;
+            }
+            if (damage > 0)
+            {
+                _hurtTicks = 0;
+                Damage(damage * (1 - Math.Min(Enchanting.Level(Inventory.Armour[3], "feather_falling") * 3 + ProtectionPoints(), 20) * 0.04f), Position.X, Position.Z, armour: false, source: DamageSource.Fall(fallen));
+            }
         }
     }
 
@@ -955,6 +971,12 @@ public sealed partial class BedrockConnection
         if (action != 1 || Dead)
             return;
         var damage = AttackDamage(Inventory.Held) + MaceBonus(Inventory.Held);
+        if (Server?.Events is { HasPlayerAttack: true } atkEvs)
+        {
+            var attackEv = new PlayerAttackEvent(this, target, damage);
+            if (!atkEvs.OnPlayerAttack(attackEv)) return;
+            damage = attackEv.Damage;
+        }
         if (_activeEffects.TryGetValue(EffectType.Strength, out var str))
             damage += 3f * (str.Amplifier + 1);
         if (_activeEffects.TryGetValue(EffectType.Weakness, out var weak))

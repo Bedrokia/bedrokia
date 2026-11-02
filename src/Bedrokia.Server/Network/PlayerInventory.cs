@@ -352,6 +352,13 @@ public sealed class PlayerInventory
         void Set(SlotRef slot, (Inventory Inventory, int Slot) at, ItemStack? stack)
         {
             Remember(at);
+            if (at.Inventory == Armour && Player?.Server?.Events is { HasPlayerArmorChange: true } armorEvs)
+            {
+                var oldItem = at.Inventory[at.Slot];
+                var armorEv = new PlayerArmorChangeEvent(Player, at.Slot, oldItem, stack);
+                if (!armorEvs.OnPlayerArmorChange(armorEv)) throw new InvalidOperationException("armor change cancelled");
+                stack = armorEv.NewItem;
+            }
             at.Inventory[at.Slot] = stack;
             changes[(slot.Container, slot.Slot)] = at;
             current[at] = stack?.NetworkId ?? 0;
@@ -639,6 +646,11 @@ public sealed class PlayerInventory
                             var tx = new InventoryTransactionEvent(Player, InventoryTransactionType.Craft, recipe.Outputs.FirstOrDefault(), c.Times, (0, 0));
                             if (!Player.Server.Events.OnInventoryTransaction(tx))
                                 throw new InvalidOperationException("stonecutter craft cancelled");
+                            if (Player.Server.Events.HasStonecutterUse)
+                            {
+                                var scEv = new StonecutterUseEvent(Player, input, recipe.Outputs.FirstOrDefault());
+                                if (!Player.Server.Events.OnStonecutterUse(scEv)) throw new InvalidOperationException("stonecutter craft cancelled");
+                            }
                         }
 
                         Take(ContainerStonecutterInput, Ui, StonecutterInputSlot, c.Times);
@@ -806,3 +818,4 @@ public sealed class PlayerInventory
         return InventoryPackets.InventorySlot(InventoryPackets.WindowInventory, SelectedSlot, Main[SelectedSlot]);
     }
 }
+

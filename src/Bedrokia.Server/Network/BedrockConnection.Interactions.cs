@@ -1,4 +1,4 @@
-// ┌───────────────────────────────────────────────────────────────────┐
+﻿// ┌───────────────────────────────────────────────────────────────────┐
 // │  ____  _____ ____  ____   ___  _  __ ___    _                     │
 // │ | __ )| ____|  _ \|  _ \ / _ \| |/ /|_ _|  / \                    │
 // │ |  _ \|  _| | | | | |_) | | | | ' /  | |  / _ \                   │
@@ -173,6 +173,11 @@ public sealed partial class BedrockConnection
             foreach (var (bx, by, bz) in new[] { (x, y, z), (x + fx, y + fy, z + fz) })
                 if (world.GetBlock(bx, by, bz) is { } liquid && Fluids.IsSource(liquid))
                 {
+                    if (Server?.Events is { HasPlayerBucketFill: true } fillEvs)
+                    {
+                        var fillEv = new PlayerBucketFillEvent(this, bx, by, bz, liquid);
+                        if (!fillEvs.OnPlayerBucketFill(fillEv)) return true;
+                    }
                     _server.SetBlockAndUpdate(bx, by, bz, Blocks.Air, World);
                     GiveBucket(liquid.Name.Contains("lava") ? "lava_bucket" : "water_bucket");
                     return true;
@@ -183,6 +188,11 @@ public sealed partial class BedrockConnection
         {
             if (world.GetBlock(x + fx, y + fy, z + fz) is not { } target || BlockPhysics(target) || SpawnProtected(x + fx, z + fz))
                 return false;
+            if (Server?.Events is { HasPlayerBucketEmpty: true } emptyEvs)
+            {
+                var emptyEv = new PlayerBucketEmptyEvent(this, x + fx, y + fy, z + fz, item);
+                if (!emptyEvs.OnPlayerBucketEmpty(emptyEv)) return true;
+            }
             if (item == "water_bucket" && World.Dimension == 1) // water evaporates in the Nether
             {
                 _server.BroadcastIn(World, Packets.LevelEvent(LevelEventFizz, x + fx, y + fy, z + fz, 0));
@@ -301,6 +311,11 @@ public sealed partial class BedrockConnection
     // Beds: respawn point, and at night every player in bed skips to the morning.
     private void UseBed(BlockType bed, int x, int y, int z)
     {
+        if (Server?.Events is { HasPlayerBedEnter: true } bedEvs)
+        {
+            var enterEv = new PlayerBedEnterEvent(this, x, y, z);
+            if (!bedEvs.OnPlayerBedEnter(enterEv)) return;
+        }
         BedSpawn = (x, y + 1, z);
         SendMessage("§7Respawn point set.");
         var time = _server.World.Time % 24000;
@@ -314,6 +329,7 @@ public sealed partial class BedrockConnection
         if (players.All(p => p._sleepingNight == _sleepingNight))
         {
             _server.World.Time = (_server.World.Time / 24000 + 1) * 24000;
+            if (Server?.Events is { HasPlayerSleepSkipNight: true } skipEvs) skipEvs.OnPlayerSleepSkipNight(new PlayerSleepSkipNightEvent(this));
             _server.Broadcast(Packets.SetTime((int)(_server.World.Time % int.MaxValue)));
             _server.BroadcastMessage("§eGood morning! The night was skipped.");
         }
@@ -323,6 +339,16 @@ public sealed partial class BedrockConnection
     }
 
     private long _sleepingNight = -1;
+    /// <summary>Wakes up the player if they were sleeping in bed.</summary>
+    public void WakeUp()
+    {
+        if (_sleepingNight != -1)
+        {
+            _sleepingNight = -1;
+            if (Server?.Events is { HasPlayerBedLeave: true } leaveEvs) leaveEvs.OnPlayerBedLeave(new PlayerBedLeaveEvent(this));
+        }
+    }
+
 
     private static (int X, int Y, int Z) FaceOffset(int face) => face switch
     {

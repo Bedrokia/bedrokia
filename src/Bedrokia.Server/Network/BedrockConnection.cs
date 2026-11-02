@@ -1,4 +1,4 @@
-// ┌───────────────────────────────────────────────────────────────────┐
+﻿// ┌───────────────────────────────────────────────────────────────────┐
 // │  ____  _____ ____  ____   ___  _  __ ___    _                     │
 // │ | __ )| ____|  _ \|  _ \ / _ \| |/ /|_ _|  / \                    │
 // │ |  _ \|  _| | | | | |_) | | | | ' /  | |  / _ \                   │
@@ -115,6 +115,13 @@ public sealed partial class BedrockConnection
     {
         if (_stage == Stage.Closed)
             return;
+        if (reason == DisconnectReason.Kicked && Server?.Events is { HasPlayerKick: true } kickEvents)
+        {
+            var kickEvent = new PlayerKickEvent(this, message);
+            if (!kickEvents.OnPlayerKick(kickEvent))
+                return;
+            message = kickEvent.Reason;
+        }
         if (_codec.CompressionEnabled) // the client cannot read game packets before NetworkSettings
             Send(Packets.Disconnect(reason, message));
         FlushOutgoing();
@@ -186,6 +193,12 @@ public sealed partial class BedrockConnection
             var span = packet.AsSpan(0, length);
             var reader = new BedrockReader(span);
             var id = reader.VarUInt32() & 0x3FF; // low 10 bits; the rest are sub-client ids
+            if (Server?.Events is { HasDataPacketReceive: true } rcvEvents)
+            {
+                var rcvEvent = new DataPacketReceiveEvent(this, id, packet, length);
+                if (!rcvEvents.OnDataPacketReceive(rcvEvent))
+                    return;
+            }
         switch (_stage, id)
         {
             case (Stage.NetworkSettings, PacketId.RequestNetworkSettings):
@@ -371,6 +384,11 @@ public sealed partial class BedrockConnection
         // Dragonfly session/handler_emote.go: one emote per second, so a client cannot flood every other player.
         if (emoteId.Length > 64 || _server.CurrentTick - _lastEmoteTick < BedrokiaServer.TicksPerSecond)
             return;
+        if (Server?.Events is { HasPlayerEmote: true } emoteEvs)
+        {
+            var emoteEv = new PlayerEmoteEvent(this, emoteId, flags);
+            if (!emoteEvs.OnPlayerEmote(emoteEv)) return;
+        }
         _lastEmoteTick = _server.CurrentTick;
         _server.BroadcastInExcept(World, this, Packets.Emote((ulong)EntityId, emoteId, flags));
     }
@@ -464,7 +482,12 @@ public sealed partial class BedrockConnection
 
     private void OnPlayerSkin(ref BedrockReader reader)
     {
-        _ = reader.Bytes(reader.Remaining);
+        var bytes = reader.Bytes(reader.Remaining).ToArray();
+        if (Server?.Events is { HasPlayerChangeSkin: true } skinEvs)
+        {
+            var skinEv = new PlayerChangeSkinEvent(this, bytes);
+            if (!skinEvs.OnPlayerChangeSkin(skinEv)) return;
+        }
     }
 
     private void OnRequestAbility(ref BedrockReader reader)
@@ -586,6 +609,11 @@ public sealed partial class BedrockConnection
     private void OnResourcePackResponse(ref BedrockReader reader)
     {
         var response = reader.VarUInt32();
+        var packId = reader.Remaining > 0 ? reader.String() : "";
+        var packIds = new List<string>();
+        if (!string.IsNullOrEmpty(packId)) packIds.Add(packId);
+        if (Server?.Events is { HasResourcePackClientResponse: true } rpEvs)
+            rpEvs.OnResourcePackClientResponse(new ResourcePackClientResponseEvent(this, (byte)response, packIds));
         if (reader.Remaining > 0)
             reader.String();
         var required = _server.Config.ForceResourcePacks;
@@ -661,7 +689,14 @@ public sealed partial class BedrockConnection
 
     private void OnRequestChunkRadius(int requested)
     {
-        _viewRadius = Math.Clamp(requested, 2, _server.Config.ViewDistance);
+        var clamped = Math.Clamp(requested, 2, _server.Config.ViewDistance);
+        if (Server?.Events is { HasPlayerViewDistanceChange: true } vdEvs)
+        {
+            var ev = new PlayerViewDistanceChangeEvent(this, clamped);
+            vdEvs.OnPlayerViewDistanceChange(ev);
+            clamped = Math.Clamp(ev.NewDistance, 2, _server.Config.ViewDistance);
+        }
+        _viewRadius = clamped;
         Send(Packets.ChunkRadiusUpdated(_viewRadius));
         _centerChunk = (int.MinValue, int.MinValue);
         UpdateChunks(ChunkPosition.X, ChunkPosition.Z);
@@ -723,8 +758,34 @@ public sealed partial class BedrockConnection
                 case InputFlagSneaking: sneaking = true; break;
                 case InputFlagMissedSwing: missedSwing = true; break;
                 case InputFlagVerticalCollision: _onGround = true; break;
-                case InputFlagStartFlying: _flying = true; break;
-                case InputFlagStopFlying: _flying = false; break;
+                case InputFlagStartFlying:
+                    if (!_flying)
+                    {
+                        if (Server?.Events is not { HasPlayerToggleFlight: true } flyEvs || flyEvs.OnPlayerToggleFlight(new PlayerToggleFlightEvent(this, true)))
+                            _flying = true;
+                    }
+                    break;
+                case InputFlagStopFlying:
+                    if (_flying)
+                    {
+                        if (Server?.Events is not { HasPlayerToggleFlight: true } flyEvs || flyEvs.OnPlayerToggleFlight(new PlayerToggleFlightEvent(this, false)))
+                            _flying = false;
+                    }
+                    break;
+                case InputFlagStartCrawling:
+                    if (!_crawling)
+                    {
+                        if (Server?.Events is not { HasPlayerToggleCrawl: true } crawlEvs || crawlEvs.OnPlayerToggleCrawl(new PlayerToggleCrawlEvent(this, true)))
+                            _crawling = true;
+                    }
+                    break;
+                case InputFlagStopCrawling:
+                    if (_crawling)
+                    {
+                        if (Server?.Events is not { HasPlayerToggleCrawl: true } crawlEvs || crawlEvs.OnPlayerToggleCrawl(new PlayerToggleCrawlEvent(this, false)))
+                            _crawling = false;
+                    }
+                    break;
                 case InputFlagStartSprinting: _sprinting = true; break;
                 case InputFlagStopSprinting: _sprinting = false; break;
                 case InputFlagStartSwimming: _swimming = true; break;
@@ -732,10 +793,19 @@ public sealed partial class BedrockConnection
                 case InputFlagStartGliding: StartGliding(); break;
                 case InputFlagStopGliding: _gliding = false; break;
             }
-        if (missedSwing) // PocketMine Player::missSwing: the others see the arm and hear the swing
+        if (missedSwing)
         {
-            _server.BroadcastInExcept(World, this, Entities.EntityPackets.Swing(EntityId));
-            _server.BroadcastInExcept(World, this, LevelSound("attack.nodamage", Position.X, Position.Y, Position.Z, -1));
+            if (Server?.Events is { HasPlayerMissSwing: true } missEvs)
+            {
+                var missEvent = new PlayerMissSwingEvent(this);
+                if (!missEvs.OnPlayerMissSwing(missEvent))
+                    missedSwing = false;
+            }
+            if (missedSwing)
+            {
+                _server.BroadcastInExcept(World, this, Entities.EntityPackets.Swing(EntityId));
+                _server.BroadcastInExcept(World, this, LevelSound("attack.nodamage", Position.X, Position.Y, Position.Z, -1));
+            }
         }
         if (sneaking && !Sneaking && Riding is not null)
             _server.Vehicles.Dismount(this); // sneaking gets off
@@ -754,7 +824,15 @@ public sealed partial class BedrockConnection
                 ridden?.Dismount();
             }
         }
-        reader.VarUInt32(); // input mode
+        if (IsAfk) SetAfk(false);
+        var inputMode = reader.VarUInt32();
+        if (inputMode != _inputMode)
+        {
+            var oldMode = _inputMode;
+            _inputMode = inputMode;
+            if (Server?.Events is { HasPlayerInputModeChange: true } modeEvs)
+                modeEvs.OnPlayerInputModeChange(new PlayerInputModeChangeEvent(this, oldMode, inputMode));
+        }
         reader.VarUInt32(); // play mode
         reader.VarInt32(); // interaction model
         reader.Bytes(8); // interact pitch, yaw
@@ -791,10 +869,37 @@ public sealed partial class BedrockConnection
     }
 
     // Player action ids (gophertunnel protocol/player.go).
-    private const int InputFlagSneaking = 8, InputFlagMissedSwing = 39, InputFlagStartFlying = 42, InputFlagStopFlying = 43,
+    private const int InputFlagSneaking = 8, InputFlagMissedSwing = 39, InputFlagStartFlying = 42, InputFlagStopFlying = 43, InputFlagStartCrawling = 46, InputFlagStopCrawling = 47,
         InputFlagVerticalCollision = 50, InputFlagStartSprinting = 25, InputFlagStopSprinting = 26, InputFlagStartSwimming = 29,
         InputFlagStopSwimming = 30, InputFlagStartGliding = 32, InputFlagStopGliding = 33; // gophertunnel packet/player_auth_input.go
-    private bool _onGround, _flying;
+        private bool _onGround, _flying, _crawling;
+    private uint _inputMode;
+    private bool _isAfk;
+
+    /// <summary>Whether the player is currently flying.</summary>
+    public bool IsFlying => _flying;
+
+    /// <summary>Whether the player is currently crawling.</summary>
+    public bool IsCrawling => _crawling;
+
+    /// <summary>The current client input mode.</summary>
+    public uint InputMode => _inputMode;
+
+    /// <summary>Whether the player is marked as AFK.</summary>
+    public bool IsAfk => _isAfk;
+
+    /// <summary>Sets the AFK state of the player and fires PlayerAfkEvent.</summary>
+    public void SetAfk(bool afk)
+    {
+        if (_isAfk == afk) return;
+        if (Server?.Events is { HasPlayerAfk: true } afkEvs)
+        {
+            var ev = new PlayerAfkEvent(this, afk);
+            if (!afkEvs.OnPlayerAfk(ev)) return;
+            afk = ev.IsAfk;
+        }
+        _isAfk = afk;
+    }
     private float _headYaw = float.NaN; // NaN until the client sends one: the body yaw is used
 
     /// <summary>Holding sneak: right clicks place against containers and doors instead of using them.</summary>
@@ -1156,6 +1261,13 @@ public sealed partial class BedrockConnection
 
     public void SetGameMode(GameMode mode)
     {
+        if (GameMode == mode) return;
+        if (Server?.Events is { HasPlayerGameModeChange: true } gmEvs)
+        {
+            var ev = new PlayerGameModeChangeEvent(this, mode);
+            if (!gmEvs.OnPlayerGameModeChange(ev)) return;
+            mode = ev.NewGameMode;
+        }
         var previous = GameMode;
         GameMode = mode;
         Send(Packets.SetPlayerGameType((int)mode));
@@ -1406,7 +1518,10 @@ public sealed partial class BedrockConnection
     {
         if (_viewRadius == 0 || _centerChunk == (centerX, centerZ))
             return;
+        var oldChunk = _centerChunk;
         _centerChunk = (centerX, centerZ);
+        if (oldChunk != (int.MinValue, int.MinValue) && Server?.Events is { HasPlayerChunkEnter: true } chunkEvs)
+            chunkEvs.OnPlayerChunkEnter(new PlayerChunkEnterEvent(this, centerX, centerZ, oldChunk.X, oldChunk.Z));
         var keep = (_viewRadius + 1) * (_viewRadius + 1);
 
         List<long>? toRemove = null;
@@ -1593,6 +1708,16 @@ public sealed partial class BedrockConnection
         if (_stage == Stage.Closed)
             return;
 
+        if (Server?.Events is { HasDataPacketSend: true } sendEvents)
+        {
+            var reader = new BedrockReader(packet.AsSpan());
+            var packetId = reader.VarUInt32() & 0x3FF;
+            var sendEvent = new DataPacketSendEvent(this, packetId, packet);
+            if (!sendEvents.OnDataPacketSend(sendEvent))
+                return;
+            packet = sendEvent.Packet;
+        }
+
         if (_stage == Stage.InGame && _server.IsTicking)
         {
             _pendingOutgoing.Add(packet);
@@ -1620,4 +1745,5 @@ public sealed partial class BedrockConnection
                 _transport.Send(_codec.Encode(part));
     }
 }
+
 

@@ -17,7 +17,7 @@ namespace Bedrokia.Server.Events;
 /// Fired when a player takes damage (combat, fall, void, starvation, etc.).
 /// Handlers can modify the damage amount, adjust knockback, or cancel the damage entirely.
 /// </summary>
-public sealed class PlayerDamageEvent(BedrockConnection player, DamageSource source, float damage, (double X, double Z) knockbackOrigin) : CancellableEvent
+public sealed class PlayerDamageEvent(BedrockConnection player, DamageSource source, float damage, (double X, double Z) knockbackOrigin) : CancellableEvent, IPlayerEvent
 {
     public BedrockConnection Player => player;
     public DamageSource Source => source;

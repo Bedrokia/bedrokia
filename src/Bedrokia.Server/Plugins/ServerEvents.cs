@@ -1,4 +1,4 @@
-// ┌───────────────────────────────────────────────────────────────────┐
+﻿// ┌───────────────────────────────────────────────────────────────────┐
 // │  ____  _____ ____  ____   ___  _  __ ___    _                     │
 // │ | __ )| ____|  _ \|  _ \ / _ \| |/ /|_ _|  / \                    │
 // │ |  _ \|  _| | | | | |_) | | | | ' /  | |  / _ \                   │
@@ -49,6 +49,78 @@ public sealed class ServerEvents(Logger logger)
 
     public event Action<PlayerChatEvent>? PlayerChat;
     internal bool HasPlayerChat => PlayerChat is not null;
+
+    /// <summary>Fired when a player swings and misses.</summary>
+    public event Action<PlayerMissSwingEvent>? PlayerMissSwing;
+    internal bool HasPlayerMissSwing => PlayerMissSwing is not null;
+
+    /// <summary>Fired when a player toggles flight.</summary>
+    public event Action<PlayerToggleFlightEvent>? PlayerToggleFlight;
+    internal bool HasPlayerToggleFlight => PlayerToggleFlight is not null;
+
+    /// <summary>Fired when a player toggles crawl.</summary>
+    public event Action<PlayerToggleCrawlEvent>? PlayerToggleCrawl;
+    internal bool HasPlayerToggleCrawl => PlayerToggleCrawl is not null;
+
+    /// <summary>Fired when a player changes world/dimension.</summary>
+    public event Action<PlayerWorldChangeEvent>? PlayerWorldChange;
+    internal bool HasPlayerWorldChange => PlayerWorldChange is not null;
+
+    /// <summary>Fired when a player crosses into a new chunk.</summary>
+    public event Action<PlayerChunkEnterEvent>? PlayerChunkEnter;
+    internal bool HasPlayerChunkEnter => PlayerChunkEnter is not null;
+
+    /// <summary>Fired when a player responds to resource packs.</summary>
+    public event Action<ResourcePackClientResponseEvent>? ResourcePackClientResponse;
+    internal bool HasResourcePackClientResponse => ResourcePackClientResponse is not null;
+
+    /// <summary>Fired when a player's AFK state changes.</summary>
+    public event Action<PlayerAfkEvent>? PlayerAfk;
+    internal bool HasPlayerAfk => PlayerAfk is not null;
+
+    /// <summary>Fired before player login completes.</summary>
+    public event Action<PlayerPreLoginEvent>? PlayerPreLogin;
+    internal bool HasPlayerPreLogin => PlayerPreLogin is not null;
+
+    /// <summary>Fired when a player is kicked.</summary>
+    public event Action<PlayerKickEvent>? PlayerKick;
+    internal bool HasPlayerKick => PlayerKick is not null;
+
+    /// <summary>Fired when a player's view distance changes.</summary>
+    public event Action<PlayerViewDistanceChangeEvent>? PlayerViewDistanceChange;
+    internal bool HasPlayerViewDistanceChange => PlayerViewDistanceChange is not null;
+
+    /// <summary>Fired when a player's game mode changes.</summary>
+    public event Action<PlayerGameModeChangeEvent>? PlayerGameModeChange;
+    internal bool HasPlayerGameModeChange => PlayerGameModeChange is not null;
+
+    /// <summary>Fired when a player changes skin.</summary>
+    public event Action<PlayerChangeSkinEvent>? PlayerChangeSkin;
+    internal bool HasPlayerChangeSkin => PlayerChangeSkin is not null;
+
+    /// <summary>Fired when a player performs an emote.</summary>
+    public event Action<PlayerEmoteEvent>? PlayerEmote;
+    internal bool HasPlayerEmote => PlayerEmote is not null;
+
+    /// <summary>Fired when a player is transferred to another server.</summary>
+    public event Action<PlayerTransferEvent>? PlayerTransfer;
+    internal bool HasPlayerTransfer => PlayerTransfer is not null;
+
+    /// <summary>Fired when a player submits or closes a modal form.</summary>
+    public event Action<PlayerFormResponseEvent>? PlayerFormResponse;
+    internal bool HasPlayerFormResponse => PlayerFormResponse is not null;
+
+    /// <summary>Fired when a player changes input mode.</summary>
+    public event Action<PlayerInputModeChangeEvent>? PlayerInputModeChange;
+    internal bool HasPlayerInputModeChange => PlayerInputModeChange is not null;
+
+    /// <summary>Fired when an inbound data packet is received.</summary>
+    public event Action<DataPacketReceiveEvent>? DataPacketReceive;
+    internal bool HasDataPacketReceive => DataPacketReceive is not null;
+
+    /// <summary>Fired before an outbound data packet is sent.</summary>
+    public event Action<DataPacketSendEvent>? DataPacketSend;
+    internal bool HasDataPacketSend => DataPacketSend is not null;
 
     // --- B. Player combat, health, effects & equipment ---
     public event Action<PlayerDamageEvent>? PlayerDamage;
@@ -131,6 +203,46 @@ public sealed class ServerEvents(Logger logger)
 
     public event Action<BookEditEvent>? BookEdit;
     internal bool HasBookEdit => BookEdit is not null;
+
+    /// <summary>Fired when a player attacks an entity.</summary>
+    public event Action<PlayerAttackEvent>? PlayerAttack;
+    internal bool HasPlayerAttack => PlayerAttack is not null;
+
+    /// <summary>Fired when a player falls and takes fall damage.</summary>
+    public event Action<PlayerFallEvent>? PlayerFall;
+    internal bool HasPlayerFall => PlayerFall is not null;
+
+    /// <summary>Fired when player exhaustion increases.</summary>
+    public event Action<PlayerExhaustEvent>? PlayerExhaust;
+    internal bool HasPlayerExhaust => PlayerExhaust is not null;
+
+    /// <summary>Fired when a player changes armor.</summary>
+    public event Action<PlayerArmorChangeEvent>? PlayerArmorChange;
+    internal bool HasPlayerArmorChange => PlayerArmorChange is not null;
+
+    /// <summary>Fired when a player enters a bed.</summary>
+    public event Action<PlayerBedEnterEvent>? PlayerBedEnter;
+    internal bool HasPlayerBedEnter => PlayerBedEnter is not null;
+
+    /// <summary>Fired when a player leaves a bed.</summary>
+    public event Action<PlayerBedLeaveEvent>? PlayerBedLeave;
+    internal bool HasPlayerBedLeave => PlayerBedLeave is not null;
+
+    /// <summary>Fired when night is skipped via sleeping.</summary>
+    public event Action<PlayerSleepSkipNightEvent>? PlayerSleepSkipNight;
+    internal bool HasPlayerSleepSkipNight => PlayerSleepSkipNight is not null;
+
+    /// <summary>Fired when a player fills a bucket.</summary>
+    public event Action<PlayerBucketFillEvent>? PlayerBucketFill;
+    internal bool HasPlayerBucketFill => PlayerBucketFill is not null;
+
+    /// <summary>Fired when a player empties a bucket.</summary>
+    public event Action<PlayerBucketEmptyEvent>? PlayerBucketEmpty;
+    internal bool HasPlayerBucketEmpty => PlayerBucketEmpty is not null;
+
+    /// <summary>Fired when a player changes dimensions.</summary>
+    public event Action<PlayerDimensionChangeEvent>? PlayerDimensionChange;
+    internal bool HasPlayerDimensionChange => PlayerDimensionChange is not null;
 
     // --- C. Blocks & Block behaviours ---
     public event Action<BlockEvent>? BlockBreak;
@@ -221,6 +333,18 @@ public sealed class ServerEvents(Logger logger)
     public event Action<SculkShriekEvent>? SculkShriek;
     internal bool HasSculkShriek => SculkShriek is not null;
 
+    /// <summary>Fired when a stonecutter is used.</summary>
+    public event Action<StonecutterUseEvent>? StonecutterUse;
+    internal bool HasStonecutterUse => StonecutterUse is not null;
+
+    /// <summary>Fired when leaves decay naturally.</summary>
+    public event Action<LeavesDecayEvent>? LeavesDecay;
+    internal bool HasLeavesDecay => LeavesDecay is not null;
+
+    /// <summary>Fired when farmland moisture changes.</summary>
+    public event Action<MoistureChangeEvent>? MoistureChange;
+    internal bool HasMoistureChange => MoistureChange is not null;
+
     // --- D. World & Weather ---
     public event Action<ExplosionEvent>? Explosion;
     internal bool HasExplosion => Explosion is not null;
@@ -242,6 +366,30 @@ public sealed class ServerEvents(Logger logger)
 
     public event Action<TickRateChangeEvent>? TickRateChange;
     internal bool HasTickRateChange => TickRateChange is not null;
+
+    /// <summary>Fired when a world is loaded.</summary>
+    public event Action<WorldLoadEvent>? WorldLoad;
+    internal bool HasWorldLoad => WorldLoad is not null;
+
+    /// <summary>Fired when a world is saved.</summary>
+    public event Action<WorldSaveEvent>? WorldSave;
+    internal bool HasWorldSave => WorldSave is not null;
+
+    /// <summary>Fired when world spawn point changes.</summary>
+    public event Action<SpawnChangeEvent>? SpawnChange;
+    internal bool HasSpawnChange => SpawnChange is not null;
+
+    /// <summary>Fired when a chunk is loaded.</summary>
+    public event Action<ChunkLoadEvent>? ChunkLoad;
+    internal bool HasChunkLoad => ChunkLoad is not null;
+
+    /// <summary>Fired when a chunk is populated.</summary>
+    public event Action<ChunkPopulateEvent>? ChunkPopulate;
+    internal bool HasChunkPopulate => ChunkPopulate is not null;
+
+    /// <summary>Fired when world time changes.</summary>
+    public event Action<TimeChangeEvent>? TimeChange;
+    internal bool HasTimeChange => TimeChange is not null;
 
     // --- E. Inventory, Containers & Crafting Stations ---
     public event Action<InventoryTransactionEvent>? InventoryTransaction;
@@ -358,6 +506,38 @@ public sealed class ServerEvents(Logger logger)
     public event Action<VillagerLevelUpEvent>? VillagerLevelUp;
     internal bool HasVillagerLevelUp => VillagerLevelUp is not null;
 
+    /// <summary>Fired when a vehicle is created.</summary>
+    public event Action<VehicleCreateEvent>? VehicleCreate;
+    internal bool HasVehicleCreate => VehicleCreate is not null;
+
+    /// <summary>Fired when a vehicle takes damage.</summary>
+    public event Action<VehicleDamageEvent>? VehicleDamage;
+    internal bool HasVehicleDamage => VehicleDamage is not null;
+
+    /// <summary>Fired when a vehicle is destroyed.</summary>
+    public event Action<VehicleDestroyEvent>? VehicleDestroy;
+    internal bool HasVehicleDestroy => VehicleDestroy is not null;
+
+    /// <summary>Fired when an entity enters a vehicle.</summary>
+    public event Action<VehicleEnterEvent>? VehicleEnter;
+    internal bool HasVehicleEnter => VehicleEnter is not null;
+
+    /// <summary>Fired when an entity exits a vehicle.</summary>
+    public event Action<VehicleExitEvent>? VehicleExit;
+    internal bool HasVehicleExit => VehicleExit is not null;
+
+    /// <summary>Fired when a sheep is sheared.</summary>
+    public event Action<SheepShearEvent>? SheepShear;
+    internal bool HasSheepShear => SheepShear is not null;
+
+    /// <summary>Fired when a sheep regrows its wool.</summary>
+    public event Action<SheepRegrowWoolEvent>? SheepRegrowWool;
+    internal bool HasSheepRegrowWool => SheepRegrowWool is not null;
+
+    /// <summary>Fired when a firework explodes.</summary>
+    public event Action<FireworkExplodeEvent>? FireworkExplode;
+    internal bool HasFireworkExplode => FireworkExplode is not null;
+
     // --- G. Redstone, Portals & Dragon ---
     public event Action<RedstonePowerEvent>? RedstonePower;
     internal bool HasRedstonePower => RedstonePower is not null;
@@ -429,6 +609,26 @@ public sealed class ServerEvents(Logger logger)
     /// <summary>Every game tick (20 per second), with the tick number.</summary>
     public event Action<long>? Tick;
     internal bool HasTick => Tick is not null;
+
+    /// <summary>Fired when the server finishes starting.</summary>
+    public event Action<ServerStartedEvent>? ServerStarted;
+    internal bool HasServerStarted => ServerStarted is not null;
+
+    /// <summary>Fired when the server is stopping.</summary>
+    public event Action<ServerStopEvent>? ServerStop;
+    internal bool HasServerStop => ServerStop is not null;
+
+    /// <summary>Fired when a plugin is enabled.</summary>
+    public event Action<PluginEnableEvent>? PluginEnable;
+    internal bool HasPluginEnable => PluginEnable is not null;
+
+    /// <summary>Fired when a plugin is disabled.</summary>
+    public event Action<PluginDisableEvent>? PluginDisable;
+    internal bool HasPluginDisable => PluginDisable is not null;
+
+    /// <summary>Fired when a console command is executed.</summary>
+    public event Action<ConsoleCommandEvent>? ConsoleCommand;
+    internal bool HasConsoleCommand => ConsoleCommand is not null;
 
     // --- Dispatchers ---
     internal bool OnPlayerLogin(PlayerLoginEvent e) => Fire(PlayerLogin, e);
@@ -566,6 +766,84 @@ public sealed class ServerEvents(Logger logger)
     internal bool OnDragonSpawn(DragonSpawnEvent e) => Fire(DragonSpawn, e);
     internal bool OnDragonPhase(DragonPhaseEvent e) => Fire(DragonPhase, e);
     internal void OnDragonDeath(DragonDeathEvent e) => Fire(DragonDeath, e);
+
+    internal bool OnPlayerMissSwing(PlayerMissSwingEvent e) => Fire(PlayerMissSwing, e);
+    internal bool OnPlayerToggleFlight(PlayerToggleFlightEvent e) => Fire(PlayerToggleFlight, e);
+    internal bool OnPlayerToggleCrawl(PlayerToggleCrawlEvent e) => Fire(PlayerToggleCrawl, e);
+    internal bool OnPlayerAttack(PlayerAttackEvent e) => Fire(PlayerAttack, e);
+    internal bool OnPlayerFall(PlayerFallEvent e) => Fire(PlayerFall, e);
+    internal void OnPlayerWorldChange(PlayerWorldChangeEvent e) => Fire(PlayerWorldChange, e);
+    internal void OnPlayerChunkEnter(PlayerChunkEnterEvent e) => Fire(PlayerChunkEnter, e);
+    internal void OnResourcePackClientResponse(ResourcePackClientResponseEvent e) => Fire(ResourcePackClientResponse, e);
+    internal bool OnPlayerAfk(PlayerAfkEvent e) => Fire(PlayerAfk, e);
+    internal bool OnPlayerPreLogin(PlayerPreLoginEvent e) => Fire(PlayerPreLogin, e);
+    internal bool OnPlayerKick(PlayerKickEvent e) => Fire(PlayerKick, e);
+    internal bool OnPlayerBedEnter(PlayerBedEnterEvent e) => Fire(PlayerBedEnter, e);
+    internal void OnPlayerBedLeave(PlayerBedLeaveEvent e) => Fire(PlayerBedLeave, e);
+    internal void OnPlayerSleepSkipNight(PlayerSleepSkipNightEvent e) => Fire(PlayerSleepSkipNight, e);
+    internal void OnPlayerViewDistanceChange(PlayerViewDistanceChangeEvent e) => Fire(PlayerViewDistanceChange, e);
+    internal bool OnPlayerGameModeChange(PlayerGameModeChangeEvent e) => Fire(PlayerGameModeChange, e);
+    internal bool OnPlayerChangeSkin(PlayerChangeSkinEvent e) => Fire(PlayerChangeSkin, e);
+    internal bool OnPlayerEmote(PlayerEmoteEvent e) => Fire(PlayerEmote, e);
+    internal bool OnPlayerTransfer(PlayerTransferEvent e) => Fire(PlayerTransfer, e);
+    internal bool OnPlayerFormResponse(PlayerFormResponseEvent e) => Fire(PlayerFormResponse, e);
+    internal void OnPlayerInputModeChange(PlayerInputModeChangeEvent e) => Fire(PlayerInputModeChange, e);
+    internal bool OnPlayerExhaust(PlayerExhaustEvent e) => Fire(PlayerExhaust, e);
+    internal bool OnPlayerArmorChange(PlayerArmorChangeEvent e) => Fire(PlayerArmorChange, e);
+    internal bool OnPlayerBucketFill(PlayerBucketFillEvent e) => Fire(PlayerBucketFill, e);
+    internal bool OnPlayerBucketEmpty(PlayerBucketEmptyEvent e) => Fire(PlayerBucketEmpty, e);
+    internal bool OnPlayerDimensionChange(PlayerDimensionChangeEvent e) => Fire(PlayerDimensionChange, e);
+    internal void OnServerStarted(ServerStartedEvent e) => Fire(ServerStarted, e);
+    internal void OnServerStop(ServerStopEvent e) => Fire(ServerStop, e);
+    internal void OnPluginEnable(PluginEnableEvent e) => Fire(PluginEnable, e);
+    internal void OnPluginDisable(PluginDisableEvent e) => Fire(PluginDisable, e);
+    internal bool OnConsoleCommand(ConsoleCommandEvent e) => Fire(ConsoleCommand, e);
+    internal bool OnDataPacketReceive(DataPacketReceiveEvent e) => Fire(DataPacketReceive, e);
+    internal bool OnDataPacketSend(DataPacketSendEvent e) => Fire(DataPacketSend, e);
+    internal void OnWorldLoad(WorldLoadEvent e) => Fire(WorldLoad, e);
+    internal void OnWorldSave(WorldSaveEvent e) => Fire(WorldSave, e);
+    internal bool OnSpawnChange(SpawnChangeEvent e) => Fire(SpawnChange, e);
+    internal void OnChunkLoad(ChunkLoadEvent e) => Fire(ChunkLoad, e);
+    internal void OnChunkPopulate(ChunkPopulateEvent e) => Fire(ChunkPopulate, e);
+    internal bool OnTimeChange(TimeChangeEvent e) => Fire(TimeChange, e);
+    internal bool OnStonecutterUse(StonecutterUseEvent e) => Fire(StonecutterUse, e);
+    internal bool OnLeavesDecay(LeavesDecayEvent e) => Fire(LeavesDecay, e);
+    internal bool OnMoistureChange(MoistureChangeEvent e) => Fire(MoistureChange, e);
+    internal void OnVehicleCreate(VehicleCreateEvent e) => Fire(VehicleCreate, e);
+    internal bool OnVehicleDamage(VehicleDamageEvent e) => Fire(VehicleDamage, e);
+    internal void OnVehicleDestroy(VehicleDestroyEvent e) => Fire(VehicleDestroy, e);
+    internal bool OnVehicleEnter(VehicleEnterEvent e) => Fire(VehicleEnter, e);
+    internal bool OnVehicleExit(VehicleExitEvent e) => Fire(VehicleExit, e);
+    internal bool OnSheepShear(SheepShearEvent e) => Fire(SheepShear, e);
+    internal bool OnSheepRegrowWool(SheepRegrowWoolEvent e) => Fire(SheepRegrowWool, e);
+    internal bool OnFireworkExplode(FireworkExplodeEvent e) => Fire(FireworkExplode, e);
+
+    /// <summary>Registers a listener for missed swings.</summary>
+    public void on_player_swing_miss(Action<PlayerMissSwingEvent> handler) => PlayerMissSwing += handler;
+
+    /// <summary>Registers a listener for toggling flight.</summary>
+    public void on_player_fly_toggle(Action<PlayerToggleFlightEvent> handler) => PlayerToggleFlight += handler;
+
+    /// <summary>Registers a listener for crawling toggles.</summary>
+    public void on_player_crawl(Action<PlayerToggleCrawlEvent> handler) => PlayerToggleCrawl += handler;
+
+    /// <summary>Registers a listener for player attacks.</summary>
+    public void on_player_attack(Action<PlayerAttackEvent> handler) => PlayerAttack += handler;
+
+    /// <summary>Registers a listener for player falls.</summary>
+    public void on_player_fall(Action<PlayerFallEvent> handler) => PlayerFall += handler;
+
+    /// <summary>Registers a listener for world changes.</summary>
+    public void on_player_world_change(Action<PlayerWorldChangeEvent> handler) => PlayerWorldChange += handler;
+
+    /// <summary>Registers a listener for chunk transitions.</summary>
+    public void on_player_chunk_enter(Action<PlayerChunkEnterEvent> handler) => PlayerChunkEnter += handler;
+
+    /// <summary>Registers a listener for resource pack responses.</summary>
+    public void on_resource_pack_status(Action<ResourcePackClientResponseEvent> handler) => ResourcePackClientResponse += handler;
+
+    /// <summary>Registers a listener for AFK status changes.</summary>
+    public void on_player_afk(Action<PlayerAfkEvent> handler) => PlayerAfk += handler;
 
     internal void OnTick(long tick) => Fire(Tick, tick);
 
@@ -717,6 +995,56 @@ public sealed class ServerEvents(Logger logger)
         DragonPhase = null;
         DragonDeath = null;
 
+        PlayerMissSwing = null;
+        PlayerToggleFlight = null;
+        PlayerToggleCrawl = null;
+        PlayerWorldChange = null;
+        PlayerChunkEnter = null;
+        ResourcePackClientResponse = null;
+        PlayerAfk = null;
+        PlayerPreLogin = null;
+        PlayerKick = null;
+        PlayerViewDistanceChange = null;
+        PlayerGameModeChange = null;
+        PlayerChangeSkin = null;
+        PlayerEmote = null;
+        PlayerTransfer = null;
+        PlayerFormResponse = null;
+        PlayerInputModeChange = null;
+        DataPacketReceive = null;
+        DataPacketSend = null;
+        PlayerAttack = null;
+        PlayerFall = null;
+        PlayerExhaust = null;
+        PlayerArmorChange = null;
+        PlayerBedEnter = null;
+        PlayerBedLeave = null;
+        PlayerSleepSkipNight = null;
+        PlayerBucketFill = null;
+        PlayerBucketEmpty = null;
+        PlayerDimensionChange = null;
+        StonecutterUse = null;
+        LeavesDecay = null;
+        MoistureChange = null;
+        WorldLoad = null;
+        WorldSave = null;
+        SpawnChange = null;
+        ChunkLoad = null;
+        ChunkPopulate = null;
+        TimeChange = null;
+        VehicleCreate = null;
+        VehicleDamage = null;
+        VehicleDestroy = null;
+        VehicleEnter = null;
+        VehicleExit = null;
+        SheepShear = null;
+        SheepRegrowWool = null;
+        FireworkExplode = null;
+        ServerStarted = null;
+        ServerStop = null;
+        PluginEnable = null;
+        PluginDisable = null;
+        ConsoleCommand = null;
         Tick = null;
         _reported.Clear();
     }

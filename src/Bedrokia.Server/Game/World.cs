@@ -1,4 +1,4 @@
-// ┌───────────────────────────────────────────────────────────────────┐
+﻿// ┌───────────────────────────────────────────────────────────────────┐
 // │  ____  _____ ____  ____   ___  _  __ ___    _                     │
 // │ | __ )| ____|  _ \|  _ \ / _ \| |/ /|_ _|  / \                    │
 // │ |  _ \|  _| | | | | |_) | | | | ' /  | |  / _ \                   │
@@ -74,9 +74,37 @@ public sealed class World
     public WorldSettings Settings { get; }
 
     /// <summary>World time in ticks (0 = sunrise, 6000 = noon, 24000 = one day).</summary>
-    public long Time { get; set; }
+    private long _time;
+    public long Time
+    {
+        get => _time;
+        set
+        {
+            if (Server?.Events is { HasTimeChange: true } timeEvs)
+            {
+                var ev = new TimeChangeEvent(this, _time, value);
+                if (!timeEvs.OnTimeChange(ev)) return;
+                value = ev.NewTime;
+            }
+            _time = value;
+        }
+    }
 
-    public (int X, int Y, int Z) Spawn { get; set; }
+    private (int X, int Y, int Z) _spawn;
+    public (int X, int Y, int Z) Spawn
+    {
+        get => _spawn;
+        set
+        {
+            if (Server?.Events is { HasSpawnChange: true } spawnEvs)
+            {
+                var ev = new SpawnChangeEvent(this, _spawn, value);
+                if (!spawnEvs.OnSpawnChange(ev)) return;
+                value = ev.NewSpawn;
+            }
+            _spawn = value;
+        }
+    }
 
     private string ChunkDirectory => Path.Combine(_directory, "chunks");
     private string LevelFile => Path.Combine(_directory, "level.json");
@@ -179,7 +207,9 @@ public sealed class World
         {
             try
             {
-                return Chunk.Deserialize(x, z, File.ReadAllBytes(file));
+                var loadedChunk = Chunk.Deserialize(x, z, File.ReadAllBytes(file));
+                if (Server?.Events is { HasChunkLoad: true } clEvs) clEvs.OnChunkLoad(new ChunkLoadEvent(this, loadedChunk));
+                return loadedChunk;
             }
             catch (InvalidDataException)
             {
