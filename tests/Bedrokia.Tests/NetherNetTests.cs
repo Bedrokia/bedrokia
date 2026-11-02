@@ -270,4 +270,47 @@ public sealed class NetherNetTests : IDisposable
         Assert.Contains("fe80::1", rewritten[2]);
         Assert.Contains("9.9.9.9 40000 typ srflx", rewritten[3]);
     }
+
+    [Fact]
+    public async Task Segment_mismatch_closes_with_correct_expected_count()
+    {
+        var listener = Start(allowAnonymous: true);
+        var closedReason = new TaskCompletionSource<string>();
+        listener.SessionOpened += session =>
+        {
+            session.Closed += (_, reason) => closedReason.TrySetResult(reason);
+        };
+        var (peer, reliable, response) = await ConnectAsync(listener.LocalEndPoint, null);
+        Assert.True(response.IsSuccessStatusCode);
+
+        // Send segment 2 (expects 1 next), then jump to segment 0 (mismatch)
+        reliable.send([2, 1, 2, 3]);
+        reliable.send([0, 1, 2, 3]);
+
+        var reason = await closedReason.Task.WaitAsync(Timeout);
+        Assert.Equal("segment 0 received, 1 expected", reason);
+        peer.close();
+    }
+
+    [Fact]
+    public void Malformed_identity_without_tokens_or_fingerprints_throws_login_exception()
+    {
+        // Malformed JSON assertion with null values or missing fields
+        var badOffer = "v=0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\na=fingerprint:sha-256 AB:CD\r\n" +
+            "a=identity:" + Convert.ToBase64String(Encoding.UTF8.GetBytes("{\"idp\":{\"domain\":\"test\",\"protocol\":\"default\"},\"assertion\":\"{\\\"fingerprints\\\":null,\\\"token\\\":null}\"}")) + "\r\n";
+
+        Assert.Throws<LoginException>(() => SdpIdentity.VerifyOffer(badOffer, _ => null!));
+    }
+
+    [Fact]
+    public void WithPublicAddress_handles_sdp_with_lf_endings()
+    {
+        var sdp = string.Join("\n",
+            "m=application 9 UDP/DTLS/SCTP webrtc-datachannel",
+            "a=candidate:1 1 udp 2130706431 172.18.0.2 19132 typ host generation 0",
+            "a=candidate:2 1 udp 2130706431 10.0.0.5 19132 typ host generation 0");
+        var rewritten = NetherNetListener.WithPublicAddress(sdp, IPAddress.Parse("54.39.102.50")).Split("\r\n");
+        Assert.Equal(2, rewritten.Length);
+        Assert.Contains("54.39.102.50", rewritten[1]);
+    }
 }
