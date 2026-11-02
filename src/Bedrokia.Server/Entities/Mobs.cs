@@ -1,4 +1,4 @@
-// ┌───────────────────────────────────────────────────────────────────┐
+﻿// ┌───────────────────────────────────────────────────────────────────┐
 // │  ____  _____ ____  ____   ___  _  __ ___    _                     │
 // │ | __ )| ____|  _ \|  _ \ / _ \| |/ /|_ _|  / \                    │
 // │ |  _ \|  _| | | | | |_) | | | | ' /  | |  / _ \                   │
@@ -778,6 +778,11 @@ public sealed class MobManager(BedrokiaServer server)
             {
                 server.SetBlockAndUpdate(bx, by, bz, Blocks.Dirt, mob.World);
                 Broadcast(mob, EntityPackets.Event(mob.EntityId, 10)); // eat grass animation
+                if (server.Events.HasSheepRegrowWool)
+                {
+                    var regrowEv = new SheepRegrowWoolEvent(mob);
+                    if (!server.Events.OnSheepRegrowWool(regrowEv)) return;
+                }
                 mob.Sheared = false;
                 changed = true;
             }
@@ -1616,6 +1621,11 @@ public sealed class MobManager(BedrokiaServer server)
         }
         if (name == "minecraft:shears" && mob.Kind == MobKind.Sheep && !mob.Sheared && !mob.Baby)
         {
+            if (server.Events.HasSheepShear)
+            {
+                var shearEv = new SheepShearEvent(player, mob);
+                if (!server.Events.OnSheepShear(shearEv)) return true;
+            }
             player.WearHeld(1);
             mob.Sheared = true;
             Broadcast(mob, mob.DataPacket());

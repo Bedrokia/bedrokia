@@ -1,4 +1,4 @@
-// ┌───────────────────────────────────────────────────────────────────┐
+﻿// ┌───────────────────────────────────────────────────────────────────┐
 // │  ____  _____ ____  ____   ___  _  __ ___    _                     │
 // │ | __ )| ____|  _ \|  _ \ / _ \| |/ /|_ _|  / \                    │
 // │ |  _ \|  _| | | | | |_) | | | | ' /  | |  / _ \                   │
@@ -60,6 +60,8 @@ public sealed record Command(string Name, string Description, string Usage, stri
 /// <summary>Central command registry. Commands run on the game thread.</summary>
 public sealed class CommandManager(Logger logger)
 {
+    /// <summary>The server instance.</summary>
+    public BedrokiaServer? Server { get; set; }
     public const uint AvailableCommandsId = 76, CommandRequestId = 77, SetCommandsEnabledId = 59;
 
     private readonly SortedDictionary<string, Command> _commands = new(StringComparer.OrdinalIgnoreCase);
@@ -135,6 +137,13 @@ public sealed class CommandManager(Logger logger)
                     return;
                 line = cmdEv.CommandLine;
             }
+        }
+        else if (Server?.Events is { HasConsoleCommand: true } events)
+        {
+            var consoleEv = new ConsoleCommandEvent(line);
+            if (!events.OnConsoleCommand(consoleEv))
+                return;
+            line = consoleEv.CommandLine;
         }
 
         // Piped stdin (hosting panels, PowerShell) may start with a UTF-8 BOM.

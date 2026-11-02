@@ -1,4 +1,4 @@
-// ┌───────────────────────────────────────────────────────────────────┐
+﻿// ┌───────────────────────────────────────────────────────────────────┐
 // │  ____  _____ ____  ____   ___  _  __ ___    _                     │
 // │ | __ )| ____|  _ \|  _ \ / _ \| |/ /|_ _|  / \                    │
 // │ |  _ \|  _| | | | | |_) | | | | ' /  | |  / _ \                   │
@@ -89,6 +89,11 @@ public sealed partial class BedrokiaServer
     private void Burst(Rocket rocket)
     {
         var (world, x, y, z) = (rocket.World, rocket.X, rocket.Y, rocket.Z);
+        if (Events.HasFireworkExplode)
+        {
+            var explodeEv = new FireworkExplodeEvent(world, x, y, z, rocket.Explosions);
+            if (!Events.OnFireworkExplode(explodeEv)) return;
+        }
         var stars = rocket.Explosions?.Values.OfType<OrderedDictionary<string, object>>().ToList() ?? [];
         if (stars.Count > 0)
         {
@@ -126,3 +131,4 @@ public sealed partial class BedrokiaServer
         return (float)(force * Math.Sqrt((5 - distance) / 5));
     }
 }
+

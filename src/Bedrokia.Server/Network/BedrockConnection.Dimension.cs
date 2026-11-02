@@ -1,4 +1,4 @@
-// ┌───────────────────────────────────────────────────────────────────┐
+﻿// ┌───────────────────────────────────────────────────────────────────┐
 // │  ____  _____ ____  ____   ___  _  __ ___    _                     │
 // │ | __ )| ____|  _ \|  _ \ / _ \| |/ /|_ _|  / \                    │
 // │ |  _ \|  _| | | | | |_) | | | | ' /  | |  / _ \                   │
@@ -46,6 +46,11 @@ public sealed partial class BedrockConnection
             Teleport(x, y, z);
             return;
         }
+        if (Server?.Events is { HasPlayerDimensionChange: true } dimEvs)
+        {
+            var dimEv = new PlayerDimensionChangeEvent(this, World.Dimension, target.Dimension);
+            if (!dimEvs.OnPlayerDimensionChange(dimEv)) return;
+        }
         CloseContainer(notifyClient: true);
         var old = World;
         _server.BroadcastInExcept(old, this, Packets.RemoveActor(EntityId));
@@ -55,6 +60,7 @@ public sealed partial class BedrockConnection
             Send(Packets.RemoveActor(item.EntityId));
 
         _world = target;
+        if (Server?.Events is { HasPlayerWorldChange: true } worldEvs) worldEvs.OnPlayerWorldChange(new PlayerWorldChangeEvent(this, old, target));
         _portalCooldown = PortalCooldownTicks;
         _portalTicks = 0;
         Position = (x, y + EyeHeight, z);

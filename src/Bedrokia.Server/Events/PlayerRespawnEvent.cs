@@ -17,7 +17,7 @@ namespace Bedrokia.Server.Events;
 /// Fired when a dead player clicks respawn.
 /// Handlers can read and override the respawn coordinates.
 /// </summary>
-public sealed class PlayerRespawnEvent(BedrockConnection player, (float X, float Y, float Z) respawnPosition)
+public sealed class PlayerRespawnEvent(BedrockConnection player, (float X, float Y, float Z) respawnPosition) : IPlayerEvent
 {
     public BedrockConnection Player => player;
 

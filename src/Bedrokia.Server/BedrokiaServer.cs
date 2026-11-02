@@ -1,4 +1,4 @@
-// ┌───────────────────────────────────────────────────────────────────┐
+﻿// ┌───────────────────────────────────────────────────────────────────┐
 // │  ____  _____ ____  ____   ___  _  __ ___    _                     │
 // │ | __ )| ____|  _ \|  _ \ / _ \| |/ /|_ _|  / \                    │
 // │ |  _ \|  _| | | | | |_) | | | | ' /  | |  / _ \                   │
@@ -125,7 +125,7 @@ public sealed partial class BedrokiaServer
         Permissions = permissions ?? new("permissions.json");
         if (Permissions.LoadError is { } permissionsError)
             logger.Error(permissionsError);
-        Commands = new CommandManager(logger);
+        Commands = new CommandManager(logger); Commands.Server = this;
         Mobs = new MobManager(this);
         Vehicles = new VehicleManager(this);
         Maps = new MapManager(this);
@@ -288,6 +288,7 @@ public sealed partial class BedrokiaServer
                 ? $"Listening on port {_netherNet.LocalEndPoint.Port}: TCP (join) + UDP {udp} (every player). Type 'help' for commands."
                 : $"Listening on port {_netherNet.LocalEndPoint.Port}: TCP (join) + UDP {firstUdp}-{lastUdp} (players). Type 'help' for commands.");
             _started.TrySetResult();
+            if (Events.HasServerStarted) Events.OnServerStarted(new ServerStartedEvent(this));
 
             using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1.0 / TicksPerSecond));
             try
@@ -325,6 +326,7 @@ public sealed partial class BedrokiaServer
             {
             }
 
+            if (Events.HasServerStop) Events.OnServerStop(new ServerStopEvent(this));
             foreach (var connection in _connections.ToList())
             {
                 connection.Disconnect("Server closed.", DisconnectReason.Shutdown);
