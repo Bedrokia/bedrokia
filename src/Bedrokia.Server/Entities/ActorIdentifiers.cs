@@ -55,6 +55,8 @@ public static class ActorIdentifiers
             {
                 ["bid"] = "", ["hasspawnegg"] = (byte)0, ["id"] = id, ["summonable"] = (byte)0,
             });
+        foreach (var (networkId, entity) in Game.Custom.Entities.CustomEntityRegistry.ByNetworkId)
+            list.Values.Add(entity.ToIdentifierNbt(networkId));
         return new BedrockWriter().VarUInt32(PacketIdValue).Bytes(Nbt.Write(root, network: true)).ToArray();
     }
 }

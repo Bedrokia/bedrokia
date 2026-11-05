@@ -1,4 +1,4 @@
-// ┌───────────────────────────────────────────────────────────────────┐
+﻿// ┌───────────────────────────────────────────────────────────────────┐
 // │  ____  _____ ____  ____   ___  _  __ ___    _                     │
 // │ | __ )| ____|  _ \|  _ \ / _ \| |/ /|_ _|  / \                    │
 // │ |  _ \|  _| | | | | |_) | | | | ' /  | |  / _ \                   │
@@ -165,6 +165,7 @@ public sealed class PluginManager(BedrokiaServer server)
             Directory.CreateDirectory(plugin.DataFolder);
             plugin.SaveResource("config.yml"); // default config; never overwrites the server owner's edits
             plugin.OnEnable();
+            if (server.Events.HasPluginEnable) server.Events.OnPluginEnable(new PluginEnableEvent(plugin));
             RegisterCommands(plugin);
             _loaded.Add(new LoadedPlugin(plugin, path, kind));
         }
@@ -223,6 +224,7 @@ public sealed class PluginManager(BedrokiaServer server)
         {
             try
             {
+                if (server.Events.HasPluginDisable) server.Events.OnPluginDisable(new PluginDisableEvent(plugin));
                 plugin.OnDisable();
             }
             catch (Exception e)

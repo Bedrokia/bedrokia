@@ -83,8 +83,9 @@ public sealed class NetherNetListener : IDisposable
     {
         var lines = new List<string>();
         var seen = new HashSet<string>();
-        foreach (var line in sdp.Split("\r\n"))
+        foreach (var rawLine in sdp.Replace("\r\n", "\n").Split('\n'))
         {
+            var line = rawLine.TrimEnd('\r');
             // a=candidate:<foundation> <component> <transport> <priority> <address> <port> typ <type> ...
             var fields = line.Split(' ');
             if (line.StartsWith("a=candidate:", StringComparison.Ordinal) && fields.Length > 7 && fields[7] == "host"
@@ -154,13 +155,16 @@ public sealed class NetherNetListener : IDisposable
         try
         {
             var stream = client.GetStream();
-            var request = await HttpRequest.ReadAsync(stream, MaxHeaderBytes, MaxBodyBytes, timeout.Token);
+            var (request, isTls) = await HttpRequest.ReadAsync(stream, MaxHeaderBytes, MaxBodyBytes, timeout.Token);
             if (request is null)
             {
-                // Same reply as BDS without a certificate: TLS fatal alert "handshake_failure".
-                // The client then retries over plain HTTP.
-                Trace?.Invoke($"signaling: {remote} tried TLS, refused (plain HTTP only)");
-                await stream.WriteAsync(new byte[] { 0x15, 0x03, 0x01, 0x00, 0x02, 0x02, 0x28 }, timeout.Token);
+                if (isTls)
+                {
+                    // Same reply as BDS without a certificate: TLS fatal alert "handshake_failure".
+                    // The client then retries over plain HTTP.
+                    Trace?.Invoke($"signaling: {remote} tried TLS, refused (plain HTTP only)");
+                    await stream.WriteAsync(new byte[] { 0x15, 0x03, 0x01, 0x00, 0x02, 0x02, 0x28 }, timeout.Token);
+                }
                 return;
             }
 
@@ -241,7 +245,7 @@ public sealed class NetherNetListener : IDisposable
             if (_mux is not null && peer is MuxPeerConnection muxed)
             {
                 // Its checks reach the shared port: route them to this connection by its ufrag.
-                var ufrag = answer.Split("\r\n").FirstOrDefault(l => l.StartsWith("a=ice-ufrag:", StringComparison.Ordinal))?["a=ice-ufrag:".Length..]
+                var ufrag = SdpIdentity.Attribute(answer, "ice-ufrag")
                     ?? throw new InvalidOperationException("The answer has no ICE ufrag.");
                 _mux.Register(ufrag, muxed.Channel);
             }
@@ -276,9 +280,9 @@ public sealed class NetherNetListener : IDisposable
 /// <summary>The few parts of an HTTP/1.1 request the signaling endpoint needs.</summary>
 internal sealed record HttpRequest(string Method, string Path, byte[] Body)
 {
-    /// <summary>Reads one request; returns null when the peer speaks TLS or sends something that is not HTTP.</summary>
+    /// <summary>Reads one request; returns null when the peer speaks TLS, disconnects, or sends something that is not HTTP.</summary>
     /// <exception cref="InvalidDataException">Headers or body exceed the limits.</exception>
-    public static async Task<HttpRequest?> ReadAsync(Stream stream, int maxHeaderBytes, int maxBodyBytes, CancellationToken cancellationToken)
+    public static async Task<(HttpRequest? Request, bool IsTls)> ReadAsync(Stream stream, int maxHeaderBytes, int maxBodyBytes, CancellationToken cancellationToken)
     {
         var buffer = new byte[maxHeaderBytes];
         var length = 0;
@@ -289,16 +293,16 @@ internal sealed record HttpRequest(string Method, string Path, byte[] Body)
                 throw new InvalidDataException("Request headers are too large.");
             var read = await stream.ReadAsync(buffer.AsMemory(length), cancellationToken);
             if (read == 0)
-                return null;
+                return (null, false);
             length += read;
             if (buffer[0] == 0x16)
-                return null; // TLS ClientHello
+                return (null, true); // TLS ClientHello
         }
 
         var head = Encoding.ASCII.GetString(buffer, 0, headerEnd).Split("\r\n");
         var requestLine = head[0].Split(' ');
         if (requestLine.Length != 3 || !requestLine[2].StartsWith("HTTP/1.", StringComparison.Ordinal))
-            return null;
+            return (null, false);
 
         var contentLength = 0;
         foreach (var header in head.Skip(1))
@@ -314,7 +318,7 @@ internal sealed record HttpRequest(string Method, string Path, byte[] Body)
         Array.Copy(buffer, headerEnd + 4, body, 0, already);
         if (already < contentLength)
             await stream.ReadExactlyAsync(body.AsMemory(already), cancellationToken);
-        return new HttpRequest(requestLine[0], requestLine[1].Split('?')[0], body);
+        return (new HttpRequest(requestLine[0], requestLine[1].Split('?')[0], body), false);
     }
 
     private static int IndexOfHeaderEnd(byte[] buffer, int length) =>

@@ -35,6 +35,33 @@ public sealed partial class BedrockConnection : IEnchanter
     {
         if (points <= 0 || Dead)
             return;
+
+        // Mending mechanic: repairs worn or held damaged items with Mending before granting level XP (1 XP = 2 durability)
+        var mendingTargets = new List<(Inventory Inv, uint Window, int Slot, ItemStack Stack)>();
+        for (var s = 0; s < Inventory.Armour.Size; s++)
+        {
+            if (Inventory.Armour[s] is { Damage: > 0 } piece && Enchanting.Level(piece, "mending") > 0)
+                mendingTargets.Add((Inventory.Armour, InventoryPackets.WindowArmour, s, piece));
+        }
+        if (Inventory.Held is { Damage: > 0 } held && Enchanting.Level(held, "mending") > 0)
+            mendingTargets.Add((Inventory.Main, InventoryPackets.WindowInventory, Inventory.SelectedSlot, held));
+        if (Inventory.Offhand[0] is { Damage: > 0 } offhand && Enchanting.Level(offhand, "mending") > 0)
+            mendingTargets.Add((Inventory.Offhand, InventoryPackets.WindowOffhand, 0, offhand));
+
+        if (mendingTargets.Count > 0)
+        {
+            var target = mendingTargets[Random.Shared.Next(mendingTargets.Count)];
+            var repairNeeded = (target.Stack.Damage + 1) / 2;
+            var xpToSpend = Math.Min(points, repairNeeded);
+            var repairedDmg = Math.Max(0, target.Stack.Damage - xpToSpend * 2);
+            var updated = target.Stack.WithDamage(repairedDmg);
+            target.Inv[target.Slot] = updated;
+            Send(InventoryPackets.InventorySlot(target.Window, target.Slot, updated));
+            points -= xpToSpend;
+            if (points <= 0)
+                return;
+        }
+
         var total = ExperienceProgress * PointsForLevel(ExperienceLevel) + points;
         while (total >= PointsForLevel(ExperienceLevel))
         {

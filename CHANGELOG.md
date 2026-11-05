@@ -2,6 +2,24 @@
 
 Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versions : [SemVer](https://semver.org/lang/fr/).
 
+## [0.4.0] - 2026-10-20
+
+### Ajouté
+- **Système complet d'Entités Personnalisées (`Custom Entities`)** :
+  - Support du protocole Bedrock : `AvailableActorIdentifiersPacket` (ID 119 avec `idlist`), `SyncActorPropertyPacket` (ID 165), `SetActorLinkPacket` (ID 41), `MobArmourEquipmentPacket` (ID 32), `BossEventPacket` (ID 74), `PropertySyncData`.
+  - API plugins avec `CustomEntityBuilder`, `CustomEntityRegistry`, composants, groupes de composants dynamiques et propriétés synchronisées.
+  - Cycle de vie complet, gestion des barres de boss, IA de déplacement et combat, montures / cavaliers, et génération automatique des œufs d'apparition (`Spawn Eggs`).
+- **Écosystème complet d'enchantements & tables de travail** :
+  - Enclume (`Anvil`) : réparation, renommage, combinaison d'enchantements, coût en niveaux, dégradation par usure.
+  - Meule (`Grindstone`) : désenchantement d'objets et récupération d'expérience.
+  - Tailleur de pierre (`Stonecutter`) : recettes de taille de pierre 1:1.
+  - Effets d'enchantements complets en jeu : Fortune, Silk Touch, Efficiency, Sharpness, Protection, Fire Protection, Feather Falling, Blast Protection, Projectile Protection, Unbreaking, Mending, Power, Punch, Flame, Infinity.
+- Port unique UDP partagé par tous les joueurs.
+- Sélecteurs de cibles `@s`, `@p`, `@r`, `@a`, `@e` dans les commandes.
+
+### Corrigé
+- Calcul du multiplicateur d'enchantement Fortune sur les minerais aligné strictement sur la distribution discrète vanilla.
+
 ## [0.3.0] - 2026-10-18
 
 Version réécrite et testée en jeu.

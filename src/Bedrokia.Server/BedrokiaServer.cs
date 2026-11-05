@@ -1,4 +1,4 @@
-// ┌───────────────────────────────────────────────────────────────────┐
+﻿// ┌───────────────────────────────────────────────────────────────────┐
 // │  ____  _____ ____  ____   ___  _  __ ___    _                     │
 // │ | __ )| ____|  _ \|  _ \ / _ \| |/ /|_ _|  / \                    │
 // │ |  _ \|  _| | | | | |_) | | | | ' /  | |  / _ \                   │
@@ -22,6 +22,7 @@ using Bedrokia.Server.Commands;
 using Bedrokia.Server.Core;
 using Bedrokia.Server.Entities;
 using Bedrokia.Server.Game;
+using Bedrokia.Server.Game.Custom.Entities;
 using Bedrokia.Server.Network;
 using Bedrokia.Server.Performance;
 using Bedrokia.Server.Permissions;
@@ -72,6 +73,9 @@ public sealed partial class BedrokiaServer
     /// <summary>Thrown snowballs, eggs, ender pearls and splash potions.</summary>
     public ProjectileManager Projectiles { get; }
 
+    /// <summary>Custom entities defined and spawned by plugins.</summary>
+    public CustomEntityManager CustomEntities { get; }
+
     /// <summary>Packs from resource_packs/, sent to players at login.</summary>
     public ResourcePacks ResourcePacks { get; private set; } = null!;
 
@@ -93,6 +97,7 @@ public sealed partial class BedrokiaServer
     // Each world simulates its own items on the ground, liquids and falling blocks.
     private void Attach(World world)
     {
+        world.Server = this;
         world.DroppedItems = new DroppedItems(world);
         world.Fluids = new Fluids(this, world);
         world.FallingBlocks = new FallingBlocks(this, world);
@@ -120,12 +125,13 @@ public sealed partial class BedrokiaServer
         Permissions = permissions ?? new("permissions.json");
         if (Permissions.LoadError is { } permissionsError)
             logger.Error(permissionsError);
-        Commands = new CommandManager(logger);
+        Commands = new CommandManager(logger); Commands.Server = this;
         Mobs = new MobManager(this);
         Vehicles = new VehicleManager(this);
         Maps = new MapManager(this);
         Npcs = new NpcManager(this);
         Projectiles = new ProjectileManager(this);
+        CustomEntities = new CustomEntityManager(this);
         Events = new ServerEvents(logger) { Timings = Timings };
         Scheduler = new ServerScheduler(logger) { Timings = Timings };
         Plugins = new PluginManager(this);
@@ -194,7 +200,7 @@ public sealed partial class BedrokiaServer
 
     /// <summary>Total number of entities active in the world (mobs, items, falling blocks, players).</summary>
     public int TotalEntitiesCount =>
-        Mobs.All.Count + Worlds.Sum(w => (w.DroppedItems?.All.Count ?? 0) + (w.FallingBlocks?.Count ?? 0)) + _players.Count;
+        Mobs.All.Count + CustomEntities.All.Count + Worlds.Sum(w => (w.DroppedItems?.All.Count ?? 0) + (w.FallingBlocks?.Count ?? 0)) + _players.Count;
 
     private long _lastTickTimestamp;
 
@@ -282,6 +288,7 @@ public sealed partial class BedrokiaServer
                 ? $"Listening on port {_netherNet.LocalEndPoint.Port}: TCP (join) + UDP {udp} (every player). Type 'help' for commands."
                 : $"Listening on port {_netherNet.LocalEndPoint.Port}: TCP (join) + UDP {firstUdp}-{lastUdp} (players). Type 'help' for commands.");
             _started.TrySetResult();
+            if (Events.HasServerStarted) Events.OnServerStarted(new ServerStartedEvent(this));
 
             using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1.0 / TicksPerSecond));
             try
@@ -319,6 +326,7 @@ public sealed partial class BedrokiaServer
             {
             }
 
+            if (Events.HasServerStop) Events.OnServerStop(new ServerStopEvent(this));
             foreach (var connection in _connections.ToList())
             {
                 connection.Disconnect("Server closed.", DisconnectReason.Shutdown);
@@ -506,7 +514,8 @@ public sealed partial class BedrokiaServer
     }
 
     private static bool Falls(BlockType block) =>
-        block.Name is "minecraft:sand" or "minecraft:red_sand" or "minecraft:gravel" || block.Name.EndsWith("_concrete_powder");
+        block.Name is "minecraft:sand" or "minecraft:red_sand" or "minecraft:gravel" || block.Name.EndsWith("_concrete_powder")
+        || Anvil.IsAnvilBlock(block.Name);
 
     /// <summary>Removes every item lying on the ground in every world (a "clear lag"); returns how many there were.</summary>
     public int ClearDroppedItems()
@@ -707,6 +716,7 @@ public sealed partial class BedrokiaServer
                     Vehicles.Tick(CurrentTick);
                     Maps.Tick(CurrentTick);
                     Npcs.Tick(CurrentTick);
+                    CustomEntities.Tick(CurrentTick);
                     Projectiles.Tick();
                     TickFireworks();
                 }
@@ -956,6 +966,7 @@ public sealed partial class BedrokiaServer
         Mobs.Forget(connection);
         Vehicles.Forget(connection);
         Npcs.Forget(connection);
+        CustomEntities.Forget(connection);
         _players.Remove(connection);
         if (wasInGame)
         {
@@ -1011,6 +1022,8 @@ public sealed partial class BedrokiaServer
         BroadcastInExcept(connection.World, connection, connection.AddPlayerPacket());
         foreach (var item in connection.World.DroppedItems.All)
             connection.Send(InventoryPackets.AddItemActor(item.EntityId, item.Stack, item.X, item.Y, item.Z, item.Vx, item.Vy, item.Vz));
+        foreach (var customEntity in CustomEntities.InWorld(connection.World))
+            customEntity.SendTo(connection);
         var joinEv = new PlayerJoinEvent(connection, $"§e{connection.Name} joined the game");
         Events.OnJoin(joinEv);
         if (!string.IsNullOrEmpty(joinEv.BroadcastMessage))
@@ -1473,8 +1486,7 @@ public sealed partial class BedrokiaServer
                 return;
             }
             
-            var enchantName = args[0].ToLowerInvariant().Replace("minecraft:", "");
-            var enchant = Enchanting.All.FirstOrDefault(e => e.Name == enchantName);
+            var enchant = Enchanting.ByIdOrName(args[0]);
             if (enchant is null)
             {
                 sender.Reply($"§cUnknown enchantment '{args[0]}'. Available: {string.Join(", ", Enchanting.All.Select(e => e.Name))}");
@@ -1483,19 +1495,14 @@ public sealed partial class BedrokiaServer
             
             var level = args.Length == 2 ? Int(args[1], 1, enchant.MaxLevel) : 1;
             
-            // Vérifier si l'enchantement peut être appliqué à cet item
             var itemName = held.Type.Name.StartsWith("minecraft:") ? held.Type.Name["minecraft:".Length..] : held.Type.Name;
-            if (!enchant.Fits(itemName))
+            if (itemName is not ("book" or "enchanted_book") && !enchant.Fits(itemName))
             {
                 sender.Reply($"§c{enchant.Name} cannot be applied to {itemName}.");
                 return;
             }
             
-            // Récupérer les enchantements existants et ajouter le nouveau
-            var existing = Enchanting.Of(held).Where(e => e.Id != enchant.Id).ToList();
-            existing.Add((enchant.Id, level));
-            
-            var enchanted = Enchanting.With(held, existing);
+            var enchanted = held.AddEnchantment(enchant.Id, level);
             var slot = player.Inventory.SelectedSlot;
             player.Inventory.Main[slot] = enchanted;
             player.Send([.. player.Inventory.ContentPackets()]);
@@ -1650,3 +1657,4 @@ public sealed partial class BedrokiaServer
         Alias("permission", "perm", "<target:user|group> [args...]", "bedrokia.command.permission");
     }
 }
+

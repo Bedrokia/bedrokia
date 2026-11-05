@@ -1,4 +1,4 @@
-// ┌───────────────────────────────────────────────────────────────────┐
+﻿// ┌───────────────────────────────────────────────────────────────────┐
 // │  ____  _____ ____  ____   ___  _  __ ___    _                     │
 // │ | __ )| ____|  _ \|  _ \ / _ \| |/ /|_ _|  / \                    │
 // │ |  _ \|  _| | | | | |_) | | | | ' /  | |  / _ \                   │
@@ -120,6 +120,7 @@ public sealed class VehicleManager(BedrokiaServer server)
             vehicle.Heading = Math.Abs(Math.Sin(rad)) > Math.Abs(Math.Cos(rad)) ? (Math.Sin(rad) > 0 ? -1 : 1, 0) : (0, Math.Cos(rad) > 0 ? 1 : -1);
         }
         _vehicles.Add(vehicle);
+        if (server.Events.HasVehicleCreate) server.Events.OnVehicleCreate(new VehicleCreateEvent(vehicle));
         return vehicle;
     }
 
@@ -133,6 +134,11 @@ public sealed class VehicleManager(BedrokiaServer server)
     /// <summary>Seats <paramref name="player"/> on <paramref name="vehicle"/> (a <see cref="Vehicle"/> or a <see cref="Mob"/>).</summary>
     public bool Mount(BedrockConnection player, object vehicle)
     {
+        if (server.Events.HasVehicleEnter)
+        {
+            var enterEv = new VehicleEnterEvent(vehicle, player);
+            if (!server.Events.OnVehicleEnter(enterEv)) return false;
+        }
         if (player.Riding is not null || player.Dead)
             return false;
         long id;
@@ -163,6 +169,11 @@ public sealed class VehicleManager(BedrokiaServer server)
     {
         if (player.Riding is not { } vehicle)
             return;
+        if (server.Events.HasVehicleExit)
+        {
+            var exitEv = new VehicleExitEvent(vehicle, player);
+            if (!server.Events.OnVehicleExit(exitEv)) return;
+        }
         player.Riding = null;
         var (id, x, y, z) = vehicle switch
         {
@@ -217,6 +228,11 @@ public sealed class VehicleManager(BedrokiaServer server)
     {
         if (vehicle.HurtTicks > 0)
             return;
+        if (server.Events.HasVehicleDamage)
+        {
+            var dmgEv = new VehicleDamageEvent(vehicle, player, 1f);
+            if (!server.Events.OnVehicleDamage(dmgEv)) return;
+        }
         vehicle.HurtTicks = 10;
         vehicle.Hits++;
         Broadcast(vehicle, EntityPackets.Event(vehicle.EntityId, EntityPackets.EventHurt));
@@ -231,6 +247,7 @@ public sealed class VehicleManager(BedrokiaServer server)
 
     private void Remove(Vehicle vehicle)
     {
+        if (server.Events.HasVehicleDestroy) server.Events.OnVehicleDestroy(new VehicleDestroyEvent(vehicle));
         _vehicles.Remove(vehicle);
         Broadcast(vehicle, Packets.RemoveActor(vehicle.EntityId));
         vehicle.Viewers.Clear();
@@ -498,3 +515,5 @@ public sealed class VehicleManager(BedrokiaServer server)
         File.Move(path + ".tmp", path, overwrite: true);
     }
 }
+
+

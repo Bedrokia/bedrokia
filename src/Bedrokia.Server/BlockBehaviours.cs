@@ -1,4 +1,4 @@
-// ┌───────────────────────────────────────────────────────────────────┐
+﻿// ┌───────────────────────────────────────────────────────────────────┐
 // │  ____  _____ ____  ____   ___  _  __ ___    _                     │
 // │ | __ )| ____|  _ \|  _ \ / _ \| |/ /|_ _|  / \                    │
 // │ |  _ \|  _| | | | | |_) | | | | ' /  | |  / _ \                   │
@@ -93,6 +93,11 @@ public sealed partial class BedrokiaServer
 
     private void DecayLeaves(World world, int x, int y, int z, BlockType block)
     {
+        if (Events.HasLeavesDecay)
+        {
+            var decayEv = new LeavesDecayEvent(world, x, y, z, block);
+            if (!Events.OnLeavesDecay(decayEv)) return;
+        }
         SetBlockAndUpdate(x, y, z, Blocks.Air, world);
         foreach (var drop in DropRules.Drops(block, null, Random.Shared))
             DropItem(drop, x + 0.5f, y + 0.25f, z + 0.5f, world: world);
@@ -106,10 +111,24 @@ public sealed partial class BedrokiaServer
         if (WaterNear(world, x, y, z))
         {
             if (moisture < 7)
+            {
+                if (Events.HasMoistureChange)
+                {
+                    var moistEv = new MoistureChangeEvent(world, x, y, z, moisture, 7);
+                    if (!Events.OnMoistureChange(moistEv)) return;
+                }
                 SetBlockAndUpdate(x, y, z, BedrockConnection.With(block, "moisturized_amount", 7), world);
+            }
         }
         else if (moisture > 0)
+        {
+            if (Events.HasMoistureChange)
+            {
+                var moistEv = new MoistureChangeEvent(world, x, y, z, moisture, moisture - 1);
+                if (!Events.OnMoistureChange(moistEv)) return;
+            }
             SetBlockAndUpdate(x, y, z, BedrockConnection.With(block, "moisturized_amount", moisture - 1), world);
+        }
         else if (!IsCrop(world.GetBlock(x, y + 1, z)))
             SetBlockAndUpdate(x, y, z, Blocks.Dirt, world);
     }

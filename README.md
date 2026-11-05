@@ -37,13 +37,13 @@ pass and the code stays readable, it's cool. 😎
 |---|---|
 | **Connection** | Bedrock 26.60 to 26.62, NetherNet (WebRTC) on one port (TCP + UDP) for every player, Xbox Live authentication, encryption |
 | **World** | Vanilla generation (biomes, terrain, trees, ores), flat or void worlds, saving, Bedrock world import (`.mcworld` / LevelDB) |
-| **Blocks** | Oriented placement (stairs, logs, doors, beds…), chests, ender chests, barrels, furnaces / blast furnaces / smokers, doors, trapdoors, levers, buttons, beds (respawn, skip the night), connected walls, gravity (sand, gravel), flowing water and lava, crops, trees, TNT and explosions |
-| **Players** | Full inventory, crafting (every vanilla recipe), enchanting, experience, hunger, damage, falls, death, armour, dropped and picked-up items |
+| **Blocks** | Oriented placement (stairs, logs, doors, beds…), chests, ender chests, barrels, furnaces / blast furnaces / smokers, anvils (repair, rename, combine enchantments, falling damage), grindstone (disenchant, XP refund), stonecutter, enchanting table, doors, trapdoors, levers, buttons, beds (respawn, skip the night), connected walls, gravity (sand, gravel, anvils), flowing water and lava, crops, trees, TNT and explosions |
+| **Players** | Full inventory, crafting (every vanilla recipe), enchanting ecosystem (enchanting table, anvil merging/repair, grindstone, mending, unbreaking, combat/protection formulas), experience, hunger, damage, falls, death, armour, dropped and picked-up items |
 | **Mobs** | Animals and monsters that spawn, move, attack and drop items; creepers that explode |
 | **Server** | PocketMine-like `server.properties`, ops, whitelist, bans, permissions and groups, ~35 commands, resource packs, new versions announced in the console |
 | **Plugins** | C# plugins organised like Bukkit / PocketMine (`plugin.yml`, `src/`, `resources/config.yml`), **compiled automatically at startup**, cancellable events, commands, titles, scoreboard, effects, particles, custom blocks and items |
 
-Still missing: double chests, editable signs, anvil, stonecutter, grindstone, Nether and End, redstone, caves and
+Still missing: double chests, editable signs, Nether and End, redstone, caves and
 structures.
 
 ## 🚀 Quick start

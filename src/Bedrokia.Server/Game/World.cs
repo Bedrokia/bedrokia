@@ -1,4 +1,4 @@
-// ┌───────────────────────────────────────────────────────────────────┐
+﻿// ┌───────────────────────────────────────────────────────────────────┐
 // │  ____  _____ ____  ____   ___  _  __ ___    _                     │
 // │ | __ )| ____|  _ \|  _ \ / _ \| |/ /|_ _|  / \                    │
 // │ |  _ \|  _| | | | | |_) | | | | ' /  | |  / _ \                   │
@@ -54,6 +54,7 @@ public sealed class World
     public int Dimension => Generator is Generation.NetherGenerator ? 1 : 0;
 
     // Per-world simulation, set up by the server when it opens the world.
+    public BedrokiaServer? Server { get; internal set; }
     public DroppedItems DroppedItems { get; internal set; } = null!;
 
     // Items shown still in the air (BedrokiaServer.ShowItem): sent to whoever joins or enters this world.
@@ -61,13 +62,49 @@ public sealed class World
     public Fluids Fluids { get; internal set; } = null!;
     public Entities.FallingBlocks FallingBlocks { get; internal set; } = null!;
 
+    /// <summary>Spawns a custom entity in this world.</summary>
+    public Custom.Entities.CustomEntityInstance? SpawnCustomEntity(string identifier, double x, double y, double z) =>
+        Server?.CustomEntities.Spawn(identifier, this, x, y, z);
+
+    /// <summary>Spawns a custom entity in this world (alias for SpawnCustomEntity).</summary>
+    public Custom.Entities.CustomEntityInstance? SpawnEntity(string identifier, double x, double y, double z) =>
+        SpawnCustomEntity(identifier, x, y, z);
+
     /// <summary>world.properties of this world (generator, day/night cycle).</summary>
     public WorldSettings Settings { get; }
 
     /// <summary>World time in ticks (0 = sunrise, 6000 = noon, 24000 = one day).</summary>
-    public long Time { get; set; }
+    private long _time;
+    public long Time
+    {
+        get => _time;
+        set
+        {
+            if (Server?.Events is { HasTimeChange: true } timeEvs)
+            {
+                var ev = new TimeChangeEvent(this, _time, value);
+                if (!timeEvs.OnTimeChange(ev)) return;
+                value = ev.NewTime;
+            }
+            _time = value;
+        }
+    }
 
-    public (int X, int Y, int Z) Spawn { get; set; }
+    private (int X, int Y, int Z) _spawn;
+    public (int X, int Y, int Z) Spawn
+    {
+        get => _spawn;
+        set
+        {
+            if (Server?.Events is { HasSpawnChange: true } spawnEvs)
+            {
+                var ev = new SpawnChangeEvent(this, _spawn, value);
+                if (!spawnEvs.OnSpawnChange(ev)) return;
+                value = ev.NewSpawn;
+            }
+            _spawn = value;
+        }
+    }
 
     private string ChunkDirectory => Path.Combine(_directory, "chunks");
     private string LevelFile => Path.Combine(_directory, "level.json");
@@ -170,7 +207,9 @@ public sealed class World
         {
             try
             {
-                return Chunk.Deserialize(x, z, File.ReadAllBytes(file));
+                var loadedChunk = Chunk.Deserialize(x, z, File.ReadAllBytes(file));
+                if (Server?.Events is { HasChunkLoad: true } clEvs) clEvs.OnChunkLoad(new ChunkLoadEvent(this, loadedChunk));
+                return loadedChunk;
             }
             catch (InvalidDataException)
             {
@@ -274,3 +313,4 @@ public sealed class World
         File.Move(temp, path, overwrite: true);
     }
 }
+

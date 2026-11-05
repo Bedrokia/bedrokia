@@ -91,9 +91,23 @@ public static class DropRules
         if (PickaxeTier.TryGetValue(name, out var tier) && PickaxeLevel(tool) < tier)
             return drops; // wrong or no tool: vanilla drops nothing
 
+        var silkTouch = Enchanting.Level(tool, "silk_touch");
+        var fortune = Enchanting.Level(tool, "fortune");
+
+        // Silk Touch takes precedence over Fortune and normal drops
+        if (silkTouch > 0)
+        {
+            if (name is not ("spawner" or "budding_amethyst" or "infested_stone" or "fire" or "water" or "flowing_water" or "lava" or "flowing_lava"))
+            {
+                Add(drops, name, 1);
+                return drops;
+            }
+        }
+
         if (LeafSaplings.TryGetValue(name, out var sapling))
         {
-            if (sapling.Length > 0 && random.NextDouble() < 0.05)
+            var saplingChance = fortune switch { 0 => 0.05, 1 => 0.0625, 2 => 0.0833, _ => 0.10 };
+            if (sapling.Length > 0 && random.NextDouble() < saplingChance)
                 Add(drops, sapling, 1);
             if (name is "oak_leaves" or "dark_oak_leaves" && random.NextDouble() < 0.005)
                 Add(drops, "apple", 1);
@@ -104,10 +118,14 @@ public static class DropRules
             Add(drops, "wheat_seeds", 1);
             return drops;
         }
-        if (name == "gravel" && random.NextDouble() < 0.1)
+        if (name == "gravel")
         {
-            Add(drops, "flint", 1);
-            return drops;
+            var flintChance = fortune switch { 0 => 0.10, 1 => 0.14, 2 => 0.25, _ => 1.0 };
+            if (random.NextDouble() < flintChance)
+            {
+                Add(drops, "flint", 1);
+                return drops;
+            }
         }
 
         if (Crop(block, name, random) is { } harvest)
@@ -126,7 +144,17 @@ public static class DropRules
         if (Special.TryGetValue(name, out var rule))
         {
             if (rule.Item.Length > 0)
-                Add(drops, rule.Item, random.Next(rule.Min, rule.Max + 1));
+            {
+                var count = random.Next(rule.Min, rule.Max + 1);
+                if (fortune > 0 && name.Contains("ore"))
+                {
+                    var k = random.Next(fortune + 2);
+                    var multiplier = k <= 1 ? 1 : k;
+                    if (multiplier > 1)
+                        count = rule.Min == 1 && rule.Max == 1 ? multiplier : count * multiplier;
+                }
+                Add(drops, rule.Item, count);
+            }
             return drops;
         }
         if (name.EndsWith("_door") || name.EndsWith("_bed") || name.Contains("double_slab"))

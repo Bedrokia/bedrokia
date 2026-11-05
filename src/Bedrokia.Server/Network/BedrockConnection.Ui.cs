@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using Bedrokia.Protocol;
 using Bedrokia.Server.Game.Ui.Ddui;
 using Bedrokia.Server.Game.Ui.Forms;
@@ -122,6 +122,11 @@ public sealed partial class BedrockConnection
             return;
 
         var (formId, hasResponse, responseJson, hasCancel, cancelReason) = UiPackets.ReadModalFormResponse(ref reader);
+        if (Server?.Events is { HasPlayerFormResponse: true } formEvs)
+        {
+            var formEv = new PlayerFormResponseEvent(this, formId, responseJson, hasCancel, cancelReason);
+            if (!formEvs.OnPlayerFormResponse(formEv)) return;
+        }
 
         // Anti-Replay: immediately remove before invoking any handlers
         if (!_activeForms.TryRemove(formId, out var form))

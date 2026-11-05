@@ -109,7 +109,7 @@ public sealed class NetherNetSession
                 ? _unreliable
                 : _reliable;
 
-            if (channel is null)
+            if (channel is null || channel.readyState != RTCDataChannelState.open)
                 return;
 
             if (channel == _unreliable)
@@ -125,7 +125,7 @@ public sealed class NetherNetSession
             var segments = Math.Max(1, (message.Length + SegmentSize - 1) / SegmentSize);
             if (segments > 256)
             {
-                Close("outgoing message too large");
+                CloseLocked("outgoing message too large");
                 return;
             }
             for (var i = 0; i < segments; i++)
@@ -157,7 +157,7 @@ public sealed class NetherNetSession
         {
             if ((reliable ? _reliable : _unreliable) is not null)
             {
-                Close($"duplicate data channel '{channel.label}'");
+                CloseLocked($"duplicate data channel '{channel.label}'");
                 return;
             }
             if (reliable)
@@ -210,9 +210,10 @@ public sealed class NetherNetSession
             {
                 if (_expectedRemaining >= 0 && remaining != _expectedRemaining)
                 {
+                    var expected = _expectedRemaining;
                     ResetReassemblyBuffer();
                     _expectedRemaining = -1;
-                    CloseLocked($"segment {remaining} received, {_expectedRemaining} expected");
+                    CloseLocked($"segment {remaining} received, {expected} expected");
                     return;
                 }
                 if (remaining == 0 && _reassemblyBuffer is null)
@@ -222,6 +223,14 @@ public sealed class NetherNetSession
                 else
                 {
                     var segLen = data.Length - 1;
+                    if (_reassemblyOffset + segLen > MaxMessageSize)
+                    {
+                        ResetReassemblyBuffer();
+                        _expectedRemaining = -1;
+                        CloseLocked("message too large");
+                        return;
+                    }
+
                     if (_reassemblyBuffer is null)
                     {
                         var estimated = Math.Max(32 * 1024, (remaining + 1) * segLen);
@@ -235,14 +244,6 @@ public sealed class NetherNetSession
                         _reassemblyBuffer.AsSpan(0, _reassemblyOffset).CopyTo(newRented);
                         ArrayPool<byte>.Shared.Return(_reassemblyBuffer);
                         _reassemblyBuffer = newRented;
-                    }
-
-                    if (_reassemblyOffset + segLen > MaxMessageSize)
-                    {
-                        ResetReassemblyBuffer();
-                        _expectedRemaining = -1;
-                        CloseLocked("message too large");
-                        return;
                     }
 
                     data.AsSpan(1).CopyTo(_reassemblyBuffer.AsSpan(_reassemblyOffset));
@@ -286,6 +287,7 @@ public sealed class NetherNetSession
         _closed = true;
         ResetReassemblyBuffer();
         _idleCheck.Dispose();
+        PeerPublicKey?.Dispose();
         // Closing re-enters SIPSorcery callbacks; do it off this thread and lock.
         _ = Task.Run(() =>
         {

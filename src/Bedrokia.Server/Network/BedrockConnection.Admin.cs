@@ -1,4 +1,4 @@
-// ┌───────────────────────────────────────────────────────────────────┐
+﻿// ┌───────────────────────────────────────────────────────────────────┐
 // │  ____  _____ ____  ____   ___  _  __ ___    _                     │
 // │ | __ )| ____|  _ \|  _ \ / _ \| |/ /|_ _|  / \                    │
 // │ |  _ \|  _| | | | | |_) | | | | ' /  | |  / _ \                   │
@@ -223,7 +223,17 @@ public sealed partial class BedrockConnection
     }
 
     /// <summary>Moves the player to another server; plugins save what must follow them before calling this.</summary>
-    public void Transfer(string address, ushort port = 19132) => Send(Packets.Transfer(address, port));
+    public void Transfer(string address, ushort port = 19132)
+    {
+        if (Server?.Events is { HasPlayerTransfer: true } transferEvs)
+        {
+            var transferEv = new PlayerTransferEvent(this, address, port);
+            if (!transferEvs.OnPlayerTransfer(transferEv)) return;
+            address = transferEv.Address;
+            port = transferEv.Port;
+        }
+        Send(Packets.Transfer(address, port));
+    }
 
     /// <summary>Sends the whole inventory again, after a plugin changed slots directly.</summary>
     public void SyncInventory() => Send([.. Inventory.ContentPackets()]);

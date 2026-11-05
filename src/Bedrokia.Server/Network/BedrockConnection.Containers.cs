@@ -152,10 +152,18 @@ public sealed partial class BedrockConnection
             CloseWindowFromServer(WindowContainer, 0);
         OpenContainerAt = null;
         Inventory.OpenContainer = null;
+        Inventory.CraftingTableOpen = false;
+        Inventory.Enchanter = null;
+        Inventory.AnvilOpen = false;
+        Inventory.AnvilPos = null;
+        Inventory.GrindstoneOpen = false;
+        Inventory.GrindstonePos = null;
+        Inventory.StonecutterOpen = false;
+        Inventory.StonecutterPos = null;
         if (_fakeBlockAt is var (fx, fy, fz))
         {
             _fakeBlockAt = null;
-            if (World.GetBlock(fx, fy, fz) is { } real) // the real block comes back where the fake furnace was
+            if (World.GetBlock(fx, fy, fz) is { } real)
                 Send(Packets.UpdateBlock(fx, fy, fz, real.NetworkId));
         }
         CloseMenu();

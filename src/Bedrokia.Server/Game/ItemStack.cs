@@ -74,6 +74,99 @@ public sealed class ItemStack
     public string? CustomName => Nbt?.GetValueOrDefault("display") is OrderedDictionary<string, object> display
         ? display.GetValueOrDefault("Name") as string : null;
 
+    /// <summary>Damage sustained by this item (0 = full durability).</summary>
+    public int Damage
+    {
+        get
+        {
+            if (Nbt is not null && Nbt.TryGetValue("Damage", out var d) && d is IConvertible c)
+                return Convert.ToInt32(c);
+            return Meta > 0 && MaxDurability > 0 ? Meta : 0;
+        }
+    }
+
+    /// <summary>Maximum durability for this item kind, or 0 if not durable.</summary>
+    public int MaxDurability => GetMaxDurability(Type.Name);
+
+    /// <summary>Returns a copy with the given damage amount.</summary>
+    public ItemStack WithDamage(int damage)
+    {
+        var nbt = Nbt is null ? new OrderedDictionary<string, object>() : new OrderedDictionary<string, object>(Nbt);
+        if (damage > 0)
+            nbt["Damage"] = damage;
+        else
+            nbt.Remove("Damage");
+        return new ItemStack(Type, Count, (short)Math.Min(damage, short.MaxValue), BlockRuntimeId, nbt.Count > 0 ? nbt : null);
+    }
+
+    /// <summary>Anvil cumulative repair penalty level cost (2^n - 1).</summary>
+    public int GetRepairCost() =>
+        Nbt?.TryGetValue("RepairCost", out var c) == true && c is IConvertible conv ? Convert.ToInt32(conv) : 0;
+
+    /// <summary>Returns a copy with the given anvil repair penalty.</summary>
+    public ItemStack WithRepairCost(int cost)
+    {
+        var nbt = Nbt is null ? new OrderedDictionary<string, object>() : new OrderedDictionary<string, object>(Nbt);
+        if (cost > 0)
+            nbt["RepairCost"] = cost;
+        else
+            nbt.Remove("RepairCost");
+        return new ItemStack(Type, Count, Meta, BlockRuntimeId, nbt.Count > 0 ? nbt : null);
+    }
+
+    /// <summary>Enchantments carried on this stack.</summary>
+    public IReadOnlyList<(int Id, int Level)> GetEnchantments() => Enchanting.Of(this);
+
+    /// <summary>True if this item has the given enchantment id.</summary>
+    public bool HasEnchantment(int id) => Enchanting.Of(this).Any(e => e.Id == id);
+
+    /// <summary>Level of the named enchantment, or 0 if absent.</summary>
+    public int GetEnchantmentLevel(string name) => Enchanting.Level(this, name);
+
+    /// <summary>Returns a copy with the given enchantment added or updated.</summary>
+    public ItemStack AddEnchantment(int id, int level)
+    {
+        var enchs = Enchanting.Of(this).Where(e => e.Id != id).ToList();
+        if (level > 0)
+            enchs.Add((id, level));
+        return Enchanting.With(this, enchs);
+    }
+
+    /// <summary>Returns a copy without the given enchantment.</summary>
+    public ItemStack RemoveEnchantment(int id) =>
+        Enchanting.With(this, Enchanting.Of(this).Where(e => e.Id != id));
+
+    /// <summary>Vanilla durability lookup by item name.</summary>
+    public static int GetMaxDurability(string name)
+    {
+        if (name.StartsWith("minecraft:"))
+            name = name["minecraft:".Length..];
+        if (Custom.Items.CustomItemRegistry.Get(name)?.GetComponent<Custom.Items.DurabilityItemComponent>() is { } custom)
+            return custom.MaxDurability;
+        return name switch
+        {
+            "wooden_sword" or "wooden_shovel" or "wooden_pickaxe" or "wooden_axe" or "wooden_hoe" => 59,
+            "stone_sword" or "stone_shovel" or "stone_pickaxe" or "stone_axe" or "stone_hoe" => 131,
+            "iron_sword" or "iron_shovel" or "iron_pickaxe" or "iron_axe" or "iron_hoe" => 250,
+            "golden_sword" or "golden_shovel" or "golden_pickaxe" or "golden_axe" or "golden_hoe" => 32,
+            "diamond_sword" or "diamond_shovel" or "diamond_pickaxe" or "diamond_axe" or "diamond_hoe" => 1561,
+            "netherite_sword" or "netherite_shovel" or "netherite_pickaxe" or "netherite_axe" or "netherite_hoe" => 2031,
+
+            "leather_helmet" => 55, "leather_chestplate" => 80, "leather_leggings" => 75, "leather_boots" => 65,
+            "chainmail_helmet" => 165, "chainmail_chestplate" => 240, "chainmail_leggings" => 225, "chainmail_boots" => 195,
+            "iron_helmet" => 165, "iron_chestplate" => 240, "iron_leggings" => 225, "iron_boots" => 195,
+            "golden_helmet" => 77, "golden_chestplate" => 112, "golden_leggings" => 105, "golden_boots" => 91,
+            "diamond_helmet" => 363, "diamond_chestplate" => 528, "diamond_leggings" => 495, "diamond_boots" => 429,
+            "netherite_helmet" => 407, "netherite_chestplate" => 592, "netherite_leggings" => 555, "netherite_boots" => 481,
+            "turtle_helmet" => 275,
+
+            "bow" => 384, "crossbow" => 465, "trident" => 250, "shield" => 336,
+            "fishing_rod" => 64, "shears" => 238, "flint_and_steel" => 64, "elytra" => 432, "mace" => 500,
+            "warped_fungus_on_a_stick" or "carrot_on_a_stick" => 25,
+            _ => 0,
+        };
+    }
+
     /// <summary>True when the two stacks can be merged.</summary>
     public bool StacksWith(ItemStack other) =>
         other.Type == Type && other.Meta == Meta && other.BlockRuntimeId == BlockRuntimeId

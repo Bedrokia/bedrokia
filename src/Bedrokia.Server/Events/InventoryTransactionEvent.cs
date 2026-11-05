@@ -36,7 +36,7 @@ public sealed class InventoryTransactionEvent(
     ItemStack? item,
     int count,
     (byte Container, int Slot) source,
-    (byte Container, int Slot)? destination = null) : CancellableEvent
+    (byte Container, int Slot)? destination = null) : CancellableEvent, IPlayerEvent
 {
     public BedrockConnection Player => player;
     public InventoryTransactionType Type => type;

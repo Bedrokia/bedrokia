@@ -24,6 +24,15 @@ public sealed class PlayerInventory
     // Container ids (gophertunnel protocol/container.go).
     private const byte ContainerArmor = 6, ContainerCombined = 12, ContainerCraftingInput = 13, ContainerHotBar = 28,
         ContainerInventory = 29, ContainerOffhand = 34, ContainerCursor = 59, ContainerCreatedOutput = 60;
+    private const byte ContainerAnvilInput = 0, ContainerAnvilMaterial = 1, ContainerAnvilResultPreview = 2;
+    public const int AnvilInputSlot = 1, AnvilMaterialSlot = 2;
+
+    private const byte ContainerGrindstoneInput = 50, ContainerGrindstoneAdditional = 51, ContainerGrindstoneResultPreview = 52;
+    public const int GrindstoneFirstInputSlot = 16, GrindstoneSecondInputSlot = 17;
+
+    private const byte ContainerStonecutterInput = 53, ContainerStonecutterResultPreview = 54;
+    public const int StonecutterInputSlot = 3;
+
     private const int CreatedOutputSlot = 50;
     private const int RememberedRequests = 64;
 
@@ -76,6 +85,7 @@ public sealed class PlayerInventory
     private sealed record CreativeCraft(uint CreativeId) : Op;
     private sealed record Craft(uint RecipeId, int Times, bool Auto) : Op;
     private sealed record Create(int ResultSlot) : Op;
+    private sealed record GrindstoneCraft(int RecipeId, byte Times, int Xp) : Op;
 
     // Crafting grid in the UI inventory (Dragonfly session/player.go): 2x2 at 28, 3x3 (crafting table) at 32.
     private const int SmallGridOffset = 28, SmallGridSize = 4, LargeGridOffset = 32, LargeGridSize = 9;
@@ -90,15 +100,24 @@ public sealed class PlayerInventory
     // client sends for another window while its table stays open, and its crafts then looked in the 2x2 grid.
     private bool LargeGrid => CraftingTableOpen || Enumerable.Range(LargeGridOffset, LargeGridSize).Any(s => Ui[s] is not null);
 
+    /// <summary>True while an anvil is open.</summary>
+    public bool AnvilOpen { get; set; }
+    public (int X, int Y, int Z)? AnvilPos { get; set; }
+
+    /// <summary>True while a grindstone is open.</summary>
+    public bool GrindstoneOpen { get; set; }
+    public (int X, int Y, int Z)? GrindstonePos { get; set; }
+
+    /// <summary>True while a stonecutter is open.</summary>
+    public bool StonecutterOpen { get; set; }
+    public (int X, int Y, int Z)? StonecutterPos { get; set; }
+
     private const byte ContainerEnchantingInput = 22, ContainerEnchantingMaterial = 23;
     public const int EnchantInputSlot = 14, EnchantLapisSlot = 15;
 
     /// <summary>The open enchanting table (options, level costs), or null.</summary>
     public IEnchanter? Enchanter { get; set; }
 
-    // The anvil window: input and material in the UI inventory (Dragonfly anvilInputSlot, anvilMaterialSlot).
-    private const byte ContainerAnvilInput = 0, ContainerAnvilMaterial = 1;
-    public const int AnvilInputSlot = 1, AnvilMaterialSlot = 2;
 
     /// <summary>Set while an anvil is open: called after each use (sound, the anvil wearing out).</summary>
     public Action? AnvilUsed { get; set; }
@@ -154,11 +173,16 @@ public sealed class PlayerInventory
         }
         var filters = reader.VarUInt32();
         _filters.Clear();
+        var filterStrings = new string[filters];
         for (var f = 0; f < filters; f++)
-            _filters.Add(reader.String());
+        {
+            var str = reader.String();
+            filterStrings[f] = str;
+            _filters.Add(str);
+        }
         reader.Int32(); // filter cause
 
-        responses.Add(Process(requestId, actions, mode, drop, out var ok));
+        responses.Add(Process(requestId, actions, filterStrings, mode, drop, out var ok));
         if (!ok)
             responses.AddRange(ContentPackets());
         return true;
@@ -244,10 +268,7 @@ public sealed class PlayerInventory
                 r.VarUInt32();
                 return new AnvilCraft(r.Int32());
             case 16:
-                r.Int32();
-                r.Byte();
-                r.VarInt32();
-                return new Unsupported("grindstone");
+                return new GrindstoneCraft(r.Int32(), r.Byte(), r.VarInt32());
             case 17:
                 r.String();
                 r.Byte();
@@ -296,8 +317,10 @@ public sealed class PlayerInventory
         ContainerHotBar or ContainerInventory or ContainerCombined => (Main, slot.Slot),
         ContainerArmor => (Armour, slot.Slot),
         ContainerOffhand => (Offhand, 0),
-        ContainerCursor or ContainerCreatedOutput or ContainerCraftingInput or ContainerEnchantingInput or ContainerEnchantingMaterial => (Ui, slot.Slot),
-        ContainerAnvilInput or ContainerAnvilMaterial when AnvilUsed is not null => (Ui, slot.Slot),
+        ContainerCursor or ContainerCreatedOutput or ContainerCraftingInput or ContainerEnchantingInput or ContainerEnchantingMaterial
+            or ContainerGrindstoneInput or ContainerGrindstoneAdditional or ContainerGrindstoneResultPreview
+            or ContainerStonecutterInput or ContainerStonecutterResultPreview => (Ui, slot.Slot),
+        ContainerAnvilInput or ContainerAnvilMaterial when AnvilUsed is not null || AnvilOpen => (Ui, slot.Slot),
         // The open chest, barrel or ender chest; furnaces: ingredient 0, fuel 1, result 2.
         ContainerLevelEntity or ContainerBarrel when OpenContainer is { } open => (open.Items, slot.Slot),
         ContainerFurnaceIngredient or ContainerBlastFurnaceIngredient or ContainerSmokerIngredient when OpenContainer is { } open => (open.Items, 0),
@@ -306,7 +329,7 @@ public sealed class PlayerInventory
         _ => null,
     };
 
-    private byte[] Process(int requestId, List<Op> actions, GameMode mode, Action<ItemStack> drop, out bool ok)
+    private byte[] Process(int requestId, List<Op> actions, string[] filters, GameMode mode, Action<ItemStack> drop, out bool ok)
     {
         var before = new Dictionary<(Inventory, int), (ItemStack? Stack, int Count)>();
         var changes = new Dictionary<(byte, byte), (Inventory Inventory, int Slot)>();
@@ -329,6 +352,13 @@ public sealed class PlayerInventory
         void Set(SlotRef slot, (Inventory Inventory, int Slot) at, ItemStack? stack)
         {
             Remember(at);
+            if (at.Inventory == Armour && Player?.Server?.Events is { HasPlayerArmorChange: true } armorEvs)
+            {
+                var oldItem = at.Inventory[at.Slot];
+                var armorEv = new PlayerArmorChangeEvent(Player, at.Slot, oldItem, stack);
+                if (!armorEvs.OnPlayerArmorChange(armorEv)) throw new InvalidOperationException("armor change cancelled");
+                stack = armorEv.NewItem;
+            }
             at.Inventory[at.Slot] = stack;
             changes[(slot.Container, slot.Slot)] = at;
             current[at] = stack?.NetworkId ?? 0;
@@ -574,6 +604,64 @@ public sealed class PlayerInventory
                         CreateResult(Enchanting.With(input, options[c.RecipeId]));
                         break;
                     }
+                    case GrindstoneCraft:
+                    {
+                        if (!GrindstoneOpen)
+                            throw new InvalidOperationException("grindstone is not open");
+                        var first = Ui[GrindstoneFirstInputSlot];
+                        var second = Ui[GrindstoneSecondInputSlot];
+
+                        var calc = Grindstone.Calculate(first, second)
+                            ?? throw new InvalidOperationException("invalid grindstone craft");
+
+                        if (calc.ExperienceRefund > 0 && Player is not null)
+                            Player.AddExperience(calc.ExperienceRefund);
+
+                        if (first is not null)
+                        {
+                            Remember((Ui, GrindstoneFirstInputSlot));
+                            Set(new SlotRef(ContainerGrindstoneInput, GrindstoneFirstInputSlot, 0), (Ui, GrindstoneFirstInputSlot), null);
+                        }
+                        if (second is not null)
+                        {
+                            Remember((Ui, GrindstoneSecondInputSlot));
+                            Set(new SlotRef(ContainerGrindstoneAdditional, GrindstoneSecondInputSlot, 0), (Ui, GrindstoneSecondInputSlot), null);
+                        }
+
+                        if (Player is not null && GrindstonePos is { } gpos)
+                            Player.Server.PlaySound("grindstone.use", gpos.X, gpos.Y, gpos.Z, Player.World);
+
+                        CreateResult(calc.Result);
+                        break;
+                    }
+                    case Craft c when StonecutterOpen && Recipes.ByNetworkId(c.RecipeId) is { Block: "stonecutter" } recipe && c.Times >= 1:
+                    {
+                        var input = Ui[StonecutterInputSlot] ?? throw new InvalidOperationException("nothing in stonecutter input");
+                        var expectedInput = recipe.Inputs.FirstOrDefault(i => !i.Empty);
+                        if (expectedInput is null || !expectedInput.Matches(input) || input.Count < c.Times)
+                            throw new InvalidOperationException("missing stonecutter ingredient");
+
+                        if (Player is not null)
+                        {
+                            var tx = new InventoryTransactionEvent(Player, InventoryTransactionType.Craft, recipe.Outputs.FirstOrDefault(), c.Times, (0, 0));
+                            if (!Player.Server.Events.OnInventoryTransaction(tx))
+                                throw new InvalidOperationException("stonecutter craft cancelled");
+                            if (Player.Server.Events.HasStonecutterUse)
+                            {
+                                var scEv = new StonecutterUseEvent(Player, input, recipe.Outputs.FirstOrDefault());
+                                if (!Player.Server.Events.OnStonecutterUse(scEv)) throw new InvalidOperationException("stonecutter craft cancelled");
+                            }
+                        }
+
+                        Take(ContainerStonecutterInput, Ui, StonecutterInputSlot, c.Times);
+                        pending = [.. Enumerable.Repeat(recipe.Outputs, c.Times).SelectMany(o => o).Select(o => o.Split(o.Count))];
+                        if (pending.Count == 1)
+                        {
+                            CreateResult(pending[0]);
+                            pending.Clear();
+                        }
+                        break;
+                    }
                     case Craft c:
                     {
                         // Special recipes (fireworks, map copies): the result comes from what is in the grid.
@@ -693,9 +781,19 @@ public sealed class PlayerInventory
         CraftingTableOpen = false; // the tags stay: those of the last table opened (each table sets them)
         Enchanter = null;
         AnvilUsed = null;
+        AnvilOpen = false;
+        AnvilPos = null;
+        GrindstoneOpen = false;
+        GrindstonePos = null;
+        StonecutterOpen = false;
+        StonecutterPos = null;
         Ui[CreatedOutputSlot] = null;
-        foreach (var slot in Enumerable.Range(SmallGridOffset, LargeGridOffset + LargeGridSize - SmallGridOffset).Prepend(0)
-                     .Append(EnchantInputSlot).Append(EnchantLapisSlot).Append(AnvilInputSlot).Append(AnvilMaterialSlot))
+        foreach (var slot in Enumerable.Range(SmallGridOffset, LargeGridOffset + LargeGridSize - SmallGridOffset)
+            .Prepend(0)
+            .Append(EnchantInputSlot).Append(EnchantLapisSlot)
+            .Append(AnvilInputSlot).Append(AnvilMaterialSlot)
+            .Append(GrindstoneFirstInputSlot).Append(GrindstoneSecondInputSlot)
+            .Append(StonecutterInputSlot))
         {
             if (Ui[slot] is not { } stack)
                 continue;
@@ -720,3 +818,4 @@ public sealed class PlayerInventory
         return InventoryPackets.InventorySlot(InventoryPackets.WindowInventory, SelectedSlot, Main[SelectedSlot]);
     }
 }
+

@@ -51,6 +51,8 @@ public sealed class Projectile
 
     /// <summary>Punch level (extra knockback) and Flame (sets on fire) of the bow that shot it.</summary>
     public int Punch { get; internal init; }
+    public int PunchLevel { get => Punch; init => Punch = value; }
+    public int PowerLevel { get; internal init; }
     public bool Flame { get; internal init; }
 
     /// <summary>An arrow that can be picked up where it lands (not from Infinity or creative).</summary>
@@ -136,30 +138,44 @@ public sealed class ProjectileManager(BedrokiaServer server)
     /// (0.5 for splash and lingering potions, as vanilla and PocketMine: pot PvP throws them at the feet).
     /// Returns null when a plugin cancelled <see cref="ServerEvents.ProjectileLaunch"/>.
     /// </summary>
-    public Projectile? Launch(BedrockConnection player, string identifier, float? throwSpeed = null, short potion = 0)
+    public Projectile? Launch(BedrockConnection player, string identifier, float? speed = null, short potion = 0,
+        int power = 0, int punch = 0, bool flame = false)
     {
         var custom = Throwables.GetValueOrDefault(identifier);
         if (custom is not null)
             identifier = custom.Entity;
-        var speed = throwSpeed ?? custom?.Speed ?? (identifier is SplashPotion or LingeringPotion ? PotionThrowSpeed : 1.5f);
+        var finalSpeed = speed ?? custom?.Speed ?? (identifier is SplashPotion or LingeringPotion ? PotionThrowSpeed : 1.5f);
         if (server.Events.HasProjectileLaunch)
         {
-            var launch = new ProjectileLaunchEvent(player, identifier, speed);
+            var launch = new ProjectileLaunchEvent(player, identifier, finalSpeed);
             if (!server.Events.OnProjectileLaunch(launch))
                 return null;
-            speed = launch.Force;
+            finalSpeed = launch.Force;
         }
         identifier = identifier switch { "minecraft:experience_bottle" => XpBottle, "minecraft:wind_charge" => WindCharge, _ => identifier };
         var projectile = Add(new Projectile(server.NextEntityId(), identifier, player.World, player,
-            new Vector3(player.Position.X, player.Position.Y - 0.1f, player.Position.Z), Look(player) * speed, potion) { Type = custom });
+            new Vector3(player.Position.X, player.Position.Y - 0.1f, player.Position.Z), Look(player) * finalSpeed, potion)
+        {
+            Type = custom,
+            Damage = custom?.Damage ?? (identifier == Arrow ? MathF.Ceiling((2 + (power > 0 ? power * 0.5f + 0.5f : 0)) * finalSpeed) : 0),
+            PowerLevel = power,
+            Punch = punch,
+            Flame = flame,
+        });
         server.PlaySound("random.bow", player.Position.X, player.Position.Y, player.Position.Z, player.World, 0.5f, 0.4f);
         return projectile;
     }
 
     /// <summary>A projectile from anywhere (a dispenser, a trap...), with its velocity in blocks per tick.</summary>
     public Projectile Spawn(string identifier, World world, Vector3 position, Vector3 velocity, BedrockConnection? owner = null, short potion = 0,
-        ThrowableType? type = null) =>
-        Add(new Projectile(server.NextEntityId(), type?.Entity ?? identifier, world, owner, position, velocity, potion) { Type = type });
+        ThrowableType? type = null, int power = 0, int punch = 0, bool flame = false) =>
+        Add(new Projectile(server.NextEntityId(), type?.Entity ?? identifier, world, owner, position, velocity, potion)
+        {
+            Type = type,
+            PowerLevel = power,
+            Punch = punch,
+            Flame = flame,
+        });
 
     private static Vector3 Look(BedrockConnection player, float yawOffset = 0)
     {
@@ -355,10 +371,20 @@ public sealed class ProjectileManager(BedrokiaServer server)
         switch (p.Identifier)
         {
             case Arrow or SmallFireball or Trident:
+                var arrowDmg = p.Damage > 0 ? p.Damage : 4f * (1f + 0.25f * (p.PowerLevel + (p.PowerLevel > 0 ? 1 : 0)));
                 // Players shoot players only with pvp on.
                 if (player is not null && (p.Owner is null || server.Config.Pvp))
-                    player.Damage(p.Damage, p.Position.X, p.Position.Z, source: source);
-                if (mob is not null && server.Mobs.Damage(mob, p.Damage, (p.Position.X, p.Position.Z), p.Owner, knockback: p.Punch, source: source)
+                {
+                    player.Damage(arrowDmg, p.Position.X, p.Position.Z, source: source);
+                    if (p.Flame)
+                        player.FireTicks = Math.Max(player.FireTicks, 100);
+                    if (p.Punch > 0)
+                    {
+                        var norm = Vector3.Normalize(p.Velocity);
+                        player.Send(EntityPackets.Motion(player.EntityId, norm.X * 0.6 * p.Punch, 0.4, norm.Z * 0.6 * p.Punch));
+                    }
+                }
+                if (mob is not null && server.Mobs.Damage(mob, arrowDmg, (p.Position.X, p.Position.Z), p.Owner, knockback: p.Punch, source: source)
                     && (p.Flame || p.Identifier == SmallFireball && mob.Kind != MobKind.Blaze))
                     mob.FireTicks = Math.Max(mob.FireTicks, 100);
                 server.PlaySound(p.Identifier == Trident ? "item.trident.hit" : "random.bowhit", at.X, at.Y, at.Z, p.World);

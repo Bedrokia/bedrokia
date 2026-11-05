@@ -1,4 +1,4 @@
-// ┌───────────────────────────────────────────────────────────────────┐
+﻿// ┌───────────────────────────────────────────────────────────────────┐
 // │  ____  _____ ____  ____   ___  _  __ ___    _                     │
 // │ | __ )| ____|  _ \|  _ \ / _ \| |/ /|_ _|  / \                    │
 // │ |  _ \|  _| | | | | |_) | | | | ' /  | |  / _ \                   │
@@ -14,6 +14,7 @@ using Bedrokia.Server.Core;
 using Bedrokia.Server.Entities;
 using Bedrokia.Server.Events;
 using Bedrokia.Server.Game;
+using Bedrokia.Server.Game.Custom.Entities;
 using Bedrokia.Server.Game.Custom.Items;
 using Bedrokia.Server.Game.Ui.Forms;
 
@@ -33,6 +34,7 @@ public sealed partial class BedrockConnection
     public int Food { get; private set; } = MaxFood;
     public float Saturation { get; private set; } = 5;
     public bool Dead { get; private set; }
+    public int FireTicks;
 
     private readonly Dictionary<EffectType, EffectInstance> _activeEffects = [];
     private readonly Dictionary<EffectType, int> _effectElapsed = [];
@@ -249,7 +251,7 @@ public sealed partial class BedrockConnection
     private float _exhaustion;
     private int _hurtTicks, _foodTicks;
     private float _fallPeak = float.NaN;
-    private long _eatingSince = -1;
+    private long _eatingSince = -1, _bowDrawnSince = -1;
     private (float X, float Z) _lastWalk = (float.NaN, 0);
 
     private DamageSource? _lastDamageSource;
@@ -292,8 +294,19 @@ public sealed partial class BedrockConnection
         {
             WearArmour(amount);
             amount *= 1 - ArmourReduction(ArmourPoints());
-            amount *= 1 - Math.Min(ProtectionPoints(), 20) * 0.04f;
+            amount *= 1 - Math.Min(ProtectionPoints(source), 20) * 0.04f;
         }
+
+        if (source?.Attacker is BedrockConnection attacker && attacker != this)
+        {
+            var thornsLevel = Inventory.Armour.Slots.Max(p => Enchanting.Level(p, "thorns"));
+            if (thornsLevel > 0 && Random.Shared.NextDouble() < thornsLevel * 0.15)
+            {
+                var thornDmg = Random.Shared.Next(1, 5);
+                attacker.Damage(thornDmg, Position.X, Position.Z, armour: false, source: DamageSource.Custom());
+            }
+        }
+
         _hurtTicks = 10;
         AddExhaustion(0.1f);
         Health = Math.Max(0, Health - amount);
@@ -307,7 +320,7 @@ public sealed partial class BedrockConnection
             // PocketMine Living::knockBack: force away from the hitter, the same force upward but at most 0.4.
             Send(EntityPackets.Motion(EntityId, dx / length * ev.Knockback, Math.Min(ev.Knockback, 0.4f), dz / length * ev.Knockback));
         }
-        if (Health <= 0 && !UseTotem(source))
+        if (Health <= 0 && !UseTotem(source ?? DamageSource.Custom()))
             Die();
     }
 
@@ -342,7 +355,21 @@ public sealed partial class BedrockConnection
         };
     });
 
-    private int ProtectionPoints() => Inventory.Armour.Slots.Sum(piece => Enchanting.Level(piece, "protection"));
+    private int ProtectionPoints(DamageSource? source = null)
+    {
+        var points = 0;
+        foreach (var piece in Inventory.Armour.Slots)
+        {
+            points += Enchanting.Level(piece, "protection");
+            if (source?.Cause is DamageCause.Fire or DamageCause.Lava)
+                points += Enchanting.Level(piece, "fire_protection") * 2;
+            else if (source?.Cause is DamageCause.Explosion)
+                points += Enchanting.Level(piece, "blast_protection") * 2;
+            else if (source?.Cause is DamageCause.Projectile)
+                points += Enchanting.Level(piece, "projectile_protection") * 2;
+        }
+        return points;
+    }
 
     public void Heal(float amount, HealCause cause = HealCause.Custom)
     {
@@ -407,6 +434,12 @@ public sealed partial class BedrockConnection
     {
         if (Dead || GameMode == GameMode.Creative || _god)
             return;
+        if (Server?.Events is { HasPlayerExhaust: true } exEvs)
+        {
+            var exhaustEv = new PlayerExhaustEvent(this, amount);
+            if (!exEvs.OnPlayerExhaust(exhaustEv)) return;
+            amount = exhaustEv.Amount;
+        }
         _exhaustion += amount;
         if (_exhaustion < 4)
             return;
@@ -529,6 +562,13 @@ public sealed partial class BedrockConnection
         SyncEquipment();
         SyncActionFlags();
         _positionHistory[(int)(_server.CurrentTick % PositionHistoryTicks)] = Position;
+
+        if (FireTicks > 0)
+        {
+            FireTicks--;
+            if (FireTicks % 20 == 0 && !Dead && GameMode != GameMode.Creative)
+                Damage(1, Position.X, Position.Z, armour: false, source: DamageSource.Fire());
+        }
 
         if (Dead || GameMode == GameMode.Creative)
             return;
@@ -694,6 +734,75 @@ public sealed partial class BedrockConnection
         SendVitals();
     }
 
+    internal void ReleaseBow()
+    {
+        if (_bowDrawnSince < 0 || Inventory.Held?.Type.Name != "minecraft:bow")
+        {
+            _bowDrawnSince = -1;
+            return;
+        }
+
+        var chargedTicks = _server.CurrentTick - _bowDrawnSince;
+        _bowDrawnSince = -1;
+        if (chargedTicks < 3)
+            return;
+
+        var force = Math.Min(1.0f, (float)chargedTicks / 20f);
+        var bow = Inventory.Held;
+        var hasInfinity = Enchanting.Level(bow, "infinity") > 0;
+        var isCreative = GameMode == GameMode.Creative;
+
+        // Check arrow in inventory
+        int arrowSlot = -1;
+        for (var s = 0; s < Inventory.Main.Size; s++)
+        {
+            if (Inventory.Main[s]?.Type.Name == "minecraft:arrow")
+            {
+                arrowSlot = s;
+                break;
+            }
+        }
+
+        if (!isCreative && arrowSlot < 0)
+            return;
+
+        if (!isCreative && !hasInfinity && arrowSlot >= 0)
+        {
+            var arrowStack = Inventory.Main[arrowSlot]!;
+            arrowStack.SetCount(arrowStack.Count - 1);
+            if (arrowStack.Count == 0)
+                Inventory.Main[arrowSlot] = null;
+            Send(InventoryPackets.InventorySlot(InventoryPackets.WindowInventory, arrowSlot, Inventory.Main[arrowSlot]));
+        }
+
+        var power = Enchanting.Level(bow, "power");
+        var punch = Enchanting.Level(bow, "punch");
+        var flame = Enchanting.Level(bow, "flame") > 0;
+        var speed = force * 3.0f;
+
+        _server.Projectiles.Launch(this, Entities.ProjectileManager.Arrow, speed: speed, power: power, punch: punch, flame: flame);
+
+        // Bow durability loss
+        if (!isCreative && bow.MaxDurability > 0)
+        {
+            var unb = Enchanting.Level(bow, "unbreaking");
+            if (unb == 0 || Random.Shared.Next(unb + 1) == 0)
+            {
+                var newDmg = bow.Damage + 1;
+                if (newDmg >= bow.MaxDurability)
+                {
+                    Inventory.Main[Inventory.SelectedSlot] = null;
+                    _server.PlaySound("random.break", Position.X, Position.Y, Position.Z, World);
+                }
+                else
+                {
+                    Inventory.Main[Inventory.SelectedSlot] = bow.WithDamage(newDmg);
+                }
+                Send(InventoryPackets.InventorySlot(InventoryPackets.WindowInventory, Inventory.SelectedSlot, Inventory.Main[Inventory.SelectedSlot]));
+            }
+        }
+    }
+
     /// <summary>Fall damage from the vertical movement reported by the client: 1 per block beyond 3.</summary>
     private void TrackFall(float previousY, float y)
     {
@@ -729,8 +838,18 @@ public sealed partial class BedrockConnection
         var damage = (float)Math.Floor((fallen - 3) * share);
         if (fallen > 3.5f && damage > 0)
         {
-            _hurtTicks = 0;
-            Damage(damage * (1 - Math.Min(Enchanting.Level(Inventory.Armour[3], "feather_falling") * 3 + ProtectionPoints(), 20) * 0.04f), Position.X, Position.Z, armour: false, source: DamageSource.Fall(fallen));
+            if (Server?.Events is { HasPlayerFall: true } fallEvs)
+            {
+                var fallEv = new PlayerFallEvent(this, fallen, damage);
+                if (!fallEvs.OnPlayerFall(fallEv)) return;
+                fallen = fallEv.Distance;
+                damage = fallEv.Damage;
+            }
+            if (damage > 0)
+            {
+                _hurtTicks = 0;
+                Damage(damage * (1 - Math.Min(Enchanting.Level(Inventory.Armour[3], "feather_falling") * 3 + ProtectionPoints(), 20) * 0.04f), Position.X, Position.Z, armour: false, source: DamageSource.Fall(fallen));
+            }
         }
     }
 
@@ -742,6 +861,18 @@ public sealed partial class BedrockConnection
     /// <summary>Spawn egg used on a block: the mob appears on the clicked face (egg consumed in survival).</summary>
     private void UseSpawnEgg(ItemStack egg, int x, int y, int z, int face)
     {
+        var (dx, dy, dz) = face switch { 0 => (0, -2, 0), 1 => (0, 1, 0), 2 => (0, 0, -1), 3 => (0, 0, 1), 4 => (-1, 0, 0), _ => (1, 0, 0) };
+        if (egg.Type.Name.EndsWith("_spawn_egg"))
+        {
+            var rawCustom = egg.Type.Name[..^"_spawn_egg".Length];
+            if (CustomEntityRegistry.Get(rawCustom) is { } customDef)
+            {
+                if (_server.CustomEntities.Spawn(customDef.Identifier, World, x + dx + 0.5, y + dy, z + dz + 0.5) is not null && GameMode != GameMode.Creative)
+                    Send(Inventory.ConsumeHeld());
+                return;
+            }
+        }
+
         if (!egg.Type.Name.StartsWith("minecraft:") || !egg.Type.Name.EndsWith("_spawn_egg"))
             return;
         var mobName = egg.Type.Name["minecraft:".Length..^"_spawn_egg".Length];
@@ -750,7 +881,6 @@ public sealed partial class BedrockConnection
             SendMessage($"§cThis mob ({mobName}) is not available yet.");
             return;
         }
-        var (dx, dy, dz) = face switch { 0 => (0, -2, 0), 1 => (0, 1, 0), 2 => (0, 0, -1), 3 => (0, 0, 1), 4 => (-1, 0, 0), _ => (1, 0, 0) };
         // A plugin can cancel the spawn (EntitySpawn): then the egg is not used up.
         if (_server.Mobs.Spawn(kind, x + dx + 0.5, y + dy, z + dz + 0.5, World) is not null && GameMode != GameMode.Creative)
             Send(Inventory.ConsumeHeld());
@@ -826,6 +956,11 @@ public sealed partial class BedrockConnection
         }
         if (action == 0)
         {
+            if (_server.CustomEntities.Find(target) is { } customEntToInteract)
+            {
+                customEntToInteract.Interact(this);
+                return;
+            }
             var clicked = _server.Mobs.Find(target);
             if (_server.Events.HasPlayerInteractEntity && !_server.Events.OnPlayerInteractEntity(new PlayerInteractEntityEvent(this, target, clicked)))
                 return;
@@ -836,12 +971,31 @@ public sealed partial class BedrockConnection
         if (action != 1 || Dead)
             return;
         var damage = AttackDamage(Inventory.Held) + MaceBonus(Inventory.Held);
+        if (Server?.Events is { HasPlayerAttack: true } atkEvs)
+        {
+            var attackEv = new PlayerAttackEvent(this, target, damage);
+            if (!atkEvs.OnPlayerAttack(attackEv)) return;
+            damage = attackEv.Damage;
+        }
         if (_activeEffects.TryGetValue(EffectType.Strength, out var str))
             damage += 3f * (str.Amplifier + 1);
         if (_activeEffects.TryGetValue(EffectType.Weakness, out var weak))
             damage = Math.Max(0f, damage - 4f * (weak.Amplifier + 1));
         AddExhaustion(0.1f);
         _server.BroadcastInExcept(World, this, EntityPackets.Swing(EntityId));
+        if (_server.CustomEntities.Find(target) is { } customEnt)
+        {
+            var dx = customEnt.X - Position.X;
+            var dz = customEnt.Z - Position.Z;
+            if (dx * dx + dz * dz <= 6 * 6)
+            {
+                var held = Inventory.Held;
+                damage += 1.25f * Enchanting.Level(held, "sharpness");
+                customEnt.Damage(damage, (Position.X, Position.Z), damager: this, source: DamageSource.PlayerAttack(this));
+                WearWeapon();
+            }
+            return;
+        }
         if (_server.Mobs.Find(target) is { } mob && mob.World == World)
         {
             var dx = mob.X - Position.X;
