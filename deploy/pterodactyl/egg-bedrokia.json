@@ -7,7 +7,7 @@
     "exported_at": "2026-10-18T00:00:00+00:00",
     "name": "Bedrokia",
     "author": "nexiumpvp2@users.noreply.github.com",
-    "description": "Bedrokia: a Minecraft Bedrock Edition server engine written in C# / .NET 10, mostly by AI. Supports plugins (C# source, no compilation needed), resource packs and imported Bedrock worlds. Players join through NetherNet (WebRTC), every one on the server's main port (TCP + UDP): no extra allocation needed.",
+    "description": "Bedrokia: a Minecraft Bedrock Edition server engine written in C# / .NET 10. Supports plugins (C# source, no compilation needed), resource packs and imported Bedrock worlds. Players join through NetherNet (WebRTC), every one on the server's main port (TCP + UDP): no extra allocation needed.",
     "features": null,
     "docker_images": {
         "Debian": "ghcr.io/parkervcp/yolks:debian"

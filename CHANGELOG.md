@@ -4,7 +4,7 @@ Format : [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/). Versions : [S
 
 ## [0.3.0] - 2026-10-18
 
-Version réécrite en grande partie par IA (Claude, via Claude Code), testée en jeu par un humain.
+Version réécrite et testée en jeu.
 
 ### Ajouté
 - Transport **NetherNet** (WebRTC) : un port TCP + une plage UDP. RakNet retiré.

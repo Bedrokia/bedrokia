@@ -23,30 +23,19 @@ Bedrock 26.60 (protocol 2225) · NetherNet / WebRTC · C# plugins without a buil
 ---
 
 > [!WARNING]
-> **This project is coded with AI, and a bit of human.**
-> Almost all of Bedrokia's code was written by an artificial intelligence (Claude, by Anthropic, through Claude Code),
-> guided, tested in game and corrected by a human. The code may contain bugs nobody has seen yet: test it before
-> running a real server, and report bugs in the *issues*.
+> Bedrokia is young: the code may contain bugs nobody has seen yet. Test it before running a real server, and report
+> bugs in the *issues*.
 
-## 🤖 Why this project?
+## 🤝 Contributing
 
-Bedrokia is an **experiment**:
-
-- **test AI** on real, complex software: a binary network protocol, a game engine, world generation, a plugin
-  system… not a small script;
-- show that **an AI can also maintain the project** over time: fix bugs, add features, write the tests and the docs,
-  with developers who review and decide;
-- show that **AI is the future of software development**: a human who knows what they want and an AI that writes
-  the code can build in days what used to take months.
-
-**Every maintainer is welcome**, human or AI, beginner or expert. Open an *issue*, send a *pull request*, or ask your
-favourite AI to fix a bug: as long as the tests pass and the code stays readable, it's cool. 😎
+**Every contributor is welcome**, beginner or expert. Open an *issue* or send a *pull request*: as long as the tests
+pass and the code stays readable, it's cool. 😎
 
 ## ✨ What Bedrokia does
 
 | Area | Details |
 |---|---|
-| **Connection** | Bedrock 26.50, NetherNet (WebRTC) on one port (TCP + UDP) for every player, Xbox Live authentication, encryption |
+| **Connection** | Bedrock 26.60 to 26.62, NetherNet (WebRTC) on one port (TCP + UDP) for every player, Xbox Live authentication, encryption |
 | **World** | Vanilla generation (biomes, terrain, trees, ores), flat or void worlds, saving, Bedrock world import (`.mcworld` / LevelDB) |
 | **Blocks** | Oriented placement (stairs, logs, doors, beds…), chests, ender chests, barrels, furnaces / blast furnaces / smokers, doors, trapdoors, levers, buttons, beds (respawn, skip the night), connected walls, gravity (sand, gravel), flowing water and lava, crops, trees, TNT and explosions |
 | **Players** | Full inventory, crafting (every vanilla recipe), enchanting, experience, hunger, damage, falls, death, armour, dropped and picked-up items |

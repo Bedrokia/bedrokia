@@ -23,31 +23,19 @@ Bedrock 26.60 (protocole 2225) · NetherNet / WebRTC · Plugins en C# sans compi
 ---
 
 > [!WARNING]
-> **Ce projet est codé avec l'IA, et un peu d'humain.**
-> La quasi-totalité du code de Bedrokia a été écrite par une intelligence artificielle (Claude, d'Anthropic, via
-> Claude Code), guidée, testée en jeu et corrigée par un humain. Le code peut contenir des erreurs que personne n'a
-> encore vues : testez avant de l'utiliser pour un vrai serveur, et signalez les bugs dans les *issues*.
+> Bedrokia est jeune : le code peut contenir des erreurs que personne n'a encore vues. Testez avant de l'utiliser pour
+> un vrai serveur, et signalez les bugs dans les *issues*.
 
-## 🤖 Pourquoi ce projet ?
+## 🤝 Contribuer
 
-Bedrokia est une **expérience** :
-
-- **tester l'IA** sur un vrai logiciel complexe : un protocole réseau binaire, un moteur de jeu, la génération de
-  mondes, un système de plugins… pas un petit script ;
-- montrer qu'**une IA peut aussi maintenir le projet** dans le temps : corriger les bugs, ajouter des fonctions, écrire
-  les tests et la doc, avec des développeurs qui relisent et décident ;
-- montrer que **l'IA est l'avenir du développement** : un humain qui sait ce qu'il veut, et une IA qui écrit le code,
-  peuvent construire en quelques jours ce qui demandait des mois.
-
-**Tous les mainteneurs sont les bienvenus**, humains ou IA, débutants ou experts. Ouvrez une *issue*, proposez une
-*pull request*, ou demandez à votre IA préférée de corriger un bug : tant que les tests passent et que le code reste
-lisible, c'est cool. 😎
+**Tous les contributeurs sont les bienvenus**, débutants ou experts. Ouvrez une *issue* ou proposez une
+*pull request* : tant que les tests passent et que le code reste lisible, c'est cool. 😎
 
 ## ✨ Ce que fait Bedrokia
 
 | Domaine | Détails |
 |---|---|
-| **Connexion** | Bedrock 26.50, NetherNet (WebRTC) sur un seul port (TCP + UDP) pour tous les joueurs, authentification Xbox Live, chiffrement |
+| **Connexion** | Bedrock 26.60 à 26.62, NetherNet (WebRTC) sur un seul port (TCP + UDP) pour tous les joueurs, authentification Xbox Live, chiffrement |
 | **Monde** | Génération vanilla (biomes, relief, arbres, minerais), monde plat ou vide, sauvegarde, import de mondes Bedrock (`.mcworld` / LevelDB) |
 | **Blocs** | Pose orientée (escaliers, bûches, portes, lits…), coffres, coffre de l'Ender, tonneaux, fours / hauts fourneaux / fumoirs, portes, trappes, leviers, boutons, lits (réapparition, nuit sautée), murets connectés, gravité (sable, gravier), eau et lave qui coulent, cultures, arbres, TNT et explosions |
 | **Joueurs** | Inventaire complet, artisanat (toutes les recettes vanilla), enchantements, expérience, faim, dégâts, chute, mort, armure, objets lâchés et ramassés |
