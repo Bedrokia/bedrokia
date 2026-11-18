@@ -76,6 +76,19 @@ public class ItemUseTests
         Assert.Empty(player.SeenShownItems);
     }
 
+    [Fact]
+    public void A_snowball_aimed_at_a_mob_is_thrown()
+    {
+        var (server, player) = Arena();
+        Hold(player, "snowball", 4);
+        var cow = server.Mobs.Spawn(MobKind.Cow, 8.5, Floor, 5.5)!;
+        // The client sends "use item on entity" (interact) instead of a click in the air when a mob is aimed at.
+        var reader = new Bedrokia.Protocol.BedrockReader(new Bedrokia.Protocol.BedrockWriter().VarUInt64((ulong)cow.EntityId).VarInt32(0).ToArray());
+        player.OnUseItemOnEntity(ref reader);
+        Assert.Equal(Bedrokia.Server.Entities.ProjectileManager.Snowball, Assert.Single(server.Projectiles.All).Identifier);
+        Assert.Equal(3, player.Inventory.Held!.Count);
+    }
+
     private static void Hold(BedrockConnection player, string item, int count = 1) =>
         player.Inventory.Main[player.Inventory.SelectedSlot] = ItemStack.Of(item, count);
 

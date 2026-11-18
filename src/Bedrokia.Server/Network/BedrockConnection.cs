@@ -758,6 +758,10 @@ public sealed partial class BedrockConnection
             switch (reader.VarInt32())
             {
                 case InputFlagSneaking: sneaking = true; break;
+                case InputFlagStartJumping:
+                    if (_server.Events.HasPlayerToggleAction)
+                        _server.Events.OnPlayerToggleAction(new PlayerToggleActionEvent(this, ToggleActionType.Jump, true));
+                    break;
                 case InputFlagMissedSwing: missedSwing = true; break;
                 case InputFlagVerticalCollision: _onGround = true; break;
                 case InputFlagStartFlying:
@@ -871,7 +875,7 @@ public sealed partial class BedrockConnection
     }
 
     // Player action ids (gophertunnel protocol/player.go).
-    private const int InputFlagSneaking = 8, InputFlagMissedSwing = 39, InputFlagStartFlying = 42, InputFlagStopFlying = 43, InputFlagStartCrawling = 46, InputFlagStopCrawling = 47,
+    private const int InputFlagSneaking = 8, InputFlagStartJumping = 31, InputFlagMissedSwing = 39, InputFlagStartFlying = 42, InputFlagStopFlying = 43, InputFlagStartCrawling = 46, InputFlagStopCrawling = 47,
         InputFlagVerticalCollision = 50, InputFlagStartSprinting = 25, InputFlagStopSprinting = 26, InputFlagStartSwimming = 29,
         InputFlagStopSwimming = 30, InputFlagStartGliding = 32, InputFlagStopGliding = 33; // gophertunnel packet/player_auth_input.go
         private bool _onGround, _flying, _crawling;
@@ -1159,31 +1163,7 @@ public sealed partial class BedrockConnection
 
         if (action == clickAir)
         {
-            if (Inventory.Held is { } inHand && _server.Events.HasPlayerItemUse
-                && !_server.Events.OnPlayerItemUse(new PlayerItemUseEvent(this, inHand)))
-            {
-                Send(InventoryPackets.InventorySlot(InventoryPackets.WindowInventory, Inventory.SelectedSlot, Inventory.Held));
-                return;
-            }
-            if (UseHeldInAir())
-                return;
-            if (Entities.ProjectileManager.IsThrowable(Inventory.Held))
-            {
-                var held = Inventory.Held!;
-                if (_server.Projectiles.Launch(this, held.Type.Name, potion: held.Type.Name is Entities.ProjectileManager.SplashPotion or Entities.ProjectileManager.LingeringPotion ? held.Meta : (short)0) is not null
-                    && GameMode != GameMode.Creative)
-                    Send(Inventory.ConsumeHeld());
-                else
-                    Send(InventoryPackets.InventorySlot(InventoryPackets.WindowInventory, Inventory.SelectedSlot, Inventory.Held));
-                return;
-            }
-            if (Inventory.Held?.Type.Name == "minecraft:bow")
-            {
-                _bowDrawnSince = _server.CurrentTick;
-                return;
-            }
-            if (!TryEquipHeld()) // right click with armour in hand: the client already shows it worn
-                StartEating();
+            UseItemInAir();
             return;
         }
         if (action == breakBlock)
@@ -1745,6 +1725,37 @@ public sealed partial class BedrockConnection
         else
             foreach (var part in packets.Chunk(BatchCodec.MaxPacketsPerBatch))
                 _transport.Send(_codec.Encode(part));
+    }
+
+    /// <summary>A right click in the air, or on an entity the item does nothing to: throws, eats, draws the bow...</summary>
+    internal void UseItemInAir()
+    {
+        if (Inventory.Held is { } inHand && _server.Events.HasPlayerItemUse
+            && !_server.Events.OnPlayerItemUse(new PlayerItemUseEvent(this, inHand)))
+        {
+            Send(InventoryPackets.InventorySlot(InventoryPackets.WindowInventory, Inventory.SelectedSlot, Inventory.Held));
+            return;
+        }
+        if (UseHeldInAir())
+            return;
+        if (Entities.ProjectileManager.IsThrowable(Inventory.Held))
+        {
+            var held = Inventory.Held!;
+            if (_server.Projectiles.Launch(this, held.Type.Name, potion: held.Type.Name is Entities.ProjectileManager.SplashPotion or Entities.ProjectileManager.LingeringPotion ? held.Meta : (short)0) is not null
+                && GameMode != GameMode.Creative)
+                Send(Inventory.ConsumeHeld());
+            else
+                Send(InventoryPackets.InventorySlot(InventoryPackets.WindowInventory, Inventory.SelectedSlot, Inventory.Held));
+            return;
+        }
+        if (Inventory.Held?.Type.Name == "minecraft:bow")
+        {
+            _bowDrawnSince = _server.CurrentTick;
+            return;
+        }
+        if (!TryEquipHeld()) // right click with armour in hand: the client already shows it worn
+            StartEating();
+        return;
     }
 }
 

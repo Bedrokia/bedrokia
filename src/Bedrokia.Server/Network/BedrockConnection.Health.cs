@@ -964,8 +964,10 @@ public sealed partial class BedrockConnection
             var clicked = _server.Mobs.Find(target);
             if (_server.Events.HasPlayerInteractEntity && !_server.Events.OnPlayerInteractEntity(new PlayerInteractEntityEvent(this, target, clicked)))
                 return;
-            if (clicked is not null)
-                _server.Mobs.Interact(this, clicked); // feeding, shearing, milking
+            // Feeding, shearing, milking...; otherwise the held item is used as in the air: a snowball aimed at a mob
+            // or a player is thrown (the client sends this instead of a click in the air).
+            if (clicked is null || !_server.Mobs.Interact(this, clicked))
+                UseItemInAir();
             return;
         }
         if (action != 1 || Dead)
