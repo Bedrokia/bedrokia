@@ -96,10 +96,14 @@ public sealed record DiggerItemComponent(IReadOnlyList<DestroySpeed> DestroySpee
         {
             list.Add(new OrderedDictionary<string, object>
             {
-                // "query.any_tag('stone', ...)" selects blocks by tag, anything else is a block name.
-                ["block"] = ds.BlockTagOrName.StartsWith("query.", StringComparison.Ordinal)
-                    ? new OrderedDictionary<string, object> { ["tags"] = ds.BlockTagOrName }
-                    : new OrderedDictionary<string, object> { ["name"] = ds.BlockTagOrName },
+                // "query.any_tag('stone', ...)" selects blocks by tag, anything else is a block name. The client needs all
+                // three keys (Customies): with "tags" alone it ignored the speed and the tool mined like a hand.
+                ["block"] = new OrderedDictionary<string, object>
+                {
+                    ["name"] = ds.BlockTagOrName.StartsWith("query.", StringComparison.Ordinal) ? "" : ds.BlockTagOrName,
+                    ["states"] = new OrderedDictionary<string, object>(),
+                    ["tags"] = ds.BlockTagOrName.StartsWith("query.", StringComparison.Ordinal) ? ds.BlockTagOrName : "",
+                },
                 ["speed"] = ds.Speed
             });
         }
