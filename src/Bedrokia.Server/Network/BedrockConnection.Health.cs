@@ -554,7 +554,10 @@ public sealed partial class BedrockConnection
         if (_hurtTicks > 0)
             _hurtTicks--;
         if (_server.CurrentTick % 100 == 0)
+        {
             PruneExpiredForms(_server.CurrentTick);
+            MeasurePing();
+        }
         TickPortal();
         TickEffects();
         TickBreaking();

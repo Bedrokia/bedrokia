@@ -259,6 +259,33 @@ public sealed partial class BedrockConnection
 
     private delegate void PacketHandler(ref BedrockReader reader);
 
+    private const uint NetworkStackLatencyId = 115;
+    private long _pingSent = -1;
+    private long _pingSentAt;
+
+    /// <summary>The round trip to the client in milliseconds (measured every 5 s), -1 before the first measure.</summary>
+    public int Ping { get; private set; } = -1;
+
+    // NetworkStackLatency (gophertunnel): a timestamp the client sends back. Sent as a multiple of 1000, as PocketMine:
+    // some clients answer it multiplied by 1000.
+    internal long PingSent => _pingSent;
+
+    internal void MeasurePing()
+    {
+        _pingSent = Random.Shared.NextInt64(1, 1_000_000) * 1000;
+        _pingSentAt = Environment.TickCount64;
+        Send(new BedrockWriter().VarUInt32(NetworkStackLatencyId).Int64(_pingSent).Bool(true).ToArray());
+    }
+
+    private void OnNetworkStackLatency(ref BedrockReader reader)
+    {
+        var timestamp = System.Buffers.Binary.BinaryPrimitives.ReadInt64LittleEndian(reader.Bytes(8));
+        if (_pingSent < 0 || timestamp != _pingSent && timestamp != _pingSent * 1000 && timestamp / 1000 != _pingSent)
+            return;
+        Ping = (int)(Environment.TickCount64 - _pingSentAt);
+        _pingSent = -1;
+    }
+
     private readonly Dictionary<uint, PacketHandler?> _handlers = [];
 
     private void RegisterHandlers()
@@ -299,6 +326,7 @@ public sealed partial class BedrockConnection
         _handlers[PacketId.SetPlayerInventoryOptions] = null;
         _handlers[PacketId.SubChunkRequest] = OnSubChunkRequest;
         _handlers[PacketId.Text] = OnTextPacket;
+        _handlers[NetworkStackLatencyId] = OnNetworkStackLatency;
         _handlers[PacketId.ServerBoundLoadingScreen] = OnServerBoundLoadingScreen;
         _handlers[PacketId.ServerBoundDiagnostics] = OnServerBoundDiagnostics;
     }

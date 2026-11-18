@@ -89,6 +89,18 @@ public class ItemUseTests
         Assert.Equal(3, player.Inventory.Held!.Count);
     }
 
+    [Fact]
+    public void The_ping_is_the_round_trip_of_a_latency_packet()
+    {
+        var (_, player) = Arena();
+        Assert.Equal(-1, player.Ping);
+        player.MeasurePing();
+        // Some clients answer the timestamp multiplied by 1000.
+        var answer = new Bedrokia.Protocol.BedrockWriter().VarUInt32(115).Int64(player.PingSent * 1000).Bool(false).ToArray();
+        player.HandlePacket(answer, answer.Length);
+        Assert.True(player.Ping >= 0);
+    }
+
     private static void Hold(BedrockConnection player, string item, int count = 1) =>
         player.Inventory.Main[player.Inventory.SelectedSlot] = ItemStack.Of(item, count);
 

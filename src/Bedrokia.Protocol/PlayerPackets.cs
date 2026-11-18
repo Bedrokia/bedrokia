@@ -48,7 +48,7 @@ public static class PlayerPackets
     public static BedrockWriter PlayerMetadata(this BedrockWriter w, string name, bool showName = true, float? seatY = null, long actionFlags = 0)
     {
         const int typeInt16 = 1, typeFloat = 3, typeString = 4, typeInt64 = 7, typeVec3 = 8;
-        const long nameFlags = (1L << 14) | (1L << 15); // show name, always show name
+        const long nameFlags = 1L << 14; // show name (when looked at), not "always show name": it showed through everything
         var flags = (showName ? nameFlags : 0) | (1L << 35) | (1L << 48) | (1L << 49) // breathing, collision, gravity
                     | (seatY is null ? 0 : 1L << 2) // riding
                     | actionFlags;
