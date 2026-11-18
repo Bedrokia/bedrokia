@@ -2063,7 +2063,8 @@ public sealed class MobManager(BedrokiaServer server)
             viewer.Send(packet);
     }
 
-    internal void Remove(Mob mob, EntityDespawnReason reason = EntityDespawnReason.Death)
+    /// <summary>Removes a mob from the world at once (a plugin's event mob that ran away...), without drops.</summary>
+    public void Remove(Mob mob, EntityDespawnReason reason = EntityDespawnReason.Death)
     {
         server.Events.OnEntityDespawn(new EntityDespawnEvent(mob, reason));
         _mobs.Remove(mob);
