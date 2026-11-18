@@ -608,14 +608,17 @@ public sealed partial class BedrockConnection
     // Response (0 refused, 1 send packs, 2 all downloaded, 3 completed), its name, and for 1 the packs to send.
     private void OnResourcePackResponse(ref BedrockReader reader)
     {
+        // gophertunnel ResourcePackClientResponse (protocol 2225): varuint response, its name ("downloading"...), then for
+        // "send packs" a varuint-counted list of the packs to download.
         var response = reader.VarUInt32();
-        var packId = reader.Remaining > 0 ? reader.String() : "";
+        if (reader.Remaining > 0)
+            reader.String(); // the response's name
         var packIds = new List<string>();
-        if (!string.IsNullOrEmpty(packId)) packIds.Add(packId);
+        if (response == 1 && reader.Remaining > 0)
+            for (var count = reader.VarUInt32(); count > 0; count--)
+                packIds.Add(reader.String());
         if (Server?.Events is { HasResourcePackClientResponse: true } rpEvs)
             rpEvs.OnResourcePackClientResponse(new ResourcePackClientResponseEvent(this, (byte)response, packIds));
-        if (reader.Remaining > 0)
-            reader.String();
         var required = _server.Config.ForceResourcePacks;
         switch (response)
         {
@@ -627,10 +630,9 @@ public sealed partial class BedrockConnection
                 break;
             case 1: // send packs: one data info each, then the client asks for the chunks
             {
-                var count = reader.Remaining > 0 ? reader.VarUInt32() : 0;
                 var sent = 0;
-                for (var i = 0; i < count; i++)
-                    if (_server.ResourcePacks.ById(reader.String()) is { } pack)
+                foreach (var packId in packIds)
+                    if (_server.ResourcePacks.ById(packId) is { } pack)
                     {
                         Send(ResourcePacks.DataInfoPacket(pack));
                         sent++;

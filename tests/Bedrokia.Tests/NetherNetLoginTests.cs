@@ -121,7 +121,8 @@ public sealed class NetherNetLoginTests : IAsyncDisposable
         var request = ProtocolTests.BuildLoginRequest(key, ProtocolTests.OfflineToken(key, name));
         client.Send(PacketId.Login, w => w.Int32BE(ProtocolInfo.Version).ByteArray(request));
         await client.Expect(PacketId.PlayStatus);
-        client.Send(PacketId.ResourcePackClientResponse, w => w.VarUInt32(2).String("downloadingfinished"));
+        // A client asking for packs to download (two here, unknown to the server: it goes on with the stack).
+        client.Send(PacketId.ResourcePackClientResponse, w => w.VarUInt32(1).String("downloading").VarUInt32(2).String("a_1.0.0").String("b_1.0.0"));
         await client.Expect(PacketId.ResourcePackStack);
         client.Send(PacketId.ResourcePackClientResponse, w => w.VarUInt32(3).String("resourcepackstackfinished"));
         var startGame = new BedrockReader(await client.Expect(PacketId.StartGame));
