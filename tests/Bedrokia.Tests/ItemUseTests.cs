@@ -101,6 +101,19 @@ public class ItemUseTests
         Assert.True(player.Ping >= 0);
     }
 
+    [Fact]
+    public void Popups_are_sent_as_messages_with_parameters()
+    {
+        // gophertunnel Text: a popup is category 2 (with parameters) and ends its text with a parameter list.
+        var reader = new Bedrokia.Protocol.BedrockReader(Bedrokia.Protocol.Packets.Text(Bedrokia.Protocol.TextType.Popup, "salut"));
+        Assert.Equal(9u, reader.VarUInt32());
+        reader.Byte(); // needs translation
+        Assert.Equal(2, reader.Byte());
+        Assert.Equal(3, reader.Byte());
+        Assert.Equal("salut", reader.String());
+        Assert.Equal(0u, reader.VarUInt32());
+    }
+
     private static void Hold(BedrockConnection player, string item, int count = 1) =>
         player.Inventory.Main[player.Inventory.SelectedSlot] = ItemStack.Of(item, count);
 

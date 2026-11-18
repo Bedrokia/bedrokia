@@ -298,14 +298,19 @@ public static class Packets
 
     public static byte[] Text(TextType type, string message, string source = "")
     {
+        // gophertunnel Text: the category goes with the type: popups are "message with parameters" and carry a
+        // parameter list (sent as "message only" before: the client kicked with "Invalid enum value").
         var writer = Begin(PacketId.Text)
             .Bool(false) // needs translation
-            .Byte(type == TextType.Chat ? (byte)1 : (byte)0) // authored message / message only
+            .Byte(type switch { TextType.Chat => 1, TextType.Popup => 2, _ => 0 }) // authored / with parameters / message only
             .Byte((byte)type);
         if (type == TextType.Chat)
             writer.String(source);
         // An empty text is a malformed packet for the client, which disconnects (an empty line in a plugin's help).
-        return writer.String(message.Length == 0 ? "§r" : message)
+        writer.String(message.Length == 0 ? "§r" : message);
+        if (type == TextType.Popup)
+            writer.VarUInt32(0); // no parameters
+        return writer
             .String("") // xuid
             .String("") // platform chat id
             .Bool(false) // no filtered message
