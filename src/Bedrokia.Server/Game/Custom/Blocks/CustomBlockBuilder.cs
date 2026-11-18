@@ -32,7 +32,7 @@ public sealed class CustomBlockBuilder
         AddComponent(new MaterialInstancesBlockComponent([new BlockMaterial(texture)]));
         AddComponent(new DisplayNameBlockComponent(_identifier));
         AddComponent(new DestructibleByMiningBlockComponent(1.5f));
-        AddComponent(new FrictionBlockComponent(0.6f));
+        AddComponent(new FrictionBlockComponent(0.4f)); // Bedrock default: a higher value slides more (0.6 felt like ice)
     }
 
     public static CustomBlockBuilder Create(string identifier) => new(identifier);
