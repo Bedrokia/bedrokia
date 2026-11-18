@@ -187,6 +187,20 @@ public class MobSystemTests
     }
 
     [Fact]
+    public void Witches_throw_potions_that_hurt_or_poison()
+    {
+        var (server, player) = Arena();
+        server.Mobs.Spawn(MobKind.Witch, 8.5, Floor, 9.5);
+        var health = player.Health;
+        for (long t = 1; t < 400 && player.Health >= health && player.GetEffect(EffectType.Poison) is null; t++)
+        {
+            server.Mobs.Tick(t);
+            server.Projectiles.Tick();
+        }
+        Assert.True(player.Health < health || player.GetEffect(EffectType.Poison) is not null, "a potion reached the player");
+    }
+
+    [Fact]
     public void Fish_swim_in_water_and_suffocate_out_of_it()
     {
         var (server, _) = Arena();

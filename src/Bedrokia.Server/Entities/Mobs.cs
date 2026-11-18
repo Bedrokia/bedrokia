@@ -821,6 +821,12 @@ public sealed class MobManager(BedrokiaServer server)
             }
         }
 
+        // A hurt witch now and then drinks a potion of healing (vanilla: 5 % a tick, here about every 10 s).
+        if (mob.Kind == MobKind.Witch && mob.Health < mob.Kind.MaxHealth && _random.Next(200) == 0)
+        {
+            mob.Health = Math.Min(mob.Kind.MaxHealth, mob.Health + 4);
+            server.PlaySound("mob.witch.drink", mob.X, mob.Y, mob.Z, mob.World);
+        }
         var target = Target(mob, player, distance, day);
         // Its target in the metadata: skeletons and pillagers aim at it (raised arms and drawn bow), as vanilla.
         var shown = target?.EntityId ?? 0;
@@ -843,6 +849,17 @@ public sealed class MobManager(BedrokiaServer server)
                     mob.AttackCooldown = 40;
                     Broadcast(mob, EntityPackets.Swing(mob.EntityId));
                     ShootArrow(mob, target);
+                }
+            }
+            else if (mob.Kind == MobKind.Witch)
+            {
+                // Vanilla RangedAttackGoal(60 ticks, 10 blocks): keeps its distance and throws potions.
+                var sees = LineOfSight(mob, target);
+                moving = dist > 8 || !sees;
+                if (dist < 10 && sees && mob.AttackCooldown == 0)
+                {
+                    mob.AttackCooldown = 60;
+                    ThrowPotion(mob, target, dist);
                 }
             }
             else if (mob.Kind == MobKind.Creeper)
@@ -1179,6 +1196,23 @@ public sealed class MobManager(BedrokiaServer server)
         direction += new System.Numerics.Vector3(Gaussian(), Gaussian(), Gaussian()) * spread;
         server.Projectiles.Shoot(mob, ProjectileManager.Arrow, from + direction * 0.5f, direction * 1.6f, Scaled(2 + _random.Next(3)));
         server.PlaySound("random.bow", mob.X, mob.Y, mob.Z, mob.World);
+    }
+
+    // Vanilla Witch.performRangedAttack: slowness from afar, poison while the target is healthy, sometimes weakness up
+    // close, else harming; thrown in an arc at 0.75 blocks a tick.
+    private void ThrowPotion(Mob mob, BedrockConnection target, double dist)
+    {
+        short potion = dist >= 8 && target.GetEffect(EffectType.Slowness) is null ? (short)17
+            : target.Health >= 8 && target.GetEffect(EffectType.Poison) is null ? (short)25
+            : dist <= 3 && target.GetEffect(EffectType.Weakness) is null && _random.Next(4) == 0 ? (short)34
+            : (short)23;
+        var from = new System.Numerics.Vector3((float)mob.X, (float)(mob.Y + mob.Height - 0.1), (float)mob.Z);
+        float dx = target.Position.X - from.X, dz = target.Position.Z - from.Z;
+        var dy = target.Position.Y - BedrockConnection.EyeHeight + 1.1f - from.Y;
+        var horizontal = MathF.Sqrt(dx * dx + dz * dz);
+        var direction = System.Numerics.Vector3.Normalize(new(dx, dy + horizontal * 0.2f, dz));
+        server.Projectiles.Shoot(mob, ProjectileManager.SplashPotion, from + direction * 0.5f, direction * 0.75f, 0, potion);
+        server.PlaySound("mob.witch.throw", mob.X, mob.Y, mob.Z, mob.World);
     }
 
     private void ShootFireball(Mob mob, BedrockConnection target, string identifier, float speed, float damage, float spread)

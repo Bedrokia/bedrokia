@@ -229,9 +229,12 @@ public sealed class ProjectileManager(BedrokiaServer server)
 
     private readonly Random _random = new();
 
-    /// <summary>A mob shoots: an <see cref="Arrow"/>, a <see cref="Fireball"/> (explodes) or a <see cref="SmallFireball"/>.</summary>
-    public Projectile Shoot(Mob shooter, string identifier, Vector3 position, Vector3 velocity, float damage) =>
-        Add(new Projectile(server.NextEntityId(), identifier, shooter.World!, null, position, velocity, 0) { Shooter = shooter, Damage = damage });
+    /// <summary>
+    /// A mob shoots: an <see cref="Arrow"/>, a <see cref="Fireball"/> (explodes), a <see cref="SmallFireball"/>, or a
+    /// <see cref="SplashPotion"/> of the given <paramref name="potion"/> id (a witch).
+    /// </summary>
+    public Projectile Shoot(Mob shooter, string identifier, Vector3 position, Vector3 velocity, float damage, short potion = 0) =>
+        Add(new Projectile(server.NextEntityId(), identifier, shooter.World!, null, position, velocity, potion) { Shooter = shooter, Damage = damage });
 
     private Projectile Add(Projectile projectile)
     {
